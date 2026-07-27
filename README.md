@@ -1,4 +1,4 @@
-# Xiaodao Spread
+# xiaodao-spreader
 
 基于 Canvas 2D 的 Vue 3 电子表格组件，提供类 Excel 的编辑体验。
 
