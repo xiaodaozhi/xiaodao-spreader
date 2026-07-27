@@ -1,0 +1,162 @@
+import type { ThemeColors } from './types';
+
+// ============ 布局常量 ============
+export const HEADER_WIDTH = 52;
+export const HEADER_HEIGHT = 24;
+export const DEFAULT_COL_WIDTH = 100;
+export const DEFAULT_ROW_HEIGHT = 24;
+export const MIN_COL_WIDTH = 30;
+export const MIN_ROW_HEIGHT = 24;
+
+// ============ 滚动条常量 ============
+export const SB_SIZE = 11;
+export const ARROW_SIZE = 11;
+export const SCROLL_STEP = 50;
+
+// ============ 撤销/重做 ============
+export const UNDO_MAX = 50;
+
+// ============ 国际化文本 ============
+export const i18n: Record<string, Record<string, string>> = {
+  'zh-CN': {
+    insert: '插入',
+    delete: '删除',
+    rename: '重命名',
+    moveLeft: '左移',
+    moveRight: '右移',
+    cut: '剪切',
+    copy: '复制',
+    paste: '粘贴',
+    addSheet: '新建工作表',
+    moveSheetLeft: '左移',
+    moveSheetRight: '右移',
+    scrollUp: '向上滚动',
+    scrollDown: '向下滚动',
+    scrollLeft: '向左滚动',
+    scrollRight: '向右滚动',
+  },
+  'en-US': {
+    insert: 'Insert',
+    delete: 'Delete',
+    rename: 'Rename',
+    moveLeft: 'Move Left',
+    moveRight: 'Move Right',
+    cut: 'Cut',
+    copy: 'Copy',
+    paste: 'Paste',
+    addSheet: 'Add new sheet',
+    moveSheetLeft: 'Move Left',
+    moveSheetRight: 'Move Right',
+    scrollUp: 'Scroll up',
+    scrollDown: 'Scroll down',
+    scrollLeft: 'Scroll left',
+    scrollRight: 'Scroll right',
+  },
+};
+
+export function t(locale: string, key: string): string {
+  return i18n[locale]?.[key] ?? key;
+}
+
+// ============ 主题色盘 ============
+export const lightTheme: ThemeColors = {
+  bg: '#f4f4f4',
+  gridBg: '#ffffff',
+  headerBg: '#e8e8e8',
+  headerBorder: '#c8c8c8',
+  headerText: '#444',
+  headerSep: '#b0b0b0',
+  cornerBg: '#e0e0e0',
+  gridLine: '#e0e0e0',
+  selectionBg: 'rgba(0, 120, 215, 0.12)',
+  activeCellBorder: '#0078d7',
+  cellText: '#1a1a1a',
+  scrollTrack: 'rgba(0,0,0,0.08)',
+  scrollThumb: 'rgba(0,0,0,0.25)',
+  formulaBarBg: '#f0f0f0',
+  formulaBarBorder: '#c8c8c8',
+  formulaBarLabelText: '#333',
+  formulaBarLabelBg: '#fff',
+  formulaBarLabelBorder: '#c0c0c0',
+  formulaBarInputBg: '#fff',
+  formulaBarInputBorder: '#c0c0c0',
+  formulaBarInputText: '#1a1a1a',
+  formulaBarInputFocusBorder: '#0078d7',
+  formulaBarInputFocusShadow: 'rgba(0, 120, 215, 0.3)',
+  wrapperBg: '#e8e8e8',
+  cellEditorBorder: '#0078d7',
+  cellEditorText: '#1a1a1a',
+  cellEditorBg: '#fff',
+  cellEditorShadow: '#0078d7',
+  tabBarBg: '#e8e8e8',
+  tabBarBorder: '#c0c0c0',
+  tabActiveBg: '#ffffff',
+  tabActiveText: '#1a1a1a',
+  tabActiveBorder: '#0078d7',
+  tabInactiveBg: '#dfdfdf',
+  tabInactiveText: '#666',
+  tabInactiveBorder: 'transparent',
+  tabHoverBg: '#e0e0e0',
+  tabAddBtnColor: '#555',
+  tabAddBtnHoverBg: '#d0d0d0',
+  tabScrollBtnColor: '#888',
+  tabScrollBtnHoverBg: '#d0d0d0',
+  scrollbarThumb: 'rgba(0,0,0,0.25)',
+  scrollbarThumbHover: 'rgba(0,0,0,0.4)',
+  scrollBtnBg: '#e8e8e8',
+  scrollBtnColor: '#666',
+  scrollBtnHoverBg: '#d0d0d0',
+  scrollBtnActiveBg: '#c0c0c0',
+  scrollTrackBg: 'rgba(0,0,0,0.06)',
+};
+
+export const darkTheme: ThemeColors = {
+  bg: '#1e1e1e',
+  gridBg: '#252526',
+  headerBg: '#252525',
+  headerBorder: '#3e3e3e',
+  headerText: '#999',
+  headerSep: '#3e3e3e',
+  cornerBg: '#2a2a2a',
+  gridLine: '#3e3e3e',
+  selectionBg: 'rgba(0, 120, 215, 0.25)',
+  activeCellBorder: '#0078d7',
+  cellText: '#d4d4d4',
+  scrollTrack: 'rgba(255,255,255,0.06)',
+  scrollThumb: 'rgba(255,255,255,0.2)',
+  formulaBarBg: '#2d2d2d',
+  formulaBarBorder: '#3e3e3e',
+  formulaBarLabelText: '#ccc',
+  formulaBarLabelBg: '#3c3c3c',
+  formulaBarLabelBorder: '#555',
+  formulaBarInputBg: '#3c3c3c',
+  formulaBarInputBorder: '#555',
+  formulaBarInputText: '#d4d4d4',
+  formulaBarInputFocusBorder: '#0078d7',
+  formulaBarInputFocusShadow: 'rgba(0, 120, 215, 0.4)',
+  wrapperBg: '#1e1e1e',
+  cellEditorBorder: '#0078d7',
+  cellEditorText: '#d4d4d4',
+  cellEditorBg: '#3c3c3c',
+  cellEditorShadow: '#0078d7',
+  tabBarBg: '#2a2a2a',
+  tabBarBorder: '#3e3e3e',
+  tabActiveBg: '#1e1e1e',
+  tabActiveText: '#e0e0e0',
+  tabActiveBorder: '#0078d7',
+  tabInactiveBg: '#333333',
+  tabInactiveText: '#888',
+  tabInactiveBorder: 'transparent',
+  tabHoverBg: '#3a3a3a',
+  tabAddBtnColor: '#999',
+  tabAddBtnHoverBg: '#3a3a3a',
+  tabScrollBtnColor: '#777',
+  tabScrollBtnHoverBg: '#3a3a3a',
+  scrollbarThumb: 'rgba(255,255,255,0.2)',
+  scrollbarThumbHover: 'rgba(255,255,255,0.35)',
+  scrollBtnBg: '#2d2d2d',
+  scrollBtnColor: '#999',
+  scrollBtnHoverBg: '#3d3d3d',
+  scrollBtnActiveBg: '#4d4d4d',
+  scrollTrackBg: 'rgba(255,255,255,0.05)',
+};
