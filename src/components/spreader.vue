@@ -301,6 +301,41 @@ function clearSelected() {
   }
 }
 
+// ============ 求和功能 ============
+function sumSelected() {
+  const s = selection.value;
+  if (!s) return;
+  saveUndo();
+  const sc = s.startCol, sr = s.startRow, ec = s.endCol, er = s.endRow;
+  if (sr === er) {
+    // 单行选区
+    if (ec + 1 < colCount) {
+      // 右侧有空位：写入 ec+1，求和范围 sc~ec
+      const rangeRef = `${colToLabel(sc)}${sr + 1}:${colToLabel(ec)}${sr + 1}`;
+      setCellValue(ec + 1, sr, `=SUM(${rangeRef})`);
+    } else {
+      // 选中了行末单元格：写入 ec，求和范围 sc~ec-1
+      const rangeRef = `${colToLabel(sc)}${sr + 1}:${colToLabel(ec - 1)}${sr + 1}`;
+      setCellValue(ec, sr, `=SUM(${rangeRef})`);
+    }
+  } else {
+    // 多行选区 — 每列独立求和
+    for (let c = sc; c <= ec; c++) {
+      if (er + 1 < rowCount) {
+        // 下方有空位：写入 er+1，求和范围 sr~er
+        const rangeRef = `${colToLabel(c)}${sr + 1}:${colToLabel(c)}${er + 1}`;
+        setCellValue(c, er + 1, `=SUM(${rangeRef})`);
+      } else {
+        // 选中了列末单元格：写入 er，求和范围 sr~er-1
+        const rangeRef = `${colToLabel(c)}${sr + 1}:${colToLabel(c)}${er}`;
+        setCellValue(c, er, `=SUM(${rangeRef})`);
+      }
+    }
+  }
+  scheduleRender();
+  emitModelData();
+}
+
 // ============ 行/列插入/删除 ============
 function deleteRows(rS: number, rE: number) {
   const dr = rE - rS + 1;
@@ -763,6 +798,15 @@ function showCtx(x: number, y: number, items: ContextMenuItem[]) {
 function ctxWith(items: ContextMenuItem[]) {
   return (e: MouseEvent) => { showCtx(e.clientX, e.clientY, items); };
 }
+const ctxSubmenuLeft = ref(false);
+function onCtxItemEnter(e: MouseEvent, item: ContextMenuItem) {
+  if (!item.children) { ctxSubmenuLeft.value = false; return; }
+  const el = e.currentTarget as HTMLElement;
+  const sub = el.querySelector('.context-submenu') as HTMLElement | null;
+  if (!sub) { ctxSubmenuLeft.value = false; return; }
+  const subRect = sub.getBoundingClientRect();
+  ctxSubmenuLeft.value = subRect.right > window.innerWidth;
+}
 
 function onTabCtxMenu(e: MouseEvent, i: number) {
   e.preventDefault();
@@ -849,11 +893,19 @@ function onColHdrCtx(e: MouseEvent, col: number) {
 function onCellCtx(e: MouseEvent, c: number, r: number) {
   e.preventDefault();
   if (!isSelected(c, r)) { selectCell(c, r); scheduleRender(); }
+  const sel = selection.value;
+  const isSingleCell = !!(sel && sel.startCol === sel.endCol && sel.startRow === sel.endRow);
   showCtx(e.clientX, e.clientY, [
     { label: t(locale.value, 'cut'), action: () => { cutSelected(); emitModelData(); } },
     { label: t(locale.value, 'copy'), action: () => copyToClipboard() },
     { label: t(locale.value, 'paste'), action: () => { saveUndo(); pasteFromClipboard().then(() => { scheduleRender(); nextTick(emitModelData); }); } },
     { label: t(locale.value, 'delete'), action: () => { saveUndo(); clearSelected(); scheduleRender(); emitModelData(); } },
+    {
+      label: t(locale.value, 'calculate'),
+      children: [
+        { label: t(locale.value, 'sum'), action: sumSelected, disabled: isSingleCell },
+      ],
+    },
   ]);
 }
 
@@ -1337,7 +1389,17 @@ onBeforeUnmount(() => { resizeObs?.disconnect(); });
     <!-- 右键菜单 -->
     <Teleport to="body">
       <div v-if="ctxMenu" class="context-menu" :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }" @click.stop>
-        <div v-for="(item, i) in ctxMenu.items" :key="i" class="context-menu__item" :class="{ 'context-menu__item--disabled': item.disabled }" @click="!item.disabled && (item.action(), ctxMenu = null)">{{ item.label }}</div>
+        <template v-for="(item, i) in ctxMenu.items" :key="i">
+          <div class="context-menu__item" :class="{ 'context-menu__item--disabled': item.disabled }" @click="!item.disabled && item.action && (item.action(), ctxMenu = null)" @mouseenter="onCtxItemEnter($event, item)">
+            <span class="context-menu__label">{{ item.label }}</span>
+            <span v-if="item.children" class="context-menu__arrow" />
+            <div v-if="item.children" class="context-submenu" :class="{ 'context-submenu--left': ctxSubmenuLeft }">
+              <div v-for="(child, j) in item.children" :key="j" class="context-menu__item" :class="{ 'context-menu__item--disabled': child.disabled }" @click.stop="!child.disabled && child.action && (child.action(), ctxMenu = null)">
+                {{ child.label }}
+              </div>
+            </div>
+          </div>
+        </template>
       </div>
     </Teleport>
   </div>
@@ -1385,8 +1447,13 @@ onBeforeUnmount(() => { resizeObs?.disconnect(); });
 
 <style>
 .context-menu { position: fixed; z-index: 10000; background: #fff; border: 1px solid #ccc; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); padding: 4px 0; min-width: 120px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; font-size: 13px; }
-.context-menu__item { padding: 6px 20px; cursor: pointer; color: #333; white-space: nowrap; }
+.context-menu__item { padding: 6px 20px; cursor: pointer; color: #333; white-space: nowrap; position: relative; display: flex; align-items: center; justify-content: space-between; }
 .context-menu__item:hover { background: #e8f0fe; }
 .context-menu__item--disabled { color: #bbb; cursor: default; }
 .context-menu__item--disabled:hover { background: transparent; }
+.context-menu__arrow { margin-left: 16px; margin-right: -5px; width: 0; height: 0; border-top: 3px solid transparent; border-bottom: 3px solid transparent; border-left: 4px solid #888; }
+.context-submenu { display: none; position: absolute; left: 100%; top: -4px; background: #fff; border: 1px solid #ccc; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); padding: 4px 0; min-width: 100px; z-index: 10001; }
+.context-submenu--left { left: auto; right: 100%; }
+.context-menu__item:hover > .context-submenu { display: block; }
+.context-submenu .context-menu__item { justify-content: flex-start; }
 </style>

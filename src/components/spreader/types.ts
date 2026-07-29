@@ -59,8 +59,9 @@ export interface UndoSnapshot {
 
 export interface ContextMenuItem {
   label: string;
-  action: () => void;
+  action?: () => void;
   disabled?: boolean;
+  children?: ContextMenuItem[];
 }
 
 export interface ThemeColors {

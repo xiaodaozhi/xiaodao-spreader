@@ -34,6 +34,8 @@ export const i18n: Record<string, Record<string, string>> = {
     scrollDown: '向下滚动',
     scrollLeft: '向左滚动',
     scrollRight: '向右滚动',
+    calculate: '计算',
+    sum: '求和',
   },
   'en-US': {
     insert: 'Insert',
@@ -51,6 +53,8 @@ export const i18n: Record<string, Record<string, string>> = {
     scrollDown: 'Scroll down',
     scrollLeft: 'Scroll left',
     scrollRight: 'Scroll right',
+    calculate: 'Calculate',
+    sum: 'Sum',
   },
 };
 
