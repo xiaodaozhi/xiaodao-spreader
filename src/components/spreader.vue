@@ -353,11 +353,11 @@ function deleteRows(rS: number, rE: number) {
     for (let c = 0; c < colCount; c++) {
       const sk = cellKey(c, r + dr), dk = cellKey(c, r);
       if (cells[sk]) {
-  cells[dk] = cells[sk]!;
-  delCell(sk);
-} else {
-  delCell(dk);
-}
+        cells[dk] = cells[sk]!;
+        delCell(sk);
+      } else {
+        delCell(dk);
+      }
     }
     rowHeights.value[r] = rowHeights.value[r + dr]!;
   }
