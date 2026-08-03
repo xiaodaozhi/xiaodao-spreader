@@ -263,7 +263,11 @@ function copyRowCol() {
 }
 async function pasteFromClipboard() {
   let txt = '';
-  try { txt = await navigator.clipboard.readText(); } catch { return; }
+  try {
+    txt = await navigator.clipboard.readText();
+  } catch {
+    return;
+  }
   if (!txt && txt !== '') return;
   const lines = txt.split(/\r?\n/);
   const ac = activeCell.value;
@@ -419,7 +423,10 @@ function deleteCols(cS: number, cE: number) {
 
 // ============ 多 Sheet 管理 ============
 let sidN = 0;
-function nid() { sidN++; return `s_${sidN}`; }
+function nid() {
+  sidN++;
+  return `s_${sidN}`;
+}
 function mkSheet(name: string): SheetState {
   return {
     id: nid(), name, cells: {},
@@ -490,7 +497,10 @@ function dupSheet(i: number) {
   if (m) bn = m[1]!;
   let nn = `${bn} (${n})`;
   const names = new Set(sheets.value.map((s) => s.name));
-  while (names.has(nn)) { n++; nn = `${bn} (${n})`; }
+  while (names.has(nn)) {
+    n++;
+    nn = `${bn} (${n})`;
+  }
   const cp: SheetState = {
     id: nid(), name: nn, cells: { ...src.cells },
     selection: src.selection ? { ...src.selection } : null,
@@ -580,7 +590,10 @@ let rDpr = 1;
 function scheduleRender() {
   if (!rp) {
     rp = true;
-    requestAnimationFrame(() => { rp = false; render(); });
+    requestAnimationFrame(() => {
+      rp = false;
+      render();
+    });
   }
 }
 function render() {
@@ -613,11 +626,17 @@ function render() {
 
   const sC = Math.max(0, hitCol(sx));
   let eC2 = sC;
-  for (let c = sC; c < colCount; c++) { if (HW + cP[c]! - sx >= W) break; eC2 = c; }
+  for (let c = sC; c < colCount; c++) {
+    if (HW + cP[c]! - sx >= W) break;
+    eC2 = c;
+  }
   const eC = eC2;
   const sR = Math.max(0, hitRow(sy));
   let eR2 = sR;
-  for (let r = sR; r < rowCount; r++) { if (HH + rP[r]! - sy >= H) break; eR2 = r; }
+  for (let r = sR; r < rowCount; r++) {
+    if (HH + rP[r]! - sy >= H) break;
+    eR2 = r;
+  }
   const eR = eR2;
 
   // 背景
@@ -834,7 +853,10 @@ function onTabRenameKd(e: KeyboardEvent) {
 const ctxMenu = ref<{ x: number; y: number; items: ContextMenuItem[] } | null>(null);
 let cdcHandler: (() => void) | null = null;
 function rdl() {
-  if (cdcHandler) { document.removeEventListener('click', cdcHandler); cdcHandler = null; }
+  if (cdcHandler) {
+    document.removeEventListener('click', cdcHandler);
+    cdcHandler = null;
+  }
 }
 function showCtx(x: number, y: number, items: ContextMenuItem[]) {
   rdl();
@@ -853,10 +875,16 @@ function showCtx(x: number, y: number, items: ContextMenuItem[]) {
 }
 const ctxSubmenuLeft = ref(false);
 function onCtxItemEnter(e: MouseEvent, item: ContextMenuItem) {
-  if (!item.children) { ctxSubmenuLeft.value = false; return; }
+  if (!item.children) {
+    ctxSubmenuLeft.value = false;
+    return;
+  }
   const el = e.currentTarget as HTMLElement;
   const sub = el.querySelector('.context-submenu') as HTMLElement | null;
-  if (!sub) { ctxSubmenuLeft.value = false; return; }
+  if (!sub) {
+    ctxSubmenuLeft.value = false;
+    return;
+  }
   const subRect = sub.getBoundingClientRect();
   ctxSubmenuLeft.value = subRect.right > window.innerWidth;
 }
@@ -865,12 +893,21 @@ function onTabCtxMenu(e: MouseEvent, i: number) {
   e.preventDefault();
   e.stopPropagation();
   showCtx(e.clientX, e.clientY, [
-    { label: t(locale.value, 'insert'), action: () => { addSheet(); scheduleRender(); } },
+    {
+      label: t(locale.value, 'insert'),
+      action: () => {
+        addSheet();
+        scheduleRender();
+      },
+    },
     { label: t(locale.value, 'copy'), action: () => { dupSheet(i); } },
     { label: t(locale.value, 'rename'), action: () => { onTabDblClick(i); } },
     {
       label: t(locale.value, 'delete'),
-      action: () => { removeSheet(i); scheduleRender(); },
+      action: () => {
+        removeSheet(i);
+        scheduleRender();
+      },
       disabled: sheetCount.value <= 1,
     },
     { label: t(locale.value, 'moveSheetLeft'), action: () => { moveSheet(i, -1); }, disabled: i === 0 },
@@ -881,7 +918,13 @@ function onTabBarCtx(e: MouseEvent) {
   e.preventDefault();
   if ((e.target as HTMLElement).closest('.tab-item') || (e.target as HTMLElement).closest('.tab-bar__add-btn')) return;
   showCtx(e.clientX, e.clientY, [
-    { label: t(locale.value, 'insert'), action: () => { addSheet(); scheduleRender(); } },
+    {
+      label: t(locale.value, 'insert'),
+      action: () => {
+        addSheet();
+        scheduleRender();
+      },
+    },
   ]);
 }
 
@@ -890,13 +933,22 @@ function onCornerCtx(e: MouseEvent) {
   selectAll();
   scheduleRender();
   showCtx(e.clientX, e.clientY, [
-    { label: t(locale.value, 'cut'), action: () => { cutSelected(); emitModelData(); } },
+    {
+      label: t(locale.value, 'cut'),
+      action: () => {
+        cutSelected();
+        emitModelData();
+      },
+    },
     { label: t(locale.value, 'copy'), action: () => copyToClipboard() },
     {
       label: t(locale.value, 'paste'),
       action: () => {
         saveUndo();
-        pasteFromClipboard().then(() => { scheduleRender(); nextTick(emitModelData); });
+        pasteFromClipboard().then(() => {
+          scheduleRender();
+          nextTick(emitModelData);
+        });
       },
     },
     { label: t(locale.value, 'delete'), action: () => {
@@ -920,7 +972,12 @@ function onRowHdrCtx(e: MouseEvent, row: number) {
   showCtx(e.clientX, e.clientY, [
     {
       label: t(locale.value, 'insert'),
-      action: () => { saveUndo(); insertRows(s.startRow, s.endRow); scheduleRender(); emitModelData(); },
+      action: () => {
+        saveUndo();
+        insertRows(s.startRow, s.endRow);
+        scheduleRender();
+        emitModelData();
+      },
       disabled: s.endRow >= rowCount - 1,
     },
     { label: t(locale.value, 'cut'), action: () => {
@@ -937,12 +994,20 @@ function onRowHdrCtx(e: MouseEvent, row: number) {
       label: t(locale.value, 'paste'),
       action: () => {
         saveUndo();
-        pasteFromClipboard().then(() => { scheduleRender(); nextTick(emitModelData); });
+        pasteFromClipboard().then(() => {
+          scheduleRender();
+          nextTick(emitModelData);
+        });
       },
     },
     {
       label: t(locale.value, 'delete'),
-      action: () => { saveUndo(); deleteRows(s.startRow, s.endRow); scheduleRender(); emitModelData(); },
+      action: () => {
+        saveUndo();
+        deleteRows(s.startRow, s.endRow);
+        scheduleRender();
+        emitModelData();
+      },
     },
   ]);
 }
@@ -957,7 +1022,12 @@ function onColHdrCtx(e: MouseEvent, col: number) {
   showCtx(e.clientX, e.clientY, [
     {
       label: t(locale.value, 'insert'),
-      action: () => { saveUndo(); insertCols(s.startCol, s.endCol); scheduleRender(); emitModelData(); },
+      action: () => {
+        saveUndo();
+        insertCols(s.startCol, s.endCol);
+        scheduleRender();
+        emitModelData();
+      },
       disabled: s.endCol >= colCount - 1,
     },
     { label: t(locale.value, 'cut'), action: () => {
@@ -974,12 +1044,20 @@ function onColHdrCtx(e: MouseEvent, col: number) {
       label: t(locale.value, 'paste'),
       action: () => {
         saveUndo();
-        pasteFromClipboard().then(() => { scheduleRender(); nextTick(emitModelData); });
+        pasteFromClipboard().then(() => {
+          scheduleRender();
+          nextTick(emitModelData);
+        });
       },
     },
     {
       label: t(locale.value, 'delete'),
-      action: () => { saveUndo(); deleteCols(s.startCol, s.endCol); scheduleRender(); emitModelData(); },
+      action: () => {
+        saveUndo();
+        deleteCols(s.startCol, s.endCol);
+        scheduleRender();
+        emitModelData();
+      },
     },
   ]);
 }
@@ -994,19 +1072,30 @@ function onCellCtx(e: MouseEvent, c: number, r: number) {
   showCtx(e.clientX, e.clientY, [
     {
       label: t(locale.value, 'cut'),
-      action: () => { cutSelected(); emitModelData(); },
+      action: () => {
+        cutSelected();
+        emitModelData();
+      },
     },
     { label: t(locale.value, 'copy'), action: () => copyToClipboard() },
     {
       label: t(locale.value, 'paste'),
       action: () => {
         saveUndo();
-        pasteFromClipboard().then(() => { scheduleRender(); nextTick(emitModelData); });
+        pasteFromClipboard().then(() => {
+          scheduleRender();
+          nextTick(emitModelData);
+        });
       },
     },
     {
       label: t(locale.value, 'delete'),
-      action: () => { saveUndo(); clearSelected(); scheduleRender(); emitModelData(); },
+      action: () => {
+        saveUndo();
+        clearSelected();
+        scheduleRender();
+        emitModelData();
+      },
     },
     {
       label: t(locale.value, 'calculate'),
@@ -1034,8 +1123,12 @@ const hScrollbarW = computed(() => Math.max(0, viewSize.w - HEADER_WIDTH - SB_SI
 const vScrollbarH = computed(() => Math.max(0, viewSize.h - HEADER_HEIGHT - SB_SIZE));
 const hTrackW = computed(() => Math.max(0, hScrollbarW.value - 11 * 2));
 const vTrackH = computed(() => Math.max(0, vScrollbarH.value - 11 * 2));
-function gridVW() { return Math.max(0, viewSize.w - HEADER_WIDTH - SB_SIZE); }
-function gridVH() { return Math.max(0, viewSize.h - HEADER_HEIGHT - SB_SIZE); }
+function gridVW() {
+  return Math.max(0, viewSize.w - HEADER_WIDTH - SB_SIZE);
+}
+function gridVH() {
+  return Math.max(0, viewSize.h - HEADER_HEIGHT - SB_SIZE);
+}
 const hThumbW = computed(() => {
   if (maxScrollX.value <= 0) return hTrackW.value;
   return Math.max(24, (gridVW() / totalWidth.value) * hTrackW.value);
@@ -1301,11 +1394,17 @@ function onDblClick(e: MouseEvent) {
   scheduleRender();
   nextTick(() => editInputRef.value?.focus());
 }
-function onWheel(e: WheelEvent) { clampScroll(scrollX.value + e.deltaX, scrollY.value + e.deltaY); scheduleRender(); }
+function onWheel(e: WheelEvent) {
+  clampScroll(scrollX.value + e.deltaX, scrollY.value + e.deltaY);
+  scheduleRender();
+}
 
 // 触屏
 function onTouchStart(e: TouchEvent) {
-  if (e.touches.length !== 1) { isTouch = false; return; }
+  if (e.touches.length !== 1) {
+    isTouch = false;
+    return;
+  }
   const t = e.touches[0]!;
   const cvs = canvasRef.value;
   if (!cvs) return;
@@ -1384,7 +1483,10 @@ function onKeydown(e: KeyboardEvent) {
     case ctl && (e.key === 'v' || e.key === 'V'):
       e.preventDefault();
       saveUndo();
-      pasteFromClipboard().then(() => { scheduleRender(); nextTick(emitModelData); });
+      pasteFromClipboard().then(() => {
+        scheduleRender();
+        nextTick(emitModelData);
+      });
       return;
     case ctl && (e.key === 'a' || e.key === 'A'):
       e.preventDefault();
@@ -1478,7 +1580,10 @@ function onKeydown(e: KeyboardEvent) {
       scheduleRender();
       nextTick(() => {
         const inp = editInputRef.value;
-        if (inp) { inp.focus(); inp.setSelectionRange(1, 1); }
+        if (inp) {
+          inp.focus();
+          inp.setSelectionRange(1, 1);
+        }
       });
       return;
   }
@@ -1541,7 +1646,9 @@ onMounted(() => {
     resizeObs = new ResizeObserver(() => applySize());
     if (wrapperRef.value) resizeObs.observe(wrapperRef.value);
   }
-  nextTick(() => { applySize(); });
+  nextTick(() => {
+    applySize();
+  });
   selectCell(0, 0);
   if (modelData.value && modelData.value.length > 0) {
     lastEmittedData = JSON.stringify(modelData.value);
@@ -1608,7 +1715,9 @@ watch(() => modelData.value, (v) => {
   if (sheets.value.length > 0) loadSheet(0);
   scheduleRender();
 }, { deep: true });
-onBeforeUnmount(() => { resizeObs?.disconnect(); });
+onBeforeUnmount(() => {
+  resizeObs?.disconnect();
+});
 </script>
 
 <template>
