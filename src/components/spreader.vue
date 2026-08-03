@@ -3,7 +3,6 @@ import { ref, reactive, computed, onMounted, onBeforeUnmount, nextTick, watch } 
 import { HEADER_HEIGHT, HEADER_WIDTH, SB_SIZE, DEFAULT_COL_WIDTH, DEFAULT_ROW_HEIGHT, UNDO_MAX, t, lightTheme, darkTheme  } from './spreader/constants';
 import { colToLabel, resolveSize, writeClipboardText, getCanvasXY } from './spreader/utils';
 import { FormulaDeps, parseFormulaRefs, clearEvalCache, computeCellValue, shiftFormulaRefs } from './spreader/formula';
-
 import { buildOuterStyle } from './spreader/theme';
 import type { CellCoord, CellData, SelectionRange, SheetState, SheetModelData, ContextMenuItem } from './spreader/types';
 
@@ -78,6 +77,9 @@ function isSelected(c: number, r: number) {
 function cellKey(c: number, r: number) {
   return `${c},${r}`;
 }
+function delCell(k: string) {
+  Reflect.deleteProperty(cells, k);
+}
 
 // ============ 单元格读写 ============
 function getCellRaw(c: number, r: number) {
@@ -92,7 +94,7 @@ function setCellValue(c: number, r: number, v: string | null | undefined) {
   clearEvalCache();
   if (v === '' || v == null) {
     formulaDeps.clear(k);
-    delete cells[k];
+    delCell(k);
     formulaDeps.markDirty(k);
     return;
   }
@@ -111,7 +113,7 @@ function clearCellsInRange(cS: number, cE: number, rS: number, rE: number) {
     for (let r = rS; r <= rE; r++) {
       const k = cellKey(c, r);
       formulaDeps.clear(k);
-      delete cells[k];
+      delCell(k);
       formulaDeps.markDirty(k);
     }
   }
@@ -185,7 +187,8 @@ function hitRow(y: number) {
 
 // ============ 撤销/重做 ============
 interface UndoSnap { cells: Record<string, CellData>; colWidths: number[]; rowHeights: number[] }
-const undoStack = ref<UndoSnap[]>([]), redoStack = ref<UndoSnap[]>([]);
+const undoStack = ref<UndoSnap[]>([]);
+const redoStack = ref<UndoSnap[]>([]);
 function takeSnap(): UndoSnap {
   const s: Record<string, CellData> = {};
   for (const [k, v] of Object.entries(cells)) {
@@ -194,7 +197,7 @@ function takeSnap(): UndoSnap {
   return { cells: s, colWidths: [...colWidths.value], rowHeights: [...rowHeights.value] };
 }
 function restoreSnap(s: UndoSnap) {
-  Object.keys(cells).forEach((k) => delete cells[k]);
+  Object.keys(cells).forEach((k) => delCell(k));
   Object.assign(cells, s.cells);
   colWidths.value = s.colWidths;
   rowHeights.value = s.rowHeights;
@@ -340,17 +343,22 @@ function sumSelected() {
 function deleteRows(rS: number, rE: number) {
   const dr = rE - rS + 1;
   for (let r = rS; r <= rE; r++) {
-    for (let c = 0; c < colCount; c++) delete cells[cellKey(c, r)];
+    for (let c = 0; c < colCount; c++) delCell(cellKey(c, r));
   }
   for (let r = rS; r < rowCount - dr; r++) {
     for (let c = 0; c < colCount; c++) {
       const sk = cellKey(c, r + dr), dk = cellKey(c, r);
-      if (cells[sk]) { cells[dk] = cells[sk]!; delete cells[sk]; } else delete cells[dk];
+      if (cells[sk]) {
+  cells[dk] = cells[sk]!;
+  delCell(sk);
+} else {
+  delCell(dk);
+}
     }
     rowHeights.value[r] = rowHeights.value[r + dr]!;
   }
   for (let r = rowCount - dr; r < rowCount; r++) {
-    for (let c = 0; c < colCount; c++) delete cells[cellKey(c, r)];
+    for (let c = 0; c < colCount; c++) delCell(cellKey(c, r));
     rowHeights.value[r] = DEFAULT_ROW_HEIGHT;
   }
 }
@@ -361,12 +369,12 @@ function insertRows(rS: number, rE: number) {
     for (let c = 0; c < colCount; c++) {
       const sk = cellKey(c, r - n), dk = cellKey(c, r);
       if (cells[sk]) cells[dk] = cells[sk]!;
-      else delete cells[dk];
+      else delCell(dk);
     }
     rowHeights.value[r] = rowHeights.value[r - n]!;
   }
   for (let r = rE + 1; r <= rE + n; r++) {
-    for (let c = 0; c < colCount; c++) delete cells[cellKey(c, r)];
+    for (let c = 0; c < colCount; c++) delCell(cellKey(c, r));
     rowHeights.value[r] = DEFAULT_ROW_HEIGHT;
   }
 }
@@ -377,29 +385,34 @@ function insertCols(cS: number, cE: number) {
     for (let r = 0; r < rowCount; r++) {
       const sk = cellKey(c - n, r), dk = cellKey(c, r);
       if (cells[sk]) cells[dk] = cells[sk]!;
-      else delete cells[dk];
+      else delCell(dk);
     }
     colWidths.value[c] = colWidths.value[c - n]!;
   }
   for (let c = cE + 1; c <= cE + n; c++) {
-    for (let r = 0; r < rowCount; r++) delete cells[cellKey(c, r)];
+    for (let r = 0; r < rowCount; r++) delCell(cellKey(c, r));
     colWidths.value[c] = DEFAULT_COL_WIDTH;
   }
 }
 function deleteCols(cS: number, cE: number) {
   const dc = cE - cS + 1;
   for (let c = cS; c <= cE; c++) {
-    for (let r = 0; r < rowCount; r++) delete cells[cellKey(c, r)];
+    for (let r = 0; r < rowCount; r++) delCell(cellKey(c, r));
   }
   for (let c = cS; c < colCount - dc; c++) {
     for (let r = 0; r < rowCount; r++) {
       const sk = cellKey(c + dc, r), dk = cellKey(c, r);
-      if (cells[sk]) { cells[dk] = cells[sk]!; delete cells[sk]; } else delete cells[dk];
+      if (cells[sk]) {
+  cells[dk] = cells[sk]!;
+  delCell(sk);
+} else {
+  delCell(dk);
+}
     }
     colWidths.value[c] = colWidths.value[c + dc]!;
   }
   for (let c = colCount - dc; c < colCount; c++) {
-    for (let r = 0; r < rowCount; r++) delete cells[cellKey(c, r)];
+    for (let r = 0; r < rowCount; r++) delCell(cellKey(c, r));
     colWidths.value[c] = DEFAULT_COL_WIDTH;
   }
 }
@@ -433,7 +446,7 @@ function saveSheet() {
 function loadSheet(i: number) {
   const s = sheets.value[i];
   if (!s) return;
-  Object.keys(cells).forEach((k) => delete cells[k]);
+  Object.keys(cells).forEach((k) => delCell(k));
   Object.assign(cells, s.cells);
   selection.value = s.selection ? { ...s.selection } : null;
   activeCell.value = { ...s.activeCell };
@@ -525,13 +538,19 @@ function emitModelData() {
     return sh;
   });
   const js = JSON.stringify(out);
-  if (js !== lastEmittedData) { lastEmittedData = js; modelData.value = out; }
+  if (js !== lastEmittedData) {
+      lastEmittedData = js;
+      modelData.value = out;
+    }
 }
 let pendingOptEmit = false;
 function scheduleOptEmit() {
   if (!pendingOptEmit) {
     pendingOptEmit = true;
-    Promise.resolve().then(() => { pendingOptEmit = false; emitModelData(); });
+    Promise.resolve().then(() => {
+      pendingOptEmit = false;
+      emitModelData();
+    });
   }
 }
 
@@ -573,13 +592,24 @@ function render() {
   if (!rCtx) return;
   rDpr = window.devicePixelRatio || 1;
   const r = wrapper.getBoundingClientRect();
-  const W = r.width, H = r.height;
-  viewSize.w = W; viewSize.h = H;
-  cvs.width = W * rDpr; cvs.height = H * rDpr;
-  cvs.style.width = W + 'px'; cvs.style.height = H + 'px';
+  const W = r.width;
+  const H = r.height;
+  viewSize.w = W;
+  viewSize.h = H;
+  cvs.width = W * rDpr;
+  cvs.height = H * rDpr;
+  cvs.style.width = W + 'px';
+  cvs.style.height = H + 'px';
   rCtx.setTransform(rDpr, 0, 0, rDpr, 0, 0);
-  const sx = scrollX.value, sy = scrollY.value, HW = HEADER_WIDTH, HH = HEADER_HEIGHT, cs = themeColors.value;
-  const cP = colPositions.value, rP = rowPositions.value, cW = colWidths.value, rH = rowHeights.value;
+  const sx = scrollX.value;
+  const sy = scrollY.value;
+  const HW = HEADER_WIDTH;
+  const HH = HEADER_HEIGHT;
+  const cs = themeColors.value;
+  const cP = colPositions.value;
+  const rP = rowPositions.value;
+  const cW = colWidths.value;
+  const rH = rowHeights.value;
 
   const sC = Math.max(0, hitCol(sx));
   let eC2 = sC;
@@ -601,10 +631,14 @@ function render() {
   rCtx.beginPath();
   rCtx.rect(HW + 0.5, HH + 0.5, W - HW - 1, H - HH - 1);
   rCtx.clip();
-  const sel = selection.value, ed = editingCell.value;
+  const sel = selection.value;
+  const ed = editingCell.value;
   for (let row = sR; row <= eR; row++) {
     for (let col = sC; col <= eC; col++) {
-      const x = HW + cP[col]! - sx, y = HH + rP[row]! - sy, cw = cW[col]!, rh = rH[row]!;
+      const x = HW + cP[col]! - sx;
+        const y = HH + rP[row]! - sy;
+        const cw = cW[col]!;
+        const rh = rH[row]!;
       if (x + cw < HW || y + rh < HH || x > W || y > H) continue;
       if (isSelected(col, row)) {
         rCtx.fillStyle = cs.selectionBg;
@@ -744,18 +778,28 @@ function onFormulaBarKeydown(e: KeyboardEvent) {
   }
 }
 function onFormulaBarBlur() {
-  setTimeout(() => { if (editingCell.value) { commitEdit(); scheduleRender(); } }, 0);
+  setTimeout(() => {
+    if (editingCell.value) {
+      commitEdit();
+      scheduleRender();
+    }
+  }, 0);
 }
 
 // ============ Tab 栏 ============
-const renTab = ref<number | null>(null), renTabVal = ref('');
+const renTab = ref<number | null>(null);
+const renTabVal = ref('');
 function onTabClick(i: number) {
   if (renTab.value !== null) return;
   switchSheet(i);
   scheduleRender();
 }
 function onTabDblClick(i: number) {
-  if (i !== activeSheetIndex.value) { saveSheet(); loadSheet(i); scheduleRender(); }
+  if (i !== activeSheetIndex.value) {
+    saveSheet();
+    loadSheet(i);
+    scheduleRender();
+  }
   renTab.value = i;
   renTabVal.value = sheets.value[i]!.name;
   nextTick(() => {
@@ -765,7 +809,10 @@ function onTabDblClick(i: number) {
   });
 }
 function commitTabRename() {
-  if (renTab.value !== null) { renameSheet(renTab.value, renTabVal.value); nextTick(emitModelData); }
+  if (renTab.value !== null) {
+    renameSheet(renTab.value, renTabVal.value);
+    nextTick(emitModelData);
+  }
   renTab.value = null;
   renTabVal.value = '';
 }
@@ -774,7 +821,13 @@ function cclTabRename() {
   renTabVal.value = '';
 }
 function onTabRenameKd(e: KeyboardEvent) {
-  if (e.key === 'Enter') { e.preventDefault(); commitTabRename(); } else if (e.key === 'Escape') { e.preventDefault(); cclTabRename(); }
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    commitTabRename();
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    cclTabRename();
+  }
 }
 
 // ============ 右键菜单 ============
@@ -785,15 +838,18 @@ function rdl() {
 }
 function showCtx(x: number, y: number, items: ContextMenuItem[]) {
   rdl();
-  const mw = 140, mh = items.length * 28 + 8, sw = window.innerWidth, sh = window.innerHeight;
+  const mw = 140;
+  const mh = items.length * 28 + 8;
+  const sw = window.innerWidth;
+  const sh = window.innerHeight;
   if (x + mw > sw) x -= mw;
   if (y + mh > sh) y -= mh;
   ctxMenu.value = { x, y, items };
-  cdcHandler = () => { ctxMenu.value = null; rdl(); };
+  cdcHandler = () => {
+    ctxMenu.value = null;
+    rdl();
+  };
   setTimeout(() => document.addEventListener('click', cdcHandler!, { once: true }), 0);
-}
-function ctxWith(items: ContextMenuItem[]) {
-  return (e: MouseEvent) => { showCtx(e.clientX, e.clientY, items); };
 }
 const ctxSubmenuLeft = ref(false);
 function onCtxItemEnter(e: MouseEvent, item: ContextMenuItem) {
@@ -812,7 +868,11 @@ function onTabCtxMenu(e: MouseEvent, i: number) {
     { label: t(locale.value, 'insert'), action: () => { addSheet(); scheduleRender(); } },
     { label: t(locale.value, 'copy'), action: () => { dupSheet(i); } },
     { label: t(locale.value, 'rename'), action: () => { onTabDblClick(i); } },
-    { label: t(locale.value, 'delete'), action: () => { removeSheet(i); scheduleRender(); }, disabled: sheetCount.value <= 1 },
+    {
+      label: t(locale.value, 'delete'),
+      action: () => { removeSheet(i); scheduleRender(); },
+      disabled: sheetCount.value <= 1,
+    },
     { label: t(locale.value, 'moveSheetLeft'), action: () => { moveSheet(i, -1); }, disabled: i === 0 },
     { label: t(locale.value, 'moveSheetRight'), action: () => { moveSheet(i, 1); }, disabled: i === sheets.value.length - 1 },
   ]);
@@ -832,7 +892,13 @@ function onCornerCtx(e: MouseEvent) {
   showCtx(e.clientX, e.clientY, [
     { label: t(locale.value, 'cut'), action: () => { cutSelected(); emitModelData(); } },
     { label: t(locale.value, 'copy'), action: () => copyToClipboard() },
-    { label: t(locale.value, 'paste'), action: () => { saveUndo(); pasteFromClipboard().then(() => { scheduleRender(); nextTick(emitModelData); }); } },
+    {
+      label: t(locale.value, 'paste'),
+      action: () => {
+        saveUndo();
+        pasteFromClipboard().then(() => { scheduleRender(); nextTick(emitModelData); });
+      },
+    },
     { label: t(locale.value, 'delete'), action: () => {
       saveUndo();
       clearSelected();
@@ -852,17 +918,32 @@ function onRowHdrCtx(e: MouseEvent, row: number) {
   }
   const s = selection.value!;
   showCtx(e.clientX, e.clientY, [
-    { label: t(locale.value, 'insert'), action: () => { saveUndo(); insertRows(s.startRow, s.endRow); scheduleRender(); emitModelData(); }, disabled: s.endRow >= rowCount - 1 },
+    {
+      label: t(locale.value, 'insert'),
+      action: () => { saveUndo(); insertRows(s.startRow, s.endRow); scheduleRender(); emitModelData(); },
+      disabled: s.endRow >= rowCount - 1,
+    },
     { label: t(locale.value, 'cut'), action: () => {
       saveUndo();
       copyRowCol();
-      for (let r = s.startRow; r <= s.endRow; r++) for (let c = 0; c < colCount; c++) delete cells[cellKey(c, r)];
+      for (let r = s.startRow; r <= s.endRow; r++) {
+        for (let c = 0; c < colCount; c++) delCell(cellKey(c, r));
+      }
       scheduleRender();
       emitModelData();
     } },
     { label: t(locale.value, 'copy'), action: () => copyRowCol() },
-    { label: t(locale.value, 'paste'), action: () => { saveUndo(); pasteFromClipboard().then(() => { scheduleRender(); nextTick(emitModelData); }); } },
-    { label: t(locale.value, 'delete'), action: () => { saveUndo(); deleteRows(s.startRow, s.endRow); scheduleRender(); emitModelData(); } },
+    {
+      label: t(locale.value, 'paste'),
+      action: () => {
+        saveUndo();
+        pasteFromClipboard().then(() => { scheduleRender(); nextTick(emitModelData); });
+      },
+    },
+    {
+      label: t(locale.value, 'delete'),
+      action: () => { saveUndo(); deleteRows(s.startRow, s.endRow); scheduleRender(); emitModelData(); },
+    },
   ]);
 }
 function onColHdrCtx(e: MouseEvent, col: number) {
@@ -874,29 +955,59 @@ function onColHdrCtx(e: MouseEvent, col: number) {
   }
   const s = selection.value!;
   showCtx(e.clientX, e.clientY, [
-    { label: t(locale.value, 'insert'), action: () => { saveUndo(); insertCols(s.startCol, s.endCol); scheduleRender(); emitModelData(); }, disabled: s.endCol >= colCount - 1 },
+    {
+      label: t(locale.value, 'insert'),
+      action: () => { saveUndo(); insertCols(s.startCol, s.endCol); scheduleRender(); emitModelData(); },
+      disabled: s.endCol >= colCount - 1,
+    },
     { label: t(locale.value, 'cut'), action: () => {
       saveUndo();
       copyRowCol();
-      for (let c = s.startCol; c <= s.endCol; c++) for (let r = 0; r < rowCount; r++) delete cells[cellKey(c, r)];
+      for (let c = s.startCol; c <= s.endCol; c++) {
+        for (let r = 0; r < rowCount; r++) delCell(cellKey(c, r));
+      }
       scheduleRender();
       emitModelData();
     } },
     { label: t(locale.value, 'copy'), action: () => copyRowCol() },
-    { label: t(locale.value, 'paste'), action: () => { saveUndo(); pasteFromClipboard().then(() => { scheduleRender(); nextTick(emitModelData); }); } },
-    { label: t(locale.value, 'delete'), action: () => { saveUndo(); deleteCols(s.startCol, s.endCol); scheduleRender(); emitModelData(); } },
+    {
+      label: t(locale.value, 'paste'),
+      action: () => {
+        saveUndo();
+        pasteFromClipboard().then(() => { scheduleRender(); nextTick(emitModelData); });
+      },
+    },
+    {
+      label: t(locale.value, 'delete'),
+      action: () => { saveUndo(); deleteCols(s.startCol, s.endCol); scheduleRender(); emitModelData(); },
+    },
   ]);
 }
 function onCellCtx(e: MouseEvent, c: number, r: number) {
   e.preventDefault();
-  if (!isSelected(c, r)) { selectCell(c, r); scheduleRender(); }
+  if (!isSelected(c, r)) {
+    selectCell(c, r);
+    scheduleRender();
+  }
   const sel = selection.value;
   const isSingleCell = !!(sel && sel.startCol === sel.endCol && sel.startRow === sel.endRow);
   showCtx(e.clientX, e.clientY, [
-    { label: t(locale.value, 'cut'), action: () => { cutSelected(); emitModelData(); } },
+    {
+      label: t(locale.value, 'cut'),
+      action: () => { cutSelected(); emitModelData(); },
+    },
     { label: t(locale.value, 'copy'), action: () => copyToClipboard() },
-    { label: t(locale.value, 'paste'), action: () => { saveUndo(); pasteFromClipboard().then(() => { scheduleRender(); nextTick(emitModelData); }); } },
-    { label: t(locale.value, 'delete'), action: () => { saveUndo(); clearSelected(); scheduleRender(); emitModelData(); } },
+    {
+      label: t(locale.value, 'paste'),
+      action: () => {
+        saveUndo();
+        pasteFromClipboard().then(() => { scheduleRender(); nextTick(emitModelData); });
+      },
+    },
+    {
+      label: t(locale.value, 'delete'),
+      action: () => { saveUndo(); clearSelected(); scheduleRender(); emitModelData(); },
+    },
     {
       label: t(locale.value, 'calculate'),
       children: [
@@ -925,11 +1036,25 @@ const hTrackW = computed(() => Math.max(0, hScrollbarW.value - 11 * 2));
 const vTrackH = computed(() => Math.max(0, vScrollbarH.value - 11 * 2));
 function gridVW() { return Math.max(0, viewSize.w - HEADER_WIDTH - SB_SIZE); }
 function gridVH() { return Math.max(0, viewSize.h - HEADER_HEIGHT - SB_SIZE); }
-const hThumbW = computed(() => { if (maxScrollX.value <= 0) return hTrackW.value; return Math.max(24, (gridVW() / totalWidth.value) * hTrackW.value); });
-const hThumbL = computed(() => { if (maxScrollX.value <= 0) return 0; return (scrollX.value / maxScrollX.value) * (hTrackW.value - hThumbW.value); });
-const vThumbH = computed(() => { if (maxScrollY.value <= 0) return vTrackH.value; return Math.max(24, (gridVH() / totalHeight.value) * vTrackH.value); });
-const vThumbT = computed(() => { if (maxScrollY.value <= 0) return 0; return (scrollY.value / maxScrollY.value) * (vTrackH.value - vThumbH.value); });
-let sbDrg: 'h' | 'v' | null = null, sbMs: number = 0, sbSc: number = 0;
+const hThumbW = computed(() => {
+  if (maxScrollX.value <= 0) return hTrackW.value;
+  return Math.max(24, (gridVW() / totalWidth.value) * hTrackW.value);
+});
+const hThumbL = computed(() => {
+  if (maxScrollX.value <= 0) return 0;
+  return (scrollX.value / maxScrollX.value) * (hTrackW.value - hThumbW.value);
+});
+const vThumbH = computed(() => {
+  if (maxScrollY.value <= 0) return vTrackH.value;
+  return Math.max(24, (gridVH() / totalHeight.value) * vTrackH.value);
+});
+const vThumbT = computed(() => {
+  if (maxScrollY.value <= 0) return 0;
+  return (scrollY.value / maxScrollY.value) * (vTrackH.value - vThumbH.value);
+});
+let sbDrg: 'h' | 'v' | null = null;
+let sbMs: number = 0;
+let sbSc: number = 0;
 function onVStart(e: MouseEvent) {
   e.preventDefault();
   sbDrg = 'v';
@@ -982,9 +1107,26 @@ function onHTrk(e: MouseEvent) {
 }
 
 // ============ 鼠标/触屏 状态 ============
-let isDragging = false, drgSC = 0, drgSR = 0;
-let isResizingC = false, isResizingR = false, rszTC = 0, rszTR = 0, rszSS = 0, rszSG = 0;
-let tSX = 0, tSY = 0, tSSX = 0, tSSY = 0, isTouch = false, tMoved = false, tSC = 0, tSR = 0, ltT = 0, ltC = -1, ltR = -1;
+let isDragging = false;
+let drgSC = 0;
+let drgSR = 0;
+let isResizingC = false;
+let isResizingR = false;
+let rszTC = 0;
+let rszTR = 0;
+let rszSS = 0;
+let rszSG = 0;
+let tSX = 0;
+let tSY = 0;
+let tSSX = 0;
+let tSSY = 0;
+let isTouch = false;
+let tMoved = false;
+let tSC = 0;
+let tSR = 0;
+let ltT = 0;
+let ltC = -1;
+let ltR = -1;
 
 function onMouseDown(e: MouseEvent) {
   if (e.button !== 0) return;
@@ -994,7 +1136,10 @@ function onMouseDown(e: MouseEvent) {
     const gx = p.x - HEADER_WIDTH + scrollX.value;
     const c = hitCol(gx);
     if (c >= 0 && Math.abs(p.x - (HEADER_WIDTH + colPositions.value[c + 1]! - scrollX.value)) <= 4) {
-      isResizingC = true; rszTC = c; rszSS = colWidths.value[c]!; rszSG = gx;
+      isResizingC = true;
+      rszTC = c;
+      rszSS = colWidths.value[c]!;
+      rszSG = gx;
       scheduleRender();
       return;
     }
@@ -1003,7 +1148,10 @@ function onMouseDown(e: MouseEvent) {
     const gy = p.y - HEADER_HEIGHT + scrollY.value;
     const r = hitRow(gy);
     if (r >= 0 && Math.abs(p.y - (HEADER_HEIGHT + rowPositions.value[r + 1]! - scrollY.value)) <= 4) {
-      isResizingR = true; rszTR = r; rszSS = rowHeights.value[r]!; rszSG = gy;
+      isResizingR = true;
+      rszTR = r;
+      rszSS = rowHeights.value[r]!;
+      rszSG = gy;
       scheduleRender();
       return;
     }
@@ -1011,10 +1159,20 @@ function onMouseDown(e: MouseEvent) {
   if (p.x < HEADER_WIDTH || p.y < HEADER_HEIGHT) {
     if (p.y < HEADER_HEIGHT && p.x >= HEADER_WIDTH) {
       const c = hitCol(p.x - HEADER_WIDTH + scrollX.value);
-      if (c >= 0) { selectRange(c, 0, c, rowCount - 1); isDragging = true; drgSC = c; drgSR = 0; }
+      if (c >= 0) {
+        selectRange(c, 0, c, rowCount - 1);
+        isDragging = true;
+        drgSC = c;
+        drgSR = 0;
+      }
     } else if (p.x < HEADER_WIDTH && p.y >= HEADER_HEIGHT) {
       const r = hitRow(p.y - HEADER_HEIGHT + scrollY.value);
-      if (r >= 0) { selectRange(0, r, colCount - 1, r); isDragging = true; drgSC = 0; drgSR = r; }
+      if (r >= 0) {
+        selectRange(0, r, colCount - 1, r);
+        isDragging = true;
+        drgSC = 0;
+        drgSR = r;
+      }
     } else if (p.x < HEADER_WIDTH && p.y < HEADER_HEIGHT) {
       selectAll();
     }
@@ -1030,7 +1188,9 @@ function onMouseDown(e: MouseEvent) {
   } else {
     selectCell(c, r);
   }
-  isDragging = true; drgSC = c; drgSR = r;
+  isDragging = true;
+  drgSC = c;
+  drgSR = r;
   canvasRef.value?.focus();
   scheduleRender();
 }
@@ -1096,18 +1256,25 @@ function onMouseMove(e: MouseEvent) {
 }
 function onMouseUp() {
   const w = isResizingC || isResizingR;
-  isDragging = false; isResizingC = false; isResizingR = false;
+  isDragging = false;
+  isResizingC = false;
+  isResizingR = false;
   if (w) scheduleOptEmit();
 }
 function onMouseLeave() {
   const w = isResizingC || isResizingR;
-  isDragging = false; isResizingC = false; isResizingR = false;
+  isDragging = false;
+  isResizingC = false;
+  isResizingR = false;
   if (w) scheduleOptEmit();
 }
 function onCanvasCtx(e: MouseEvent) {
   e.preventDefault();
   const p = getCanvasXY(e, canvasRef.value);
-  if (p.x < HEADER_WIDTH && p.y < HEADER_HEIGHT) { onCornerCtx(e); return; }
+  if (p.x < HEADER_WIDTH && p.y < HEADER_HEIGHT) {
+    onCornerCtx(e);
+    return;
+  }
   if (p.y < HEADER_HEIGHT && p.x >= HEADER_WIDTH) {
     const c = hitCol(p.x - HEADER_WIDTH + scrollX.value);
     if (c >= 0) onColHdrCtx(e, c);
@@ -1146,8 +1313,12 @@ function onTouchStart(e: TouchEvent) {
   const x = t.clientX - r.left, y = t.clientY - r.top;
   if (x >= HEADER_WIDTH && y >= HEADER_HEIGHT) {
     e.preventDefault();
-    isTouch = true; tMoved = false;
-    tSX = x; tSY = y; tSSX = scrollX.value; tSSY = scrollY.value;
+    isTouch = true;
+    tMoved = false;
+    tSX = x;
+    tSY = y;
+    tSSX = scrollX.value;
+    tSSY = scrollY.value;
     tSC = hitCol(x - HEADER_WIDTH + scrollX.value);
     tSR = hitRow(y - HEADER_HEIGHT + scrollY.value);
   }
@@ -1183,7 +1354,8 @@ function onTouchEnd() {
       scheduleRender();
       ltT = n;
     }
-    ltC = tSC; ltR = tSR;
+    ltC = tSC;
+    ltR = tSR;
     canvasRef.value?.focus();
   }
 }
@@ -1193,26 +1365,122 @@ function onKeydown(e: KeyboardEvent) {
   if (editingCell.value) return;
   const ctl = e.ctrlKey || e.metaKey, sh = e.shiftKey;
   switch (true) {
-    case ctl && (e.key === 'c' || e.key === 'C'): e.preventDefault(); copyToClipboard(); return;
-    case ctl && (e.key === 'x' || e.key === 'X'): e.preventDefault(); cutSelected(); return;
-    case ctl && (e.key === 'z' || e.key === 'Z'): e.preventDefault(); undo(); return;
-    case ctl && (e.key === 'y' || e.key === 'Y'): e.preventDefault(); redo(); return;
-    case ctl && (e.key === 'v' || e.key === 'V'): e.preventDefault(); saveUndo(); pasteFromClipboard().then(() => { scheduleRender(); nextTick(emitModelData); }); return;
-    case ctl && (e.key === 'a' || e.key === 'A'): e.preventDefault(); selectAll(); scheduleRender(); return;
-    case ctl && e.key === 'Home': e.preventDefault(); selectCell(0, 0); ensureVisible(0, 0); scheduleRender(); return;
-    case ctl && e.key === 'End': e.preventDefault(); selectCell(colCount - 1, rowCount - 1); ensureVisible(colCount - 1, rowCount - 1); scheduleRender(); return;
-    case e.key === 'Home': e.preventDefault(); selectCell(0, activeCell.value.row); ensureVisible(0, activeCell.value.row); scheduleRender(); return;
-    case e.key === 'End': e.preventDefault(); selectCell(colCount - 1, activeCell.value.row); ensureVisible(colCount - 1, activeCell.value.row); scheduleRender(); return;
-    case e.key === 'ArrowUp': e.preventDefault(); moveActive(0, -1); ensureVisible(activeCell.value.col, activeCell.value.row); scheduleRender(); return;
-    case e.key === 'ArrowDown': e.preventDefault(); moveActive(0, 1); ensureVisible(activeCell.value.col, activeCell.value.row); scheduleRender(); return;
-    case e.key === 'ArrowLeft': e.preventDefault(); moveActive(-1, 0); ensureVisible(activeCell.value.col, activeCell.value.row); scheduleRender(); return;
-    case e.key === 'ArrowRight': e.preventDefault(); moveActive(1, 0); ensureVisible(activeCell.value.col, activeCell.value.row); scheduleRender(); return;
-    case e.key === 'Tab': e.preventDefault(); moveActive(sh ? -1 : 1, 0); ensureVisible(activeCell.value.col, activeCell.value.row); scheduleRender(); return;
-    case e.key === 'Enter': e.preventDefault(); moveActive(0, sh ? -1 : 1); ensureVisible(activeCell.value.col, activeCell.value.row); scheduleRender(); return;
-    case e.key === 'F2': e.preventDefault(); ensureVisible(activeCell.value.col, activeCell.value.row); startEdit(); scheduleRender(); nextTick(() => editInputRef.value?.focus()); return;
-    case e.key === 'Delete': case e.key === 'Backspace': e.preventDefault(); saveUndo(); clearSelected(); scheduleRender(); return;
-    case e.key === 'Escape': e.preventDefault(); cancelEdit(); scheduleRender(); return;
-    case e.key.length === 1 && !ctl: e.preventDefault(); ensureVisible(activeCell.value.col, activeCell.value.row); startEdit(); editValue.value = e.key; scheduleRender(); nextTick(() => { const inp = editInputRef.value; if (inp) { inp.focus(); inp.setSelectionRange(1, 1); } }); return;
+    case ctl && (e.key === 'c' || e.key === 'C'):
+      e.preventDefault();
+      copyToClipboard();
+      return;
+    case ctl && (e.key === 'x' || e.key === 'X'):
+      e.preventDefault();
+      cutSelected();
+      return;
+    case ctl && (e.key === 'z' || e.key === 'Z'):
+      e.preventDefault();
+      undo();
+      return;
+    case ctl && (e.key === 'y' || e.key === 'Y'):
+      e.preventDefault();
+      redo();
+      return;
+    case ctl && (e.key === 'v' || e.key === 'V'):
+      e.preventDefault();
+      saveUndo();
+      pasteFromClipboard().then(() => { scheduleRender(); nextTick(emitModelData); });
+      return;
+    case ctl && (e.key === 'a' || e.key === 'A'):
+      e.preventDefault();
+      selectAll();
+      scheduleRender();
+      return;
+    case ctl && e.key === 'Home':
+      e.preventDefault();
+      selectCell(0, 0);
+      ensureVisible(0, 0);
+      scheduleRender();
+      return;
+    case ctl && e.key === 'End':
+      e.preventDefault();
+      selectCell(colCount - 1, rowCount - 1);
+      ensureVisible(colCount - 1, rowCount - 1);
+      scheduleRender();
+      return;
+    case e.key === 'Home':
+      e.preventDefault();
+      selectCell(0, activeCell.value.row);
+      ensureVisible(0, activeCell.value.row);
+      scheduleRender();
+      return;
+    case e.key === 'End':
+      e.preventDefault();
+      selectCell(colCount - 1, activeCell.value.row);
+      ensureVisible(colCount - 1, activeCell.value.row);
+      scheduleRender();
+      return;
+    case e.key === 'ArrowUp':
+      e.preventDefault();
+      moveActive(0, -1);
+      ensureVisible(activeCell.value.col, activeCell.value.row);
+      scheduleRender();
+      return;
+    case e.key === 'ArrowDown':
+      e.preventDefault();
+      moveActive(0, 1);
+      ensureVisible(activeCell.value.col, activeCell.value.row);
+      scheduleRender();
+      return;
+    case e.key === 'ArrowLeft':
+      e.preventDefault();
+      moveActive(-1, 0);
+      ensureVisible(activeCell.value.col, activeCell.value.row);
+      scheduleRender();
+      return;
+    case e.key === 'ArrowRight':
+      e.preventDefault();
+      moveActive(1, 0);
+      ensureVisible(activeCell.value.col, activeCell.value.row);
+      scheduleRender();
+      return;
+    case e.key === 'Tab':
+      e.preventDefault();
+      moveActive(sh ? -1 : 1, 0);
+      ensureVisible(activeCell.value.col, activeCell.value.row);
+      scheduleRender();
+      return;
+    case e.key === 'Enter':
+      e.preventDefault();
+      moveActive(0, sh ? -1 : 1);
+      ensureVisible(activeCell.value.col, activeCell.value.row);
+      scheduleRender();
+      return;
+    case e.key === 'F2':
+      e.preventDefault();
+      ensureVisible(activeCell.value.col, activeCell.value.row);
+      startEdit();
+      scheduleRender();
+      nextTick(() => editInputRef.value?.focus());
+      return;
+    case e.key === 'Delete':
+    case e.key === 'Backspace':
+      e.preventDefault();
+      saveUndo();
+      clearSelected();
+      scheduleRender();
+      return;
+    case e.key === 'Escape':
+      e.preventDefault();
+      cancelEdit();
+      scheduleRender();
+      return;
+    case e.key.length === 1 && !ctl:
+      e.preventDefault();
+      ensureVisible(activeCell.value.col, activeCell.value.row);
+      startEdit();
+      editValue.value = e.key;
+      scheduleRender();
+      nextTick(() => {
+        const inp = editInputRef.value;
+        if (inp) { inp.focus(); inp.setSelectionRange(1, 1); }
+      });
+      return;
   }
 }
 
@@ -1243,7 +1511,12 @@ function onEditKd(e: KeyboardEvent) {
   }
 }
 function onEditBlur() {
-  setTimeout(() => { if (editingCell.value) { commitEdit(); scheduleRender(); } }, 0);
+  setTimeout(() => {
+    if (editingCell.value) {
+      commitEdit();
+      scheduleRender();
+    }
+  }, 0);
 }
 
 // 尺寸

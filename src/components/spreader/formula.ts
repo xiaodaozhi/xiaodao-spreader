@@ -1,7 +1,7 @@
 // ============ 公式引擎 ============
 
-import type { CellCoord, CellData, Range } from './types';
-import { cellKey, labelToCol, parseCellRef as utilParseCellRef, hitTestCol, hitTestRow } from './utils';
+import type { CellData } from './types';
+import { cellKey, labelToCol, parseCellRef as utilParseCellRef } from './utils';
 
 /** 解析区域引用（如 "A1:B5" → {sc, sr, ec, er}） */
 export function parseRangeRef(
