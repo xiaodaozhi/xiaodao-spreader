@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue';
-import { HEADER_HEIGHT, HEADER_WIDTH, SB_SIZE, DEFAULT_COL_WIDTH, DEFAULT_ROW_HEIGHT, UNDO_MAX, t } from './spreader/constants';
+import { HEADER_HEIGHT, HEADER_WIDTH, SB_SIZE, DEFAULT_COL_WIDTH, DEFAULT_ROW_HEIGHT, UNDO_MAX, t, lightTheme, darkTheme  } from './spreader/constants';
 import { colToLabel, resolveSize, writeClipboardText, getCanvasXY } from './spreader/utils';
-import { FormulaDeps, parseFormulaRefs, evalFormula, clearEvalCache, computeCellValue, shiftFormulaRefs } from './spreader/formula';
-import { lightTheme, darkTheme } from './spreader/constants';
+import { FormulaDeps, parseFormulaRefs, clearEvalCache, computeCellValue, shiftFormulaRefs } from './spreader/formula';
+
 import { buildOuterStyle } from './spreader/theme';
 import type { CellCoord, CellData, SelectionRange, SheetState, SheetModelData, ContextMenuItem } from './spreader/types';
 
@@ -184,7 +184,7 @@ function hitRow(y: number) {
 }
 
 // ============ 撤销/重做 ============
-interface UndoSnap { cells: Record<string, CellData>; colWidths: number[]; rowHeights: number[]; }
+interface UndoSnap { cells: Record<string, CellData>; colWidths: number[]; rowHeights: number[] }
 const undoStack = ref<UndoSnap[]>([]), redoStack = ref<UndoSnap[]>([]);
 function takeSnap(): UndoSnap {
   const s: Record<string, CellData> = {};
@@ -194,7 +194,7 @@ function takeSnap(): UndoSnap {
   return { cells: s, colWidths: [...colWidths.value], rowHeights: [...rowHeights.value] };
 }
 function restoreSnap(s: UndoSnap) {
-  Object.keys(cells).forEach(k => delete cells[k]);
+  Object.keys(cells).forEach((k) => delete cells[k]);
   Object.assign(cells, s.cells);
   colWidths.value = s.colWidths;
   rowHeights.value = s.rowHeights;
@@ -345,8 +345,7 @@ function deleteRows(rS: number, rE: number) {
   for (let r = rS; r < rowCount - dr; r++) {
     for (let c = 0; c < colCount; c++) {
       const sk = cellKey(c, r + dr), dk = cellKey(c, r);
-      if (cells[sk]) { cells[dk] = cells[sk]!; delete cells[sk]; }
-      else delete cells[dk];
+      if (cells[sk]) { cells[dk] = cells[sk]!; delete cells[sk]; } else delete cells[dk];
     }
     rowHeights.value[r] = rowHeights.value[r + dr]!;
   }
@@ -395,8 +394,7 @@ function deleteCols(cS: number, cE: number) {
   for (let c = cS; c < colCount - dc; c++) {
     for (let r = 0; r < rowCount; r++) {
       const sk = cellKey(c + dc, r), dk = cellKey(c, r);
-      if (cells[sk]) { cells[dk] = cells[sk]!; delete cells[sk]; }
-      else delete cells[dk];
+      if (cells[sk]) { cells[dk] = cells[sk]!; delete cells[sk]; } else delete cells[dk];
     }
     colWidths.value[c] = colWidths.value[c + dc]!;
   }
@@ -435,7 +433,7 @@ function saveSheet() {
 function loadSheet(i: number) {
   const s = sheets.value[i];
   if (!s) return;
-  Object.keys(cells).forEach(k => delete cells[k]);
+  Object.keys(cells).forEach((k) => delete cells[k]);
   Object.assign(cells, s.cells);
   selection.value = s.selection ? { ...s.selection } : null;
   activeCell.value = { ...s.activeCell };
@@ -478,7 +476,7 @@ function dupSheet(i: number) {
   let n = m ? parseInt(m[2]!, 10) + 1 : 2;
   if (m) bn = m[1]!;
   let nn = `${bn} (${n})`;
-  const names = new Set(sheets.value.map(s => s.name));
+  const names = new Set(sheets.value.map((s) => s.name));
   while (names.has(nn)) { n++; nn = `${bn} (${n})`; }
   const cp: SheetState = {
     id: nid(), name: nn, cells: { ...src.cells },
@@ -507,7 +505,7 @@ const sheetCount = computed(() => sheets.value.length);
 // ============ v-model emit ============
 function emitModelData() {
   saveSheet();
-  const out: SheetModelData[] = sheets.value.map(s => {
+  const out: SheetModelData[] = sheets.value.map((s) => {
     const cs: Record<string, { value: string; style?: Record<string, unknown> }> = {};
     for (const [k, v] of Object.entries(s.cells)) {
       cs[k] = { value: v.value };
@@ -776,8 +774,7 @@ function cclTabRename() {
   renTabVal.value = '';
 }
 function onTabRenameKd(e: KeyboardEvent) {
-  if (e.key === 'Enter') { e.preventDefault(); commitTabRename(); }
-  else if (e.key === 'Escape') { e.preventDefault(); cclTabRename(); }
+  if (e.key === 'Enter') { e.preventDefault(); commitTabRename(); } else if (e.key === 'Escape') { e.preventDefault(); cclTabRename(); }
 }
 
 // ============ 右键菜单 ============
@@ -1275,7 +1272,7 @@ onMounted(() => {
   selectCell(0, 0);
   if (modelData.value && modelData.value.length > 0) {
     lastEmittedData = JSON.stringify(modelData.value);
-    sheets.value = modelData.value.map(s => {
+    sheets.value = modelData.value.map((s) => {
       const sh = mkSheet(s.name);
       for (const [k, v] of Object.entries(s.cells)) {
         sh.cells[k] = { value: v.value, style: v.style ?? null };
@@ -1316,7 +1313,7 @@ watch(() => modelData.value, (v) => {
   const nd = JSON.stringify(v);
   if (nd === lastEmittedData) return;
   lastEmittedData = nd;
-  sheets.value = v.map(s => {
+  sheets.value = v.map((s) => {
     const sh = mkSheet(s.name);
     for (const [k, it] of Object.entries(s.cells)) {
       sh.cells[k] = { value: it.value, style: it.style ?? null };
@@ -1342,59 +1339,201 @@ onBeforeUnmount(() => { resizeObs?.disconnect(); });
 </script>
 
 <template>
-  <div class="spreadsheet-outer" :style="outerStyle">
+  <div
+    class="spreadsheet-outer"
+    :style="outerStyle"
+  >
     <!-- Sheet 标签栏 -->
-    <div class="tab-bar" @contextmenu="onTabBarCtx">
+    <div
+      class="tab-bar"
+      @contextmenu="onTabBarCtx"
+    >
       <div class="tab-list">
-        <template v-for="(s, i) in sheets" :key="s.id">
-          <div class="tab-item" :class="{ 'tab-item--active': i === activeSheetIndex }" @click="onTabClick(i)" @dblclick.prevent="onTabDblClick(i)" @contextmenu="onTabCtxMenu($event, i)">
+        <template
+          v-for="(s, i) in sheets"
+          :key="s.id"
+        >
+          <div
+            class="tab-item"
+            :class="{ 'tab-item--active': i === activeSheetIndex }"
+            @click="onTabClick(i)"
+            @dblclick.prevent="onTabDblClick(i)"
+            @contextmenu="onTabCtxMenu($event, i)"
+          >
             <template v-if="renTab === i">
-              <input class="tab-rename-input" :value="renTabVal" @input="renTabVal = ($event.target as HTMLInputElement).value" @keydown="onTabRenameKd" @blur="commitTabRename" @click.stop>
+              <input
+                class="tab-rename-input"
+                :value="renTabVal"
+                @input="renTabVal = ($event.target as HTMLInputElement).value"
+                @keydown="onTabRenameKd"
+                @blur="commitTabRename"
+                @click.stop
+              >
             </template>
-            <template v-else><span class="tab-item__name">{{ s.name }}</span></template>
+            <template v-else>
+              <span class="tab-item__name">{{ s.name }}</span>
+            </template>
           </div>
         </template>
       </div>
-      <button class="tab-bar__add-btn" @click="addSheet(); scheduleRender()" :title="t(locale, 'addSheet')">+</button>
+      <button
+        class="tab-bar__add-btn"
+        :title="t(locale, 'addSheet')"
+        @click="addSheet(); scheduleRender()"
+      >
+        +
+      </button>
     </div>
 
     <!-- 编辑栏 -->
     <div class="formula-bar">
-      <div class="formula-bar__cell-label">{{ activeCellLabel }}</div>
-      <input ref="formulaBarRef" class="formula-bar__input" :value="formulaBarDisplay" @focus="onFormulaBarFocus" @input="onFormulaBarInput" @keydown="onFormulaBarKeydown" @blur="onFormulaBarBlur">
+      <div class="formula-bar__cell-label">
+        {{ activeCellLabel }}
+      </div>
+      <input
+        ref="formulaBarRef"
+        class="formula-bar__input"
+        :value="formulaBarDisplay"
+        @focus="onFormulaBarFocus"
+        @input="onFormulaBarInput"
+        @keydown="onFormulaBarKeydown"
+        @blur="onFormulaBarBlur"
+      >
     </div>
 
-    <div ref="wrapperRef" class="spreadsheet-wrapper">
-      <canvas ref="canvasRef" class="grid-canvas" tabindex="0" @mousedown="onMouseDown" @mousemove="onMouseMove" @mouseup="onMouseUp" @mouseleave="onMouseLeave" @dblclick="onDblClick" @wheel.prevent="onWheel" @keydown="onKeydown" @contextmenu="onCanvasCtx" @touchstart.prevent="onTouchStart" @touchmove.prevent="onTouchMove" @touchend="onTouchEnd" />
-      <input v-if="editingCell" ref="editInputRef" class="cell-editor" :value="editValue" :style="editInputStyle" @input="onEditInput" @keydown="onEditKd" @blur="onEditBlur">
+    <div
+      ref="wrapperRef"
+      class="spreadsheet-wrapper"
+    >
+      <canvas
+        ref="canvasRef"
+        class="grid-canvas"
+        tabindex="0"
+        @mousedown="onMouseDown"
+        @mousemove="onMouseMove"
+        @mouseup="onMouseUp"
+        @mouseleave="onMouseLeave"
+        @dblclick="onDblClick"
+        @wheel.prevent="onWheel"
+        @keydown="onKeydown"
+        @contextmenu="onCanvasCtx"
+        @touchstart.prevent="onTouchStart"
+        @touchmove.prevent="onTouchMove"
+        @touchend="onTouchEnd"
+      />
+      <input
+        v-if="editingCell"
+        ref="editInputRef"
+        class="cell-editor"
+        :value="editValue"
+        :style="editInputStyle"
+        @input="onEditInput"
+        @keydown="onEditKd"
+        @blur="onEditBlur"
+      >
       <!-- 垂直滚动条 -->
-      <div class="v-scrollbar" v-if="maxScrollY > 0" :style="{ top: HEADER_HEIGHT + 'px', height: `calc(100% - ${HEADER_HEIGHT + SB_SIZE}px)` }">
-        <button class="sb-btn sb-btn--up" @mousedown.prevent="clampScroll(null, scrollY - 50); scheduleRender()" :title="t(locale, 'scrollUp')"><span class="sb-arrow sb-arrow--up" /></button>
-        <div class="sb-track sb-track--v" @mousedown="onVTrk">
-          <div class="sb-thumb sb-thumb--v" :style="{ top: vThumbT + 'px', height: vThumbH + 'px' }" @mousedown="onVStart" />
+      <div
+        v-if="maxScrollY > 0"
+        class="v-scrollbar"
+        :style="{ top: HEADER_HEIGHT + 'px', height: `calc(100% - ${HEADER_HEIGHT + SB_SIZE}px)` }"
+      >
+        <button
+          class="sb-btn sb-btn--up"
+          :title="t(locale, 'scrollUp')"
+          @mousedown.prevent="clampScroll(null, scrollY - 50); scheduleRender()"
+        >
+          <span class="sb-arrow sb-arrow--up" />
+        </button>
+        <div
+          class="sb-track sb-track--v"
+          @mousedown="onVTrk"
+        >
+          <div
+            class="sb-thumb sb-thumb--v"
+            :style="{ top: vThumbT + 'px', height: vThumbH + 'px' }"
+            @mousedown="onVStart"
+          />
         </div>
-        <button class="sb-btn sb-btn--down" @mousedown.prevent="clampScroll(null, scrollY + 50); scheduleRender()" :title="t(locale, 'scrollDown')"><span class="sb-arrow sb-arrow--down" /></button>
+        <button
+          class="sb-btn sb-btn--down"
+          :title="t(locale, 'scrollDown')"
+          @mousedown.prevent="clampScroll(null, scrollY + 50); scheduleRender()"
+        >
+          <span class="sb-arrow sb-arrow--down" />
+        </button>
       </div>
       <!-- 水平滚动条 -->
-      <div class="h-scrollbar" v-if="maxScrollX > 0" :style="{ left: HEADER_WIDTH + 'px', width: `calc(100% - ${HEADER_WIDTH + SB_SIZE}px)` }">
-        <button class="sb-btn sb-btn--left" @mousedown.prevent="clampScroll(scrollX - 50, null); scheduleRender()" :title="t(locale, 'scrollLeft')"><span class="sb-arrow sb-arrow--left" /></button>
-        <div class="sb-track sb-track--h" @mousedown="onHTrk">
-          <div class="sb-thumb sb-thumb--h" :style="{ left: hThumbL + 'px', width: hThumbW + 'px' }" @mousedown="onHStart" />
+      <div
+        v-if="maxScrollX > 0"
+        class="h-scrollbar"
+        :style="{ left: HEADER_WIDTH + 'px', width: `calc(100% - ${HEADER_WIDTH + SB_SIZE}px)` }"
+      >
+        <button
+          class="sb-btn sb-btn--left"
+          :title="t(locale, 'scrollLeft')"
+          @mousedown.prevent="clampScroll(scrollX - 50, null); scheduleRender()"
+        >
+          <span class="sb-arrow sb-arrow--left" />
+        </button>
+        <div
+          class="sb-track sb-track--h"
+          @mousedown="onHTrk"
+        >
+          <div
+            class="sb-thumb sb-thumb--h"
+            :style="{ left: hThumbL + 'px', width: hThumbW + 'px' }"
+            @mousedown="onHStart"
+          />
         </div>
-        <button class="sb-btn sb-btn--right" @mousedown.prevent="clampScroll(scrollX + 50, null); scheduleRender()" :title="t(locale, 'scrollRight')"><span class="sb-arrow sb-arrow--right" /></button>
+        <button
+          class="sb-btn sb-btn--right"
+          :title="t(locale, 'scrollRight')"
+          @mousedown.prevent="clampScroll(scrollX + 50, null); scheduleRender()"
+        >
+          <span class="sb-arrow sb-arrow--right" />
+        </button>
       </div>
-      <div class="sb-corner" v-if="maxScrollX > 0 && maxScrollY > 0" />
+      <div
+        v-if="maxScrollX > 0 && maxScrollY > 0"
+        class="sb-corner"
+      />
     </div>
 
     <!-- 右键菜单 -->
     <Teleport to="body">
-      <div v-if="ctxMenu" class="context-menu" :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }" @click.stop>
-        <template v-for="(item, i) in ctxMenu.items" :key="i">
-          <div class="context-menu__item" :class="{ 'context-menu__item--disabled': item.disabled }" @click="!item.disabled && item.action && (item.action(), ctxMenu = null)" @mouseenter="onCtxItemEnter($event, item)">
+      <div
+        v-if="ctxMenu"
+        class="context-menu"
+        :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }"
+        @click.stop
+      >
+        <template
+          v-for="(item, i) in ctxMenu.items"
+          :key="i"
+        >
+          <div
+            class="context-menu__item"
+            :class="{ 'context-menu__item--disabled': item.disabled }"
+            @click="!item.disabled && item.action && (item.action(), ctxMenu = null)"
+            @mouseenter="onCtxItemEnter($event, item)"
+          >
             <span class="context-menu__label">{{ item.label }}</span>
-            <span v-if="item.children" class="context-menu__arrow" />
-            <div v-if="item.children" class="context-submenu" :class="{ 'context-submenu--left': ctxSubmenuLeft }">
-              <div v-for="(child, j) in item.children" :key="j" class="context-menu__item" :class="{ 'context-menu__item--disabled': child.disabled }" @click.stop="!child.disabled && child.action && (child.action(), ctxMenu = null)">
+            <span
+              v-if="item.children"
+              class="context-menu__arrow"
+            />
+            <div
+              v-if="item.children"
+              class="context-submenu"
+              :class="{ 'context-submenu--left': ctxSubmenuLeft }"
+            >
+              <div
+                v-for="(child, j) in item.children"
+                :key="j"
+                class="context-menu__item"
+                :class="{ 'context-menu__item--disabled': child.disabled }"
+                @click.stop="!child.disabled && child.action && (child.action(), ctxMenu = null)"
+              >
                 {{ child.label }}
               </div>
             </div>
