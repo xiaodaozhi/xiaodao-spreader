@@ -2,6 +2,8 @@
 
 A Vue 3 spreadsheet component based on Canvas 2D, providing an Excel-like editing experience.
 
+![Preview](./img/preview.png)
+
 ## Quick Start
 
 ```bash
@@ -61,7 +63,7 @@ The key of `cells` is a `"col,row"` string format (e.g., `"0,0"` represents A1).
 - **Clipboard**: Ctrl+C/V/X copy, paste, cut (TSV format), formula references automatically offset
 - **Row/Column Operations**: Right-click menu to insert, delete, cut, copy, paste entire rows/columns
 - **Column Width/Row Height Dragging**: Drag header edges to resize
-- **Context Menu**: Independent context menus for cells, row/column headers, corner cell, and tab bar
+- **Context Menu**: Independent context menus for cells, row/column headers, corner cell, and tab bar; nested submenu support (e.g., Calculate → Sum)
 - **Theme**: Light / Dark dual theme
 - **Internationalization**: Chinese / English right-click menus
 - **Touch**: Swipe scrolling + double-tap to enter edit mode
