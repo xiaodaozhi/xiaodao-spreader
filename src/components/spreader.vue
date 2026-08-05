@@ -120,10 +120,10 @@ function clearCellsInRange(cS: number, cE: number, rS: number, rE: number) {
 }
 
 // ============ 编辑状态 ============
-function startEdit() {
+function startEdit(initialValue?: string) {
   if (!editingCell.value) {
     editingCell.value = { ...activeCell.value };
-    editValue.value = getCellRaw(activeCell.value.col, activeCell.value.row);
+    editValue.value = initialValue ?? getCellRaw(activeCell.value.col, activeCell.value.row);
   }
 }
 function commitEdit() {
@@ -407,11 +407,11 @@ function deleteCols(cS: number, cE: number) {
     for (let r = 0; r < rowCount; r++) {
       const sk = cellKey(c + dc, r), dk = cellKey(c, r);
       if (cells[sk]) {
-  cells[dk] = cells[sk]!;
-  delCell(sk);
-} else {
-  delCell(dk);
-}
+        cells[dk] = cells[sk]!;
+        delCell(sk);
+      } else {
+        delCell(dk);
+      }
     }
     colWidths.value[c] = colWidths.value[c + dc]!;
   }
@@ -549,9 +549,9 @@ function emitModelData() {
   });
   const js = JSON.stringify(out);
   if (js !== lastEmittedData) {
-      lastEmittedData = js;
-      modelData.value = out;
-    }
+    lastEmittedData = js;
+    modelData.value = out;
+  }
 }
 let pendingOptEmit = false;
 function scheduleOptEmit() {
@@ -581,6 +581,17 @@ function clampScroll(sx: number | null, sy: number | null) {
   const gh = Math.max(0, viewSize.h - HEADER_HEIGHT - SB_SIZE);
   scrollX.value = Math.max(0, Math.min(sx ?? scrollX.value, Math.max(0, totalWidth.value - gw)));
   scrollY.value = Math.max(0, Math.min(sy ?? scrollY.value, Math.max(0, totalHeight.value - gh)));
+}
+function focusEditInput(selectAllText = false) {
+  nextTick(() => {
+    const inp = editInputRef.value;
+    if (!inp) return;
+    inp.focus();
+    if (selectAllText) inp.select();
+  });
+}
+function onCanvasFocus() {
+  focusEditInput();
 }
 
 // ============ 渲染器 ============
@@ -655,9 +666,9 @@ function render() {
   for (let row = sR; row <= eR; row++) {
     for (let col = sC; col <= eC; col++) {
       const x = HW + cP[col]! - sx;
-        const y = HH + rP[row]! - sy;
-        const cw = cW[col]!;
-        const rh = rH[row]!;
+      const y = HH + rP[row]! - sy;
+      const cw = cW[col]!;
+      const rh = rH[row]!;
       if (x + cw < HW || y + rh < HH || x > W || y > H) continue;
       if (isSelected(col, row)) {
         rCtx.fillStyle = cs.selectionBg;
@@ -787,13 +798,13 @@ function onFormulaBarKeydown(e: KeyboardEvent) {
     ensureVisible(activeCell.value.col, activeCell.value.row);
     formulaBarRef.value?.blur();
     scheduleRender();
-    canvasRef.value?.focus();
+    focusEditInput();
   } else if (e.key === 'Escape') {
     e.preventDefault();
     cancelEdit();
     formulaBarRef.value?.blur();
     scheduleRender();
-    canvasRef.value?.focus();
+    focusEditInput();
   }
 }
 function onFormulaBarBlur() {
@@ -1108,13 +1119,21 @@ function onCellCtx(e: MouseEvent, c: number, r: number) {
 
 // ============ 编辑输入框 CSS ============
 const editInputStyle = computed(() => {
-  if (!editingCell.value) return { display: 'none' as const };
-  const c = editingCell.value.col, r = editingCell.value.row;
+  const hidden = !editingCell.value;
+  const pos = editingCell.value ?? activeCell.value;
+  const c = pos.col, r = pos.row;
   return {
     left: `${HEADER_WIDTH + colPositions.value[c]! - scrollX.value}px`,
     top: `${HEADER_HEIGHT + rowPositions.value[r]! - scrollY.value}px`,
     width: `${colWidths.value[c]!}px`,
     height: `${rowHeights.value[r]!}px`,
+    opacity: hidden ? 0 : 1,
+    pointerEvents: hidden ? 'none' as const : 'auto' as const,
+    color: hidden ? 'transparent' : undefined,
+    caretColor: hidden ? 'transparent' : undefined,
+    borderColor: hidden ? 'transparent' : undefined,
+    background: hidden ? 'transparent' : undefined,
+    boxShadow: hidden ? 'none' : undefined,
   };
 });
 
@@ -1223,6 +1242,7 @@ let ltR = -1;
 
 function onMouseDown(e: MouseEvent) {
   if (e.button !== 0) return;
+  e.preventDefault();
   ctxMenu.value = null;
   const p = getCanvasXY(e, canvasRef.value);
   if (p.y < HEADER_HEIGHT && p.x >= HEADER_WIDTH) {
@@ -1284,7 +1304,7 @@ function onMouseDown(e: MouseEvent) {
   isDragging = true;
   drgSC = c;
   drgSR = r;
-  canvasRef.value?.focus();
+  focusEditInput();
   scheduleRender();
 }
 function onMouseMove(e: MouseEvent) {
@@ -1392,7 +1412,7 @@ function onDblClick(e: MouseEvent) {
   ensureVisible(c, r);
   startEdit();
   scheduleRender();
-  nextTick(() => editInputRef.value?.focus());
+  focusEditInput();
 }
 function onWheel(e: WheelEvent) {
   clampScroll(scrollX.value + e.deltaX, scrollY.value + e.deltaY);
@@ -1445,7 +1465,7 @@ function onTouchEnd() {
       selectCell(tSC, tSR);
       startEdit();
       scheduleRender();
-      nextTick(() => editInputRef.value?.focus());
+      focusEditInput();
       ltT = 0;
     } else {
       commitEdit();
@@ -1455,11 +1475,17 @@ function onTouchEnd() {
     }
     ltC = tSC;
     ltR = tSR;
-    canvasRef.value?.focus();
+    focusEditInput();
   }
 }
 
 // 键盘
+function isImeKeydown(e: KeyboardEvent) {
+  return e.isComposing || e.key === 'Process' || e.keyCode === 229;
+}
+function isPlainPrintableKey(e: KeyboardEvent) {
+  return e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey;
+}
 function onKeydown(e: KeyboardEvent) {
   if (editingCell.value) return;
   const ctl = e.ctrlKey || e.metaKey, sh = e.shiftKey;
@@ -1558,7 +1584,7 @@ function onKeydown(e: KeyboardEvent) {
       ensureVisible(activeCell.value.col, activeCell.value.row);
       startEdit();
       scheduleRender();
-      nextTick(() => editInputRef.value?.focus());
+      focusEditInput();
       return;
     case e.key === 'Delete':
     case e.key === 'Backspace':
@@ -1572,11 +1598,17 @@ function onKeydown(e: KeyboardEvent) {
       cancelEdit();
       scheduleRender();
       return;
-    case e.key.length === 1 && !ctl:
+    case isPlainPrintableKey(e):
+      if (isImeKeydown(e)) {
+        ensureVisible(activeCell.value.col, activeCell.value.row);
+        startEdit('');
+        scheduleRender();
+        focusEditInput();
+        return;
+      }
       e.preventDefault();
       ensureVisible(activeCell.value.col, activeCell.value.row);
-      startEdit();
-      editValue.value = e.key;
+      startEdit(e.key);
       scheduleRender();
       nextTick(() => {
         const inp = editInputRef.value;
@@ -1590,29 +1622,61 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 // 编辑框
+let isEditComposing = false;
+let compositionJustEnded = false;
 function onEditInput(e: Event) {
+  const val = (e.target as HTMLInputElement).value;
+  if (!editingCell.value) {
+    ensureVisible(activeCell.value.col, activeCell.value.row);
+    startEdit(val);
+    scheduleRender();
+    return;
+  }
+  editValue.value = val;
+}
+function onEditCompositionStart() {
+  isEditComposing = true;
+  if (!editingCell.value) {
+    ensureVisible(activeCell.value.col, activeCell.value.row);
+    startEdit('');
+    scheduleRender();
+  }
+}
+function onEditCompositionEnd(e: CompositionEvent) {
+  isEditComposing = false;
+  compositionJustEnded = true;
+  setTimeout(() => {
+    compositionJustEnded = false;
+  }, 0);
   editValue.value = (e.target as HTMLInputElement).value;
 }
 function onEditKd(e: KeyboardEvent) {
+  if (!editingCell.value) {
+    if (isPlainPrintableKey(e) || isImeKeydown(e)) return;
+    onKeydown(e);
+    return;
+  }
+  if (isEditComposing || isImeKeydown(e)) return;
+  if (compositionJustEnded && (e.key === 'Enter' || e.key === 'Escape')) return;
   if (e.key === 'Enter') {
     e.preventDefault();
     commitEdit();
     moveActive(0, 1);
     ensureVisible(activeCell.value.col, activeCell.value.row);
     scheduleRender();
-    canvasRef.value?.focus();
+    focusEditInput();
   } else if (e.key === 'Tab') {
     e.preventDefault();
     commitEdit();
     moveActive(e.shiftKey ? -1 : 1, 0);
     ensureVisible(activeCell.value.col, activeCell.value.row);
     scheduleRender();
-    canvasRef.value?.focus();
+    focusEditInput();
   } else if (e.key === 'Escape') {
     e.preventDefault();
     cancelEdit();
     scheduleRender();
-    canvasRef.value?.focus();
+    focusEditInput();
   }
 }
 function onEditBlur() {
@@ -1648,6 +1712,7 @@ onMounted(() => {
   }
   nextTick(() => {
     applySize();
+    focusEditInput();
   });
   selectCell(0, 0);
   if (modelData.value && modelData.value.length > 0) {
@@ -1797,6 +1862,7 @@ onBeforeUnmount(() => {
         @mouseleave="onMouseLeave"
         @dblclick="onDblClick"
         @wheel.prevent="onWheel"
+        @focus="onCanvasFocus"
         @keydown="onKeydown"
         @contextmenu="onCanvasCtx"
         @touchstart.prevent="onTouchStart"
@@ -1804,13 +1870,14 @@ onBeforeUnmount(() => {
         @touchend="onTouchEnd"
       />
       <input
-        v-if="editingCell"
         ref="editInputRef"
         class="cell-editor"
         :value="editValue"
         :style="editInputStyle"
         @input="onEditInput"
         @keydown="onEditKd"
+        @compositionstart="onEditCompositionStart"
+        @compositionend="onEditCompositionEnd"
         @blur="onEditBlur"
       >
       <!-- 垂直滚动条 -->
