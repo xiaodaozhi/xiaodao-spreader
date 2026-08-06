@@ -582,10 +582,18 @@ function clampScroll(sx: number | null, sy: number | null) {
   scrollX.value = Math.max(0, Math.min(sx ?? scrollX.value, Math.max(0, totalWidth.value - gw)));
   scrollY.value = Math.max(0, Math.min(sy ?? scrollY.value, Math.max(0, totalHeight.value - gh)));
 }
+function canFocusHiddenEditor() {
+  if (typeof window === 'undefined') return false;
+  return !window.matchMedia?.('(hover: none) and (pointer: coarse)').matches;
+}
 function focusEditInput(selectAllText = false) {
   nextTick(() => {
     const inp = editInputRef.value;
     if (!inp) return;
+    if (!editingCell.value && !canFocusHiddenEditor()) {
+      if (document.activeElement === inp) inp.blur();
+      return;
+    }
     inp.focus();
     if (selectAllText) inp.select();
   });
