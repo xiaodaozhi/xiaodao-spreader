@@ -30,13 +30,13 @@ xiaodao-spread/
     ├── App.vue                         # Root component, flex full-height container
     ├── vite-env.d.ts
     └── components/
-        ├── spreader.vue                # Main component (Canvas rendering + all interaction logic)
         └── spreader/
+            ├── spreader.vue            # Main component (Canvas rendering + all interaction logic)
             ├── constants.ts            # Layout constants, i18n text, theme color palette
-            ├── types.ts               # All type definitions
+            ├── types.ts                # All type definitions
             ├── formula.ts              # Formula engine (parsing, evaluation, dependency tracking)
-            ├── theme.ts               # Theme CSS variable construction
-            └── utils.ts               # Pure utility functions (column label conversion, hit testing, etc.)
+            ├── theme.ts                # Theme CSS variable construction
+            └── utils.ts                # Pure utility functions (column label conversion, hit testing, etc.)
 ```
 
 **Dependency Direction**: `App.vue → spreader.vue → spreader/*.ts`
