@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue';
-import { HEADER_HEIGHT, HEADER_WIDTH, SB_SIZE, DEFAULT_COL_WIDTH, DEFAULT_ROW_HEIGHT, UNDO_MAX, t, lightTheme, darkTheme  } from './spreader/constants';
-import { colToLabel, resolveSize, writeClipboardText, getCanvasXY } from './spreader/utils';
-import { FormulaDeps, parseFormulaRefs, clearEvalCache, computeCellValue, shiftFormulaRefs } from './spreader/formula';
-import { buildOuterStyle } from './spreader/theme';
-import type { CellCoord, CellData, SelectionRange, SheetState, SheetModelData, ContextMenuItem } from './spreader/types';
+import { HEADER_HEIGHT, HEADER_WIDTH, SB_SIZE, DEFAULT_COL_WIDTH, DEFAULT_ROW_HEIGHT, UNDO_MAX, t, lightTheme, darkTheme  } from './constants';
+import { colToLabel, resolveSize, writeClipboardText, getCanvasXY } from './utils';
+import { FormulaDeps, parseFormulaRefs, clearEvalCache, computeCellValue, shiftFormulaRefs } from './formula';
+import { buildOuterStyle } from './theme';
+import type { CellCoord, CellData, SelectionRange, SheetState, SheetModelData, ContextMenuItem } from './types';
 
 // ============ Props ============
 const props = withDefaults(defineProps<{

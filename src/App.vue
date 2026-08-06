@@ -1,6 +1,6 @@
 <template>
   <div class="app-container">
-    <SpreadsheetCanvas
+    <Spreadsheet
       v-model:data="myData"
     />
   </div>
@@ -8,7 +8,7 @@
 
 <script setup lang="ts">
 import { ref, watch } from 'vue'
-import SpreadsheetCanvas from './components/spreader.vue'
+import Spreadsheet from './components/spreader/spreader.vue'
 
 interface SheetModelData {
   name: string

@@ -15,12 +15,12 @@ pnpm dev
 
 ```vue
 <template>
-  <Spreader v-model:data="myData" />
+  <Spreadsheet v-model:data="myData" />
 </template>
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import Spreader from './components/spreader.vue'
+import Spreadsheet from './components/spreader/spreader.vue'
 
 const myData = ref([])
 </script>
