@@ -1,21 +1,53 @@
 {
-  "name": "xiaodao-spread",
-  "private": true,
-  "version": "1.0.0",
+  "name": "xiaodao-spreader",
+  "version": "0.1.0",
+  "description": "A Vue 3 component for spreading sheets",
   "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "vue",
+    "canvas",
+    "spreader",
+    "sheet"
+  ],
+  "files": [
+    "dist"
+  ],
+  "main": "./dist/xiaodao-spreader.umd.js",
+  "module": "./dist/xiaodao-spreader.es.js",
+  "types": "./dist/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/xiaodao-spreader.es.js",
+      "require": "./dist/xiaodao-spreader.umd.js"
+    }
+  },
+  "sideEffects": false,
   "scripts": {
     "dev": "vite",
-    "build": "vue-tsc --noEmit && vite build",
+    "build": "vue-tsc --noEmit && vite build && vue-tsc -p tsconfig.build.json",
     "preview": "vite preview",
-    "type-check": "vue-tsc --noEmit"
+    "type-check": "vue-tsc --noEmit",
+    "prepublishOnly": "npm run build"
   },
-  "dependencies": {
+  "peerDependencies": {
     "vue": "^3.4.0"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.0.0",
+    "@types/node": "^20.0.0",
     "typescript": "~5.4.0",
     "vite": "^5.0.0",
+    "vue": "^3.4.0",
     "vue-tsc": "^2.2.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xiaodaozhi/xiaodao-spreader.git"
   }
 }
