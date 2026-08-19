@@ -52,5 +52,11 @@ export function buildOuterStyle(
   style['--sp-scroll-btn-hover-bg'] = colors.scrollBtnHoverBg;
   style['--sp-scroll-btn-active-bg'] = colors.scrollBtnActiveBg;
   style['--sp-scroll-track-bg'] = colors.scrollTrackBg;
+  style['--sp-toolbar-bg'] = colors.toolbarBg;
+  style['--sp-toolbar-border'] = colors.toolbarBorder;
+  style['--sp-toolbar-btn-color'] = colors.toolbarBtnColor;
+  style['--sp-toolbar-btn-hover-bg'] = colors.toolbarBtnHoverBg;
+  style['--sp-toolbar-btn-disabled-color'] = colors.toolbarBtnDisabledColor;
+  style['--sp-toolbar-btn-active-color'] = colors.toolbarBtnActiveColor;
   return style;
 }

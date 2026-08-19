@@ -128,6 +128,7 @@ function startEdit(initialValue?: string) {
 }
 function commitEdit() {
   if (editingCell.value) {
+    saveUndo();
     setCellValue(editingCell.value.col, editingCell.value.row, editValue.value);
     editingCell.value = null;
     editValue.value = '';
@@ -186,21 +187,34 @@ function hitRow(y: number) {
 }
 
 // ============ 撤销/重做 ============
-interface UndoSnap { cells: Record<string, CellData>; colWidths: number[]; rowHeights: number[] }
+interface UndoSnap {
+  sheets: SheetState[];
+  activeSheetIndex: number;
+}
 const undoStack = ref<UndoSnap[]>([]);
 const redoStack = ref<UndoSnap[]>([]);
+function cloneCells(src: Record<string, CellData>): Record<string, CellData> {
+  const o: Record<string, CellData> = {};
+  for (const [k, v] of Object.entries(src)) o[k] = { value: v.value, style: v.style };
+  return o;
+}
 function takeSnap(): UndoSnap {
-  const s: Record<string, CellData> = {};
-  for (const [k, v] of Object.entries(cells)) {
-    s[k] = { value: v.value, style: v.style };
-  }
-  return { cells: s, colWidths: [...colWidths.value], rowHeights: [...rowHeights.value] };
+  saveSheet();
+  return {
+    sheets: sheets.value.map((s) => ({
+      id: s.id, name: s.name,
+      cells: cloneCells(s.cells),
+      selection: s.selection ? { ...s.selection } : null,
+      activeCell: s.activeCell ? { ...s.activeCell } : { col: 0, row: 0 },
+      scrollX: s.scrollX, scrollY: s.scrollY,
+      colWidths: [...s.colWidths], rowHeights: [...s.rowHeights],
+    })),
+    activeSheetIndex: activeSheetIndex.value,
+  };
 }
 function restoreSnap(s: UndoSnap) {
-  Object.keys(cells).forEach((k) => delCell(k));
-  Object.assign(cells, s.cells);
-  colWidths.value = s.colWidths;
-  rowHeights.value = s.rowHeights;
+  sheets.value = s.sheets.map((x) => ({ ...x, cells: cloneCells(x.cells) }));
+  loadSheet(Math.max(0, Math.min(s.activeSheetIndex, sheets.value.length - 1)));
   formulaDeps.rebuild(cells, colCount, rowCount);
 }
 function saveUndo() {
@@ -215,15 +229,67 @@ function undo() {
   if (!undoStack.value.length) return;
   redoStack.value.push(takeSnap());
   restoreSnap(undoStack.value.pop()!);
-  selection.value = null;
   scheduleRender();
+  nextTick(emitModelData);
 }
 function redo() {
   if (!redoStack.value.length) return;
   undoStack.value.push(takeSnap());
   restoreSnap(redoStack.value.pop()!);
-  selection.value = null;
   scheduleRender();
+  nextTick(emitModelData);
+}
+
+// ============ 工具栏：格式刷 / 清除格式 ============
+const canUndo = computed(() => undoStack.value.length > 0);
+const canRedo = computed(() => redoStack.value.length > 0);
+const hasSelection = computed(() => !!selection.value);
+
+/** 格式刷：记录源区域各单元格样式（按相对位置） */
+const paintFmt = ref<{ styles: Record<string, Record<string, unknown> | null> } | null>(null);
+function onPaintFormat() {
+  const sel = selection.value;
+  if (!sel) return;
+  const styles: Record<string, Record<string, unknown> | null> = {};
+  for (let c = sel.startCol; c <= sel.endCol; c++) {
+    for (let r = sel.startRow; r <= sel.endRow; r++) {
+      styles[`${c - sel.startCol},${r - sel.startRow}`] = cells[cellKey(c, r)]?.style ?? null;
+    }
+  }
+  paintFmt.value = { styles };
+}
+function applyPaintFormat() {
+  const pf = paintFmt.value;
+  const sel = selection.value;
+  if (!pf || !sel) return;
+  saveUndo();
+  for (let c = sel.startCol; c <= sel.endCol; c++) {
+    for (let r = sel.startRow; r <= sel.endRow; r++) {
+      const st = pf.styles[`${c - sel.startCol},${r - sel.startRow}`] ?? null;
+      const k = cellKey(c, r);
+      const val = cells[k]?.value ?? '';
+      if (val === '' && st === null) delCell(k);
+      else cells[k] = { value: val, style: st };
+    }
+  }
+  paintFmt.value = null;
+  scheduleRender();
+  emitModelData();
+}
+function clearFormat() {
+  const sel = selection.value;
+  if (!sel) return;
+  saveUndo();
+  for (let c = sel.startCol; c <= sel.endCol; c++) {
+    for (let r = sel.startRow; r <= sel.endRow; r++) {
+      const k = cellKey(c, r);
+      const val = cells[k]?.value ?? '';
+      if (val === '') delCell(k);
+      else cells[k] = { value: val, style: null };
+    }
+  }
+  scheduleRender();
+  emitModelData();
 }
 
 // ============ 剪贴板 ============
@@ -470,6 +536,7 @@ function switchSheet(i: number) {
   loadSheet(i);
 }
 function addSheet(n?: string) {
+  saveUndo();
   cancelEdit();
   saveSheet();
   sheets.value.push(mkSheet(n ?? `Sheet${sheets.value.length + 1}`));
@@ -478,15 +545,20 @@ function addSheet(n?: string) {
 }
 function removeSheet(i: number) {
   if (sheets.value.length <= 1) return activeSheetIndex.value;
+  saveUndo();
   cancelEdit();
   sheets.value.splice(i, 1);
   loadSheet(Math.min(i, sheets.value.length - 1));
   return activeSheetIndex.value;
 }
 function renameSheet(i: number, n: string) {
-  if (sheets.value[i] && n.trim()) sheets.value[i]!.name = n.trim();
+  if (sheets.value[i] && n.trim()) {
+    saveUndo();
+    sheets.value[i]!.name = n.trim();
+  }
 }
 function dupSheet(i: number) {
+  saveUndo();
   cancelEdit();
   saveSheet();
   const src = sheets.value[i];
@@ -515,6 +587,7 @@ function dupSheet(i: number) {
 function moveSheet(i: number, d: number) {
   const ni = i + d;
   if (ni < 0 || ni >= sheets.value.length) return;
+  saveUndo();
   const cur = activeSheetIndex.value;
   const s = sheets.value.splice(i, 1)[0]!;
   sheets.value.splice(ni, 0, s);
@@ -1257,6 +1330,7 @@ function onMouseDown(e: MouseEvent) {
     const gx = p.x - HEADER_WIDTH + scrollX.value;
     const c = hitCol(gx);
     if (c >= 0 && Math.abs(p.x - (HEADER_WIDTH + colPositions.value[c + 1]! - scrollX.value)) <= 4) {
+      saveUndo();
       isResizingC = true;
       rszTC = c;
       rszSS = colWidths.value[c]!;
@@ -1269,6 +1343,7 @@ function onMouseDown(e: MouseEvent) {
     const gy = p.y - HEADER_HEIGHT + scrollY.value;
     const r = hitRow(gy);
     if (r >= 0 && Math.abs(p.y - (HEADER_HEIGHT + rowPositions.value[r + 1]! - scrollY.value)) <= 4) {
+      saveUndo();
       isResizingR = true;
       rszTR = r;
       rszSS = rowHeights.value[r]!;
@@ -1278,6 +1353,7 @@ function onMouseDown(e: MouseEvent) {
     }
   }
   if (p.x < HEADER_WIDTH || p.y < HEADER_HEIGHT) {
+    commitEdit();
     if (p.y < HEADER_HEIGHT && p.x >= HEADER_WIDTH) {
       const c = hitCol(p.x - HEADER_WIDTH + scrollX.value);
       if (c >= 0) {
@@ -1375,12 +1451,17 @@ function onMouseMove(e: MouseEvent) {
   }
   scheduleRender();
 }
-function onMouseUp() {
+function onMouseUp(e: MouseEvent) {
   const w = isResizingC || isResizingR;
   isDragging = false;
   isResizingC = false;
   isResizingR = false;
   if (w) scheduleOptEmit();
+  // 格式刷：在单元格区域松开时应用格式
+  if (paintFmt.value) {
+    const p = getCanvasXY(e, canvasRef.value);
+    if (p.x >= HEADER_WIDTH && p.y >= HEADER_HEIGHT) applyPaintFormat();
+  }
 }
 function onMouseLeave() {
   const w = isResizingC || isResizingR;
@@ -1604,6 +1685,7 @@ function onKeydown(e: KeyboardEvent) {
     case e.key === 'Escape':
       e.preventDefault();
       cancelEdit();
+      paintFmt.value = null;
       scheduleRender();
       return;
     case isPlainPrintableKey(e):
@@ -1798,45 +1880,67 @@ onBeforeUnmount(() => {
     class="spreadsheet-outer"
     :style="outerStyle"
   >
-    <!-- Sheet 标签栏 -->
-    <div
-      class="tab-bar"
-      @contextmenu="onTabBarCtx"
-    >
-      <div class="tab-list">
-        <template
-          v-for="(s, i) in sheets"
-          :key="s.id"
-        >
-          <div
-            class="tab-item"
-            :class="{ 'tab-item--active': i === activeSheetIndex }"
-            @click="onTabClick(i)"
-            @dblclick.prevent="onTabDblClick(i)"
-            @contextmenu="onTabCtxMenu($event, i)"
-          >
-            <template v-if="renTab === i">
-              <input
-                class="tab-rename-input"
-                :value="renTabVal"
-                @input="renTabVal = ($event.target as HTMLInputElement).value"
-                @keydown="onTabRenameKd"
-                @blur="commitTabRename"
-                @click.stop
-              >
-            </template>
-            <template v-else>
-              <span class="tab-item__name">{{ s.name }}</span>
-            </template>
-          </div>
-        </template>
-      </div>
+    <!-- 工具栏 -->
+    <div class="toolbar">
       <button
-        class="tab-bar__add-btn"
-        :title="t(locale, 'addSheet')"
-        @click="addSheet(); scheduleRender()"
+        class="toolbar-btn"
+        :class="{ 'toolbar-btn--disabled': !canUndo }"
+        :title="t(locale, 'undo')"
+        :disabled="!canUndo"
+        @click="undo()"
       >
-        +
+        <svg
+          class="toolbar-btn__icon"
+          viewBox="0 0 1024 1024"
+          fill="currentColor"
+        >
+          <path d="M596.16 284.064H258.56l101.376-101.44a31.968 31.968 0 1 0-45.248-45.216L178.56 273.504c-11.904 11.872-18.496 27.84-18.56 44.8a63.04 63.04 0 0 0 18.56 45.28l136.128 136.16a31.904 31.904 0 0 0 45.248 0 31.968 31.968 0 0 0 0-45.248l-106.752-106.496H596.16c114.88 0 208.32 93.312 208.32 208s-93.44 208-208.32 208h-223.36a32 32 0 0 0 0 64h223.36c150.144 0 272.32-122.016 272.32-272 0-149.984-122.176-272-272.32-272" />
+        </svg>
+      </button>
+      <button
+        class="toolbar-btn"
+        :class="{ 'toolbar-btn--disabled': !canRedo }"
+        :title="t(locale, 'redo')"
+        :disabled="!canRedo"
+        @click="redo()"
+      >
+        <svg
+          class="toolbar-btn__icon"
+          viewBox="0 0 1024 1024"
+          fill="currentColor"
+        >
+          <path transform="translate(1024, 0) scale(-1, 1)" d="M596.16 284.064H258.56l101.376-101.44a31.968 31.968 0 1 0-45.248-45.216L178.56 273.504c-11.904 11.872-18.496 27.84-18.56 44.8a63.04 63.04 0 0 0 18.56 45.28l136.128 136.16a31.904 31.904 0 0 0 45.248 0 31.968 31.968 0 0 0 0-45.248l-106.752-106.496H596.16c114.88 0 208.32 93.312 208.32 208s-93.44 208-208.32 208h-223.36a32 32 0 0 0 0 64h223.36c150.144 0 272.32-122.016 272.32-272 0-149.984-122.176-272-272.32-272" />
+        </svg>
+      </button>
+      <button
+        class="toolbar-btn"
+        :class="{ 'toolbar-btn--active': paintFmt !== null }"
+        :title="t(locale, 'paintFormat')"
+        :disabled="!hasSelection"
+        @click="onPaintFormat"
+      >
+        <svg
+          class="toolbar-btn__icon"
+          viewBox="0 0 1024 1024"
+          fill="currentColor"
+        >
+          <path d="M722.285714 438.857143a36.571429 36.571429 0 0 1-36.571428 36.571428h-512a36.571429 36.571429 0 0 1-36.571429-36.571428V164.571429a36.571429 36.571429 0 0 1 36.571429-36.571429h512a36.571429 36.571429 0 0 1 36.571428 36.571429V256h128a36.571429 36.571429 0 0 1 36.571429 36.571429v294.4a36.571429 36.571429 0 0 1-31.890286 36.278857L448 675.766857V859.428571a36.571429 36.571429 0 0 1-32.292571 36.315429l-4.278858 0.256a36.571429 36.571429 0 0 1-36.571428-36.571429v-215.771428a36.571429 36.571429 0 0 1 31.890286-36.278857l406.966857-52.553143V329.142857h-91.428572v109.714286z m-73.142857-237.714286h-438.857143V402.285714h438.857143V201.142857z" />
+        </svg>
+      </button>
+      <button
+        class="toolbar-btn"
+        :class="{ 'toolbar-btn--disabled': !hasSelection }"
+        :title="t(locale, 'clearFormat')"
+        :disabled="!hasSelection"
+        @click="clearFormat()"
+      >
+        <svg
+          class="toolbar-btn__icon"
+          viewBox="0 0 1024 1024"
+          fill="currentColor"
+        >
+          <path d="M672.748 105.674c-3.666-3.799-8.778-5.949-14.125-5.949-5.341 0-10.459 2.15-14.119 5.949L10.418 754.633c-7.789 8.163-7.789 20.798 0 28.967l123.353 126.213c7.782 7.979 23.113 14.461 34.111 14.461h395.042c12.774-0.742 24.882-5.854 34.162-14.461l416.525-426.362c7.751-8.163 7.751-20.76 0-28.916l-340.92-348.861h0.057zM557.85 832.801c-9.273 8.582-21.343 13.707-34.111 14.461H217.888c-12.781-0.742-24.882-5.867-34.162-14.461l-58.074-59.482c-7.782-8.163-7.782-20.804 0-28.967l232.333-237.87c3.666-3.799 8.778-5.949 14.125-5.949s10.453 2.15 14.119 5.949l231.102 236.551c7.744 8.157 7.744 20.753 0 28.916l-59.539 60.909 0.058-0.057z m0 0" />
+        </svg>
       </button>
     </div>
 
@@ -1956,6 +2060,48 @@ onBeforeUnmount(() => {
       />
     </div>
 
+    <!-- Sheet 标签栏 -->
+    <div
+      class="tab-bar"
+      @contextmenu="onTabBarCtx"
+    >
+      <div class="tab-list">
+        <template
+          v-for="(s, i) in sheets"
+          :key="s.id"
+        >
+          <div
+            class="tab-item"
+            :class="{ 'tab-item--active': i === activeSheetIndex }"
+            @click="onTabClick(i)"
+            @dblclick.prevent="onTabDblClick(i)"
+            @contextmenu="onTabCtxMenu($event, i)"
+          >
+            <template v-if="renTab === i">
+              <input
+                class="tab-rename-input"
+                :value="renTabVal"
+                @input="renTabVal = ($event.target as HTMLInputElement).value"
+                @keydown="onTabRenameKd"
+                @blur="commitTabRename"
+                @click.stop
+              >
+            </template>
+            <template v-else>
+              <span class="tab-item__name">{{ s.name }}</span>
+            </template>
+          </div>
+        </template>
+      </div>
+      <button
+        class="tab-bar__add-btn"
+        :title="t(locale, 'addSheet')"
+        @click="addSheet(); scheduleRender()"
+      >
+        +
+      </button>
+    </div>
+
     <!-- 右键菜单 -->
     <Teleport to="body">
       <div
@@ -2004,18 +2150,25 @@ onBeforeUnmount(() => {
 <style scoped>
 .spreadsheet-outer { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 .formula-bar { display: flex; align-items: start; height: 32px; min-height: 32px; padding: 0; gap: 0; }
+.toolbar { display: flex; align-items: center; height: 32px; min-height: 32px; gap: 2px; padding: 0 6px; background: var(--sp-toolbar-bg); border-bottom: 1px solid var(--sp-toolbar-border); user-select: none; }
+.toolbar-btn { display: flex; align-items: center; justify-content: center; width: 30px; height: 26px; border: none; border-radius: 3px; background: transparent; color: var(--sp-toolbar-btn-color); cursor: pointer; padding: 0; }
+.toolbar-btn:hover:not(:disabled) { background: var(--sp-toolbar-btn-hover-bg); }
+.toolbar-btn:active:not(:disabled) { opacity: 0.7; }
+.toolbar-btn--active { background: var(--sp-toolbar-btn-hover-bg); color: var(--sp-toolbar-btn-active-color); }
+.toolbar-btn:disabled { color: var(--sp-toolbar-btn-disabled-color); cursor: default; }
+.toolbar-btn__icon { width: 18px; height: 18px; }
 .formula-bar__cell-label { width: 48px; min-width: 48px; height: 28px; line-height: 28px; text-align: center; font-size: 12px; font-weight: 600; color: var(--sp-formula-bar-label-color); background: var(--sp-formula-bar-label-bg); border: 1px solid var(--sp-formula-bar-label-border); border-radius: 2px; user-select: none; }
 .formula-bar__input { flex: 1; height: 28px; border: 1px solid var(--sp-formula-bar-input-border); border-radius: 2px; outline: none; padding: 0 6px; margin-left: 4px; font-size: 13px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; color: var(--sp-formula-bar-input-color); background: var(--sp-formula-bar-input-bg); }
 .formula-bar__input:focus { border-color: var(--sp-formula-bar-input-focus-border); box-shadow: 0 0 0 1px var(--sp-formula-bar-input-focus-shadow); }
-.tab-bar { display: flex; align-items: stretch; height: 30px; min-height: 30px; background: var(--sp-tab-bar-bg); border-bottom: 1px solid var(--sp-tab-bar-border); user-select: none; margin-bottom: 4px; }
-.tab-list { display: flex; align-items: flex-end; flex: 1; overflow: hidden; gap: 1px; padding: 0 1px; }
+.tab-bar { display: flex; align-items: stretch; height: 30px; min-height: 30px; background: var(--sp-tab-bar-bg); border-top: 1px solid var(--sp-tab-bar-border); user-select: none; margin-top: 4px; }
+.tab-list { display: flex; align-items: flex-start; flex: 1; overflow: hidden; gap: 1px; padding: 0 1px; }
 .tab-item { display: flex; align-items: center; height: 28px; min-width: 0; max-width: 120px; padding: 0 10px; cursor: pointer; border: 1px solid var(--sp-tab-inactive-border); background: var(--sp-tab-inactive-bg); color: var(--sp-tab-inactive-color); font-size: 14px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; white-space: nowrap; transition: background 0.1s; }
 .tab-item:hover { background: var(--sp-tab-hover-bg); }
-.tab-item--active { height: 28px; background: var(--sp-tab-active-bg); color: var(--sp-tab-active-color); border-color: var(--sp-tab-bar-border) var(--sp-tab-bar-border) var(--sp-tab-active-bg); border-bottom: 2px solid var(--sp-tab-active-border); font-size: 16px; }
+.tab-item--active { height: 28px; background: var(--sp-tab-active-bg); color: var(--sp-tab-active-color); border-color: var(--sp-tab-active-bg) var(--sp-tab-bar-border) var(--sp-tab-bar-border); border-top: 2px solid var(--sp-tab-active-border); font-size: 16px; }
 .tab-item--active:hover { background: var(--sp-tab-active-bg); }
 .tab-item__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tab-rename-input { width: 100%; height: 18px; border: none; border-radius: 0; outline: none; padding: 0; font-size: 16px; font-family: inherit; background: var(--sp-tab-active-bg); color: var(--sp-tab-active-color); box-sizing: border-box; }
-.tab-bar__add-btn { width: 24px; min-width: 24px; height: 24px; margin: 3px 4px 0 3px; border: none; background: transparent; color: var(--sp-tab-add-btn-color); font-size: 16px; line-height: 22px; text-align: center; cursor: pointer; padding: 0; }
+.tab-bar__add-btn { width: 24px; min-width: 24px; height: 24px; margin: 0 4px 3px 3px; border: none; background: transparent; color: var(--sp-tab-add-btn-color); font-size: 16px; line-height: 22px; text-align: center; cursor: pointer; padding: 0; }
 .tab-bar__add-btn:hover { background: var(--sp-tab-add-btn-hover-bg); }
 .spreadsheet-wrapper { flex: 1; position: relative; overflow: hidden; background: var(--sp-wrapper-bg); }
 .grid-canvas { position: absolute; top: 0; left: 0; display: block; outline: none; cursor: cell; }

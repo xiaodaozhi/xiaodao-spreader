@@ -113,6 +113,12 @@ export interface ThemeColors {
   scrollBtnHoverBg: string;
   scrollBtnActiveBg: string;
   scrollTrackBg: string;
+  toolbarBg: string;
+  toolbarBorder: string;
+  toolbarBtnColor: string;
+  toolbarBtnHoverBg: string;
+  toolbarBtnDisabledColor: string;
+  toolbarBtnActiveColor: string;
 }
 
 export interface Point {

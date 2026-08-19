@@ -36,6 +36,10 @@ export const i18n: Record<string, Record<string, string>> = {
     scrollRight: '向右滚动',
     calculate: '计算',
     sum: '求和',
+    undo: '撤销',
+    redo: '重做',
+    paintFormat: '格式刷',
+    clearFormat: '清除格式',
   },
   'en-US': {
     insert: 'Insert',
@@ -55,6 +59,10 @@ export const i18n: Record<string, Record<string, string>> = {
     scrollRight: 'Scroll right',
     calculate: 'Calculate',
     sum: 'Sum',
+    undo: 'Undo',
+    redo: 'Redo',
+    paintFormat: 'Paint Format',
+    clearFormat: 'Clear Format',
   },
 };
 
@@ -112,6 +120,12 @@ export const lightTheme: ThemeColors = {
   scrollBtnHoverBg: '#d0d0d0',
   scrollBtnActiveBg: '#c0c0c0',
   scrollTrackBg: 'rgba(0,0,0,0.06)',
+  toolbarBg: '#f7f7f7',
+  toolbarBorder: '#d8d8d8',
+  toolbarBtnColor: '#444',
+  toolbarBtnHoverBg: '#e6e6e6',
+  toolbarBtnDisabledColor: '#b0b0b0',
+  toolbarBtnActiveColor: '#0078d7',
 };
 
 export const darkTheme: ThemeColors = {
@@ -163,4 +177,10 @@ export const darkTheme: ThemeColors = {
   scrollBtnHoverBg: '#3d3d3d',
   scrollBtnActiveBg: '#4d4d4d',
   scrollTrackBg: 'rgba(255,255,255,0.05)',
+  toolbarBg: '#2a2a2a',
+  toolbarBorder: '#3e3e3e',
+  toolbarBtnColor: '#ccc',
+  toolbarBtnHoverBg: '#3a3a3a',
+  toolbarBtnDisabledColor: '#666',
+  toolbarBtnActiveColor: '#4ea1ff',
 };
