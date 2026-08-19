@@ -2763,9 +2763,9 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .spreadsheet-outer { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-.formula-bar { display: flex; align-items: start; height: 32px; min-height: 32px; padding: 0; gap: 0; }
-.formula-bar__cell-label { width: 48px; min-width: 48px; height: 28px; line-height: 28px; text-align: center; font-size: 12px; font-weight: 600; color: var(--sp-formula-bar-label-color); background: var(--sp-formula-bar-label-bg); border: 1px solid var(--sp-formula-bar-label-border); border-radius: 2px; user-select: none; }
-.formula-bar__input { flex: 1; height: 28px; border: 1px solid var(--sp-formula-bar-input-border); border-radius: 2px; outline: none; padding: 0 6px; margin-left: 4px; font-size: 13px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; color: var(--sp-formula-bar-input-color); background: var(--sp-formula-bar-input-bg); }
+.formula-bar { display: flex; align-items: start; height: 36px; min-height: 36px; padding: 0; gap: 0; }
+.formula-bar__cell-label { width: 48px; min-width: 48px; height: 28px; line-height: 28px; margin-top: 4px; text-align: center; font-size: 12px; font-weight: 600; color: var(--sp-formula-bar-label-color); background: var(--sp-formula-bar-label-bg); border: 1px solid var(--sp-formula-bar-label-border); border-radius: 2px; user-select: none; }
+.formula-bar__input { flex: 1; height: 28px; margin-top: 4px; border: 1px solid var(--sp-formula-bar-input-border); border-radius: 2px; outline: none; padding: 0 6px; margin-left: 4px; font-size: 13px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; color: var(--sp-formula-bar-input-color); background: var(--sp-formula-bar-input-bg); }
 .formula-bar__input:focus { border-color: var(--sp-formula-bar-input-focus-border); box-shadow: 0 0 0 1px var(--sp-formula-bar-input-focus-shadow); }
 .spreadsheet-wrapper { flex: 1; position: relative; overflow: hidden; background: var(--sp-wrapper-bg); }
 .grid-canvas { position: absolute; top: 0; left: 0; display: block; outline: none; cursor: cell; }
