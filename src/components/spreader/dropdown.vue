@@ -168,6 +168,7 @@ onBeforeUnmount(() => {
       </svg>
     </button>
     <Teleport to="body">
+      <Transition name="menu-pop">
       <div
         v-if="open"
         ref="menuRef"
@@ -211,6 +212,7 @@ onBeforeUnmount(() => {
           <svg viewBox="0 0 1024 1024" fill="currentColor"><path d="M180.053333 361.386667a32 32 0 0 1 45.226667 0L512 648.106667l286.72-286.72a32 32 0 1 1 45.226667 45.226666l-309.333334 309.333334a32 32 0 0 1-45.226666 0L180.053333 406.613333a32 32 0 0 1 0-45.226666z" /></svg>
         </button>
       </div>
+      </Transition>
     </Teleport>
   </div>
 </template>
@@ -269,7 +271,11 @@ onBeforeUnmount(() => {
   padding: 4px 0;
   box-sizing: border-box;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+  transform-origin: top center;
 }
+.sp-dropdown__menu--up { transform-origin: bottom center; }
+.menu-pop-enter-active, .menu-pop-leave-active { transition: opacity 0.12s ease-out, transform 0.12s ease-out; }
+.menu-pop-enter-from, .menu-pop-leave-to { opacity: 0; transform: scaleY(0.85); }
 .sp-dropdown__nav {
   display: flex;
   align-items: center;

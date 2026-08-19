@@ -2486,6 +2486,7 @@ onBeforeUnmount(() => {
 
     <!-- 右键菜单 -->
     <Teleport to="body">
+      <Transition name="menu-pop">
       <div
         v-if="ctxMenu"
         class="context-menu"
@@ -2525,10 +2526,12 @@ onBeforeUnmount(() => {
           </div>
         </template>
       </div>
+      </Transition>
     </Teleport>
 
     <!-- 行高/列宽浮动设置栏 -->
     <Teleport to="body">
+      <Transition name="menu-pop">
       <div
         v-if="dimPanel"
         class="dim-panel"
@@ -2575,6 +2578,7 @@ onBeforeUnmount(() => {
           </button>
         </div>
       </div>
+      </Transition>
     </Teleport>
   </div>
 </template>
@@ -2610,7 +2614,7 @@ onBeforeUnmount(() => {
 </style>
 
 <style>
-.context-menu { position: fixed; z-index: 10000; background: #fff; border: 1px solid #ccc; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); padding: 4px 0; min-width: 120px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; font-size: 13px; }
+.context-menu { position: fixed; z-index: 10000; background: #fff; border: 1px solid #ccc; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); padding: 4px 0; min-width: 120px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; font-size: 13px; transform-origin: top left; }
 .context-menu__item { padding: 6px 20px; cursor: pointer; color: #333; white-space: nowrap; position: relative; display: flex; align-items: center; justify-content: space-between; }
 .context-menu__item:hover { background: #e8f0fe; }
 .context-menu__item--disabled { color: #bbb; cursor: default; }
@@ -2620,9 +2624,11 @@ onBeforeUnmount(() => {
 .context-submenu--left { left: auto; right: 100%; }
 .context-menu__item:hover > .context-submenu { display: block; }
 .context-submenu .context-menu__item { justify-content: flex-start; }
+.menu-pop-enter-active, .menu-pop-leave-active { transition: opacity 0.12s ease-out, transform 0.12s ease-out; }
+.menu-pop-enter-from, .menu-pop-leave-to { opacity: 0; transform: scale(0.9); }
 
 /* 行高/列宽浮动设置栏 */
-.dim-panel { position: fixed; z-index: 10002; width: 220px; background: #fff; border: 1px solid #ccc; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); padding: 10px 12px; box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; user-select: none; }
+.dim-panel { position: fixed; z-index: 10002; width: 220px; background: #fff; border: 1px solid #ccc; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); padding: 10px 12px; box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; user-select: none; transform-origin: top left; }
 .dim-panel__title { font-size: 13px; font-weight: 600; color: #333; margin-bottom: 8px; }
 .dim-panel__body { display: flex; align-items: center; gap: 6px; }
 .dim-panel__input { flex: 1; height: 26px; border: 1px solid #c0c0c0; border-radius: 3px; outline: none; padding: 0 6px; font-size: 13px; color: #1a1a1a; background: #fff; box-sizing: border-box; }

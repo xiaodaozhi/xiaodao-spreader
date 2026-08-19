@@ -218,6 +218,7 @@ defineExpose({ open, openMenu, close });
 
 <template>
   <div ref="rootRef" class="color-picker">
+    <Transition name="menu-pop">
     <div
       v-if="open"
       ref="menuRef"
@@ -243,6 +244,7 @@ defineExpose({ open, openMenu, close });
         />
       </div>
     </div>
+    </Transition>
   </div>
 </template>
 
@@ -259,7 +261,10 @@ defineExpose({ open, openMenu, close });
   padding: 6px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
   user-select: none;
+  transform-origin: top right;
 }
+.menu-pop-enter-active, .menu-pop-leave-active { transition: opacity 0.12s ease-out, transform 0.12s ease-out; }
+.menu-pop-enter-from, .menu-pop-leave-to { opacity: 0; transform: scale(0.9); }
 .color-picker__row {
   display: flex;
   gap: 4px;
