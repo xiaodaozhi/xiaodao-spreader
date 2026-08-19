@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue';
-import { HEADER_HEIGHT, HEADER_WIDTH, SB_SIZE, DEFAULT_COL_WIDTH, DEFAULT_ROW_HEIGHT, UNDO_MAX, t, lightTheme, darkTheme  } from './constants';
+import { HEADER_HEIGHT, HEADER_WIDTH, SB_SIZE, DEFAULT_COL_WIDTH, DEFAULT_ROW_HEIGHT, MIN_COL_WIDTH, MIN_ROW_HEIGHT, MAX_COL_WIDTH, MAX_ROW_HEIGHT, UNDO_MAX, t, lightTheme, darkTheme, DEFAULT_FONT_FAMILY, DEFAULT_FONT_SIZE, FONT_FAMILIES, FONT_SIZES } from './constants';
+import Toolbar from './toolbar.vue';
+import Tabbar from './tabbar.vue';
 import { colToLabel, resolveSize, writeClipboardText, getCanvasXY } from './utils';
 import { FormulaDeps, parseFormulaRefs, clearEvalCache, computeCellValue, shiftFormulaRefs } from './formula';
 import { buildOuterStyle } from './theme';
@@ -37,9 +39,27 @@ const activeCell = ref<CellCoord>({ col: 0, row: 0 });
 const editingCell = ref<CellCoord | null>(null);
 const editValue = ref('');
 const colWidths = ref<number[]>(new Array(colCount).fill(DEFAULT_COL_WIDTH));
-const rowHeights = ref<number[]>(new Array(rowCount).fill(DEFAULT_ROW_HEIGHT));
+const rowHeights = ref<(number | undefined)[]>(new Array(rowCount).fill(undefined));
 const scrollX = ref(0);
 const scrollY = ref(0);
+
+// ============ 高 DPI 字号缩放 ============
+// 在高 DPI 显示器上，CSS 像素物理尺寸偏小，字号视觉上会偏小。
+// 根据设备像素比适度放大渲染字号，使文字更易读（dpr=1 不缩放，dpr=2 约 1.25，上限 1.5）。
+const FONT_DPI_SCALE = (() => {
+  if (typeof window === 'undefined') return 1;
+  const dpr = window.devicePixelRatio || 1;
+  return dpr > 1 ? Math.min(1.5, 1 + (dpr - 1) * 0.25) : 1;
+})();
+/** 读取单元格的字号属性值（未缩放，用于下拉框匹配） */
+function cellFontSize(c: number, r: number): number {
+  const st = cells[cellKey(c, r)]?.style;
+  return typeof st?.fontSize === 'number' && st.fontSize > 0 ? st.fontSize : DEFAULT_FONT_SIZE;
+}
+/** 字号在当前 DPI 下的实际渲染像素值 */
+function renderFontSize(fsz: number): number {
+  return Math.round(fsz * FONT_DPI_SCALE);
+}
 
 // ============ 列位置/行位置计算 ============
 const colPositions = computed(() => {
@@ -47,9 +67,22 @@ const colPositions = computed(() => {
   for (let i = 0; i < colCount; i++) p.push(p[i]! + colWidths.value[i]!);
   return p;
 });
+/** 计算行的实际高度：显式行高优先，否则按行内最大渲染字号自动撑大（不小于默认行高） */
+function getRowHeight(r: number): number {
+  const h = rowHeights.value[r];
+  if (h !== undefined && h !== null && h > 0) return h;
+  let maxFs = DEFAULT_FONT_SIZE;
+  for (let c = 0; c < colCount; c++) {
+    const fs = cellFontSize(c, r);
+    if (fs > maxFs) maxFs = fs;
+  }
+  const effMax = renderFontSize(maxFs);
+  // 行高 = 文字行高(1.2×渲染字号) + 上下各 4px padding
+  return Math.max(DEFAULT_ROW_HEIGHT, Math.round(effMax * 1.2 + 8));
+}
 const rowPositions = computed(() => {
   const p = [0];
-  for (let i = 0; i < rowCount; i++) p.push(p[i]! + rowHeights.value[i]!);
+  for (let i = 0; i < rowCount; i++) p.push(p[i]! + getRowHeight(i));
   return p;
 });
 const totalWidth = computed(() => colPositions.value[colCount]!);
@@ -152,7 +185,7 @@ function ensureVisible(c: number, r: number) {
   const cx = colPositions.value[c]!;
   const cy = rowPositions.value[r]!;
   const cw = colWidths.value[c]!;
-  const ch = rowHeights.value[r]!;
+  const ch = getRowHeight(r);
   let sx = scrollX.value;
   let sy = scrollY.value;
   if (cx < sx) sx = cx;
@@ -292,6 +325,221 @@ function clearFormat() {
   emitModelData();
 }
 
+// ============ 工具栏：字体 / 字号 ============
+const fontFamilyOptions = computed(() =>
+  FONT_FAMILIES.map((f) => ({ ...f, label: f.value === '' ? t(locale.value, 'fontDefault') : f.label }))
+);
+const fontSizeOptions = computed(() =>
+  FONT_SIZES.map((f) => ({ ...f, label: String(f.value) }))
+);
+const FONT_FAMILY_MIXED = '\u0000';
+const selFontFamily = computed(() => {
+  const sel = selection.value;
+  if (!sel) return '';
+  let first: string | undefined;
+  let mixed = false;
+  for (let c = sel.startCol; c <= sel.endCol && !mixed; c++) {
+    for (let r = sel.startRow; r <= sel.endRow && !mixed; r++) {
+      const st = cells[cellKey(c, r)]?.style;
+      const ff = typeof st?.fontFamily === 'string' ? st.fontFamily : '';
+      if (first === undefined) first = ff;
+      else if (ff !== first) mixed = true;
+    }
+  }
+  return mixed ? FONT_FAMILY_MIXED : (first ?? '');
+});
+const selFontSize = computed(() => {
+  const sel = selection.value;
+  if (!sel) return DEFAULT_FONT_SIZE;
+  let first: number | undefined;
+  let mixed = false;
+  for (let c = sel.startCol; c <= sel.endCol && !mixed; c++) {
+    for (let r = sel.startRow; r <= sel.endRow && !mixed; r++) {
+      const fsz = cellFontSize(c, r);
+      if (first === undefined) first = fsz;
+      else if (fsz !== first) mixed = true;
+    }
+  }
+  return mixed ? 0 : (first ?? DEFAULT_FONT_SIZE);
+});
+
+function applyStyleToSelection(prop: string, value: unknown) {
+  const sel = selection.value;
+  if (!sel) return;
+  saveUndo();
+  for (let c = sel.startCol; c <= sel.endCol; c++) {
+    for (let r = sel.startRow; r <= sel.endRow; r++) {
+      const k = cellKey(c, r);
+      const val = cells[k]?.value ?? '';
+      const st = cells[k]?.style ? { ...cells[k]!.style } : {};
+      if (value === '' || value === null || value === undefined || value === 0) delete st[prop];
+      else st[prop] = value;
+      const style = Object.keys(st).length ? st : null;
+      if (val === '' && style === null) delCell(k);
+      else cells[k] = { value: val, style };
+    }
+  }
+  scheduleRender();
+  emitModelData();
+}
+function onFontFamilyChange(v: string | number) {
+  applyStyleToSelection('fontFamily', v === '' ? '' : v);
+}
+function onFontSizeChange(v: string | number) {
+  applyStyleToSelection('fontSize', v);
+  fontSizeMenuOpen.value = false;
+}
+
+const fontSizeInput = ref('');
+const fontSizeMenuOpen = ref(false);
+
+watch(selFontSize, (v) => {
+  fontSizeInput.value = v === 0 ? '' : String(v);
+}, { immediate: true });
+
+function onFontSizeInput(e: Event) {
+  const el = e.target as HTMLInputElement;
+  fontSizeInput.value = el.value.replace(/[^\d]/g, '');
+}
+
+function onFontSizeBlur() {
+  const raw = fontSizeInput.value.trim();
+  if (!raw) {
+    fontSizeInput.value = selFontSize.value === 0 ? '' : String(selFontSize.value);
+    return;
+  }
+  let v = parseInt(raw, 10);
+  if (isNaN(v)) v = DEFAULT_FONT_SIZE;
+  v = Math.max(5, Math.min(72, v));
+  fontSizeInput.value = String(v);
+  if (v !== selFontSize.value) {
+    applyStyleToSelection('fontSize', v);
+  }
+}
+
+function onFontSizeKeydown(e: KeyboardEvent) {
+  if (e.key === 'Enter') {
+    (e.target as HTMLInputElement).blur();
+  }
+}
+
+function toggleFontSizeMenu(e?: MouseEvent) {
+  if (e) e.preventDefault();
+  fontSizeMenuOpen.value = !fontSizeMenuOpen.value;
+}
+
+function onFontSizeStepUp() {
+  const cur = selFontSize.value === 0 ? DEFAULT_FONT_SIZE : selFontSize.value;
+  const next = Math.min(72, cur + 1);
+  applyStyleToSelection('fontSize', next);
+  fontSizeInput.value = String(next);
+  fontSizeMenuOpen.value = false;
+}
+
+function onFontSizeStepDown() {
+  const cur = selFontSize.value === 0 ? DEFAULT_FONT_SIZE : selFontSize.value;
+  const next = Math.max(5, cur - 1);
+  applyStyleToSelection('fontSize', next);
+  fontSizeInput.value = String(next);
+  fontSizeMenuOpen.value = false;
+}
+
+// ============ 字体样式：粗体 / 斜体 / 下划线 / 删除线 ============
+function selStyleActive(prop: string): boolean {
+  const sel = selection.value;
+  if (!sel) return false;
+  let first: boolean | undefined;
+  let mixed = false;
+  for (let c = sel.startCol; c <= sel.endCol && !mixed; c++) {
+    for (let r = sel.startRow; r <= sel.endRow && !mixed; r++) {
+      const st = cells[cellKey(c, r)]?.style;
+      const v = Boolean(st?.[prop]);
+      if (first === undefined) first = v;
+      else if (v !== first) mixed = true;
+    }
+  }
+  return !mixed && first === true;
+}
+
+const selFontWeight = computed(() => selStyleActive('fontWeight'));
+const selFontStyle = computed(() => selStyleActive('fontStyle'));
+const selUnderline = computed(() => selStyleActive('underline'));
+const selStrikethrough = computed(() => selStyleActive('strikethrough'));
+
+function toggleFontWeight() {
+  applyStyleToSelection('fontWeight', selFontWeight.value ? '' : 'bold');
+}
+function toggleFontStyle() {
+  applyStyleToSelection('fontStyle', selFontStyle.value ? '' : 'italic');
+}
+function toggleUnderline() {
+  applyStyleToSelection('underline', selUnderline.value ? '' : 'underline');
+}
+function toggleStrikethrough() {
+  applyStyleToSelection('strikethrough', selStrikethrough.value ? '' : 'line-through');
+}
+
+// ============ 文字颜色 / 填充颜色 ============
+const cachedTextColor = ref<string>('');
+const cachedFillColor = ref<string>('');
+const textColorMenuOpen = ref(false);
+const fillColorMenuOpen = ref(false);
+
+function toggleTextColorMenu() {
+  textColorMenuOpen.value = !textColorMenuOpen.value;
+  fillColorMenuOpen.value = false;
+}
+function toggleFillColorMenu() {
+  fillColorMenuOpen.value = !fillColorMenuOpen.value;
+  textColorMenuOpen.value = false;
+}
+function onTextColorChange(v: string) {
+  cachedTextColor.value = v;
+  applyStyleToSelection('color', v === '' ? '' : v);
+}
+function onFillColorChange(v: string) {
+  cachedFillColor.value = v;
+  applyStyleToSelection('backgroundColor', v === '' ? '' : v);
+}
+function applyCachedTextColor() {
+  applyStyleToSelection('color', cachedTextColor.value === '' ? '' : cachedTextColor.value);
+}
+function applyCachedFillColor() {
+  applyStyleToSelection('backgroundColor', cachedFillColor.value === '' ? '' : cachedFillColor.value);
+}
+
+const selTextColor = computed(() => {
+  const sel = selection.value;
+  if (!sel) return '';
+  let first: string | undefined;
+  let mixed = false;
+  for (let c = sel.startCol; c <= sel.endCol && !mixed; c++) {
+    for (let r = sel.startRow; r <= sel.endRow && !mixed; r++) {
+      const st = cells[cellKey(c, r)]?.style;
+      const v = typeof st?.color === 'string' ? st.color : '';
+      if (first === undefined) first = v;
+      else if (v !== first) mixed = true;
+    }
+  }
+  return mixed ? '' : (first ?? '');
+});
+
+const selFillColor = computed(() => {
+  const sel = selection.value;
+  if (!sel) return '';
+  let first: string | undefined;
+  let mixed = false;
+  for (let c = sel.startCol; c <= sel.endCol && !mixed; c++) {
+    for (let r = sel.startRow; r <= sel.endRow && !mixed; r++) {
+      const st = cells[cellKey(c, r)]?.style;
+      const v = typeof st?.backgroundColor === 'string' ? st.backgroundColor : '';
+      if (first === undefined) first = v;
+      else if (v !== first) mixed = true;
+    }
+  }
+  return mixed ? '' : (first ?? '');
+});
+
 // ============ 剪贴板 ============
 let copySourceRange: SelectionRange | null = null;
 function copyToClipboard() {
@@ -425,11 +673,11 @@ function deleteRows(rS: number, rE: number) {
         delCell(dk);
       }
     }
-    rowHeights.value[r] = rowHeights.value[r + dr]!;
+    rowHeights.value[r] = rowHeights.value[r + dr];
   }
   for (let r = rowCount - dr; r < rowCount; r++) {
     for (let c = 0; c < colCount; c++) delCell(cellKey(c, r));
-    rowHeights.value[r] = DEFAULT_ROW_HEIGHT;
+    rowHeights.value[r] = undefined;
   }
 }
 function insertRows(rS: number, rE: number) {
@@ -441,11 +689,11 @@ function insertRows(rS: number, rE: number) {
       if (cells[sk]) cells[dk] = cells[sk]!;
       else delCell(dk);
     }
-    rowHeights.value[r] = rowHeights.value[r - n]!;
+    rowHeights.value[r] = rowHeights.value[r - n];
   }
   for (let r = rE + 1; r <= rE + n; r++) {
     for (let c = 0; c < colCount; c++) delCell(cellKey(c, r));
-    rowHeights.value[r] = DEFAULT_ROW_HEIGHT;
+    rowHeights.value[r] = undefined;
   }
 }
 function insertCols(cS: number, cE: number) {
@@ -500,7 +748,7 @@ function mkSheet(name: string): SheetState {
     activeCell: { col: 0, row: 0 },
     scrollX: 0, scrollY: 0,
     colWidths: new Array(colCount).fill(DEFAULT_COL_WIDTH),
-    rowHeights: new Array(rowCount).fill(DEFAULT_ROW_HEIGHT),
+    rowHeights: new Array(rowCount).fill(undefined),
   };
 }
 const sheets = ref<SheetState[]>([mkSheet('Sheet1')]);
@@ -615,7 +863,8 @@ function emitModelData() {
     if (Object.keys(cw).length) sh.colWidths = cw;
     const rh: Record<number, number> = {};
     for (let i = 0; i < s.rowHeights.length; i++) {
-      if (s.rowHeights[i] !== 24) rh[i] = s.rowHeights[i]!;
+      const hv = s.rowHeights[i];
+      if (hv !== undefined && hv !== null) rh[i] = hv;
     }
     if (Object.keys(rh).length) sh.rowHeights = rh;
     return sh;
@@ -714,7 +963,8 @@ function render() {
   const cP = colPositions.value;
   const rP = rowPositions.value;
   const cW = colWidths.value;
-  const rH = rowHeights.value;
+  const rH: number[] = [];
+  for (let i = 0; i < rowCount; i++) rH[i] = rP[i + 1]! - rP[i]!;
 
   const sC = Math.max(0, hitCol(sx));
   let eC2 = sC;
@@ -763,17 +1013,57 @@ function render() {
       rCtx.strokeStyle = cs.gridLine;
       rCtx.lineWidth = 0.5;
       rCtx.strokeRect(x + 0.25, y + 0.25, cw - 0.5, rh - 0.5);
+      const stBg = cells[cellKey(col, row)]?.style;
+      const bgColor = typeof stBg?.backgroundColor === 'string' ? stBg.backgroundColor : '';
+      if (bgColor) {
+        rCtx.fillStyle = bgColor;
+        rCtx.fillRect(x, y, cw, rh);
+      }
       if (!(ed && ed.col === col && ed.row === row)) {
         const v = getCellValue(col, row);
         if (v) {
-          rCtx.fillStyle = cs.cellText;
-          rCtx.font = '13px -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif';
-          rCtx.textBaseline = 'middle';
+          const st = cells[cellKey(col, row)]?.style;
+          const fsz = renderFontSize(cellFontSize(col, row));
+          const ffa = typeof st?.fontFamily === 'string' && st.fontFamily ? st.fontFamily : DEFAULT_FONT_FAMILY;
+          const fw = st?.fontWeight === 'bold' ? 'bold' : 'normal';
+          const fs = st?.fontStyle === 'italic' ? 'italic' : 'normal';
+          const hasU = st?.underline === 'underline';
+          const hasS = st?.strikethrough === 'line-through';
+          const txtColor = typeof st?.color === 'string' ? st.color : '';
+          rCtx.fillStyle = txtColor || cs.cellText;
+          rCtx.font = `${fs} ${fw} ${fsz}px ${ffa}`;
+          rCtx.textBaseline = 'alphabetic';
           rCtx.save();
           rCtx.beginPath();
           rCtx.rect(x + 5, y + 1, cw - 10, rh - 2);
           rCtx.clip();
-          rCtx.fillText(v, x + 5, y + rh / 2 + 0.5);
+          const m = rCtx.measureText(v);
+          const dy = (m.actualBoundingBoxAscent - m.actualBoundingBoxDescent) / 2;
+          const tx = x + 5;
+          const ty = y + rh / 2 + dy;
+          rCtx.fillText(v, tx, ty);
+          if (hasU) {
+            const bl = m.actualBoundingBoxLeft ?? 0;
+            const ad = m.actualBoundingBoxDescent ?? 0;
+            rCtx.strokeStyle = txtColor || cs.cellText;
+            rCtx.lineWidth = 1;
+            rCtx.beginPath();
+            rCtx.moveTo(tx + bl, ty + ad + 1);
+            rCtx.lineTo(tx + bl + m.width, ty + ad + 1);
+            rCtx.stroke();
+          }
+          if (hasS) {
+            const bl = m.actualBoundingBoxLeft ?? 0;
+            const ad = m.actualBoundingBoxDescent ?? 0;
+            const ah = m.actualBoundingBoxAscent ?? fsz;
+            rCtx.strokeStyle = txtColor || cs.cellText;
+            rCtx.lineWidth = 1;
+            const midY = ty - (ah - ad) * 0.25;
+            rCtx.beginPath();
+            rCtx.moveTo(tx + bl, midY);
+            rCtx.lineTo(tx + bl + m.width, midY);
+            rCtx.stroke();
+          }
           rCtx.restore();
         }
       }
@@ -1047,7 +1337,7 @@ function onCornerCtx(e: MouseEvent) {
       saveUndo();
       clearSelected();
       for (let c = 0; c < colCount; c++) colWidths.value[c] = DEFAULT_COL_WIDTH;
-      for (let r = 0; r < rowCount; r++) rowHeights.value[r] = DEFAULT_ROW_HEIGHT;
+      for (let r = 0; r < rowCount; r++) rowHeights.value[r] = undefined;
       scheduleRender();
       emitModelData();
     } },
@@ -1055,6 +1345,7 @@ function onCornerCtx(e: MouseEvent) {
 }
 function onRowHdrCtx(e: MouseEvent, row: number) {
   e.preventDefault();
+  const mx = e.clientX, my = e.clientY;
   const sel = selection.value;
   if (!(sel && sel.startCol === 0 && sel.endCol === colCount - 1 && row >= sel.startRow && row <= sel.endRow)) {
     selectRange(0, row, colCount - 1, row);
@@ -1101,10 +1392,16 @@ function onRowHdrCtx(e: MouseEvent, row: number) {
         emitModelData();
       },
     },
+    { label: `${t(locale.value, 'rowHeight')}...`, action: () => openDimPanel('row', mx, my) },
+    {
+      label: t(locale.value, 'defaultRowHeight'),
+      action: () => resetRowHeight(),
+    },
   ]);
 }
 function onColHdrCtx(e: MouseEvent, col: number) {
   e.preventDefault();
+  const mx = e.clientX, my = e.clientY;
   const sel = selection.value;
   if (!(sel && sel.startRow === 0 && sel.endRow === rowCount - 1 && col >= sel.startCol && col <= sel.endCol)) {
     selectRange(col, 0, col, rowCount - 1);
@@ -1150,6 +1447,11 @@ function onColHdrCtx(e: MouseEvent, col: number) {
         scheduleRender();
         emitModelData();
       },
+    },
+    { label: `${t(locale.value, 'colWidth')}...`, action: () => openDimPanel('col', mx, my) },
+    {
+      label: t(locale.value, 'defaultColWidth'),
+      action: () => resetColWidth(),
     },
   ]);
 }
@@ -1198,22 +1500,139 @@ function onCellCtx(e: MouseEvent, c: number, r: number) {
   ]);
 }
 
+// ============ 行高/列宽浮动设置栏 ============
+const dimInputRef = ref<HTMLInputElement | null>(null);
+const dimPanel = ref<{ type: 'row' | 'col'; x: number; y: number; value: string; error: string } | null>(null);
+let dimCloseHandler: (() => void) | null = null;
+function rdlDim() {
+  if (dimCloseHandler) {
+    document.removeEventListener('mousedown', dimCloseHandler);
+    dimCloseHandler = null;
+  }
+}
+function openDimPanel(type: 'row' | 'col', x: number, y: number) {
+  rdlDim();
+  const s = selection.value;
+  let cur = '';
+  if (s) {
+    const v = type === 'row' ? getRowHeight(s.startRow) : colWidths.value[s.startCol];
+    cur = v != null && v > 0 ? String(Math.round(v)) : '';
+  }
+  const pw = 220, ph = 118;
+  let px = x, py = y;
+  if (px + pw > window.innerWidth) px = window.innerWidth - pw - 8;
+  if (py + ph > window.innerHeight) py = window.innerHeight - ph - 8;
+  if (px < 8) px = 8;
+  if (py < 8) py = 8;
+  dimPanel.value = { type, x: px, y: py, value: cur, error: '' };
+  dimCloseHandler = () => { dimPanel.value = null; };
+  setTimeout(() => document.addEventListener('mousedown', dimCloseHandler!, { once: true }), 0);
+  nextTick(() => {
+    const inp = dimInputRef.value;
+    if (inp) {
+      inp.focus();
+      inp.select();
+    }
+  });
+}
+function onDimInput(e: Event) {
+  const p = dimPanel.value;
+  if (!p) return;
+  const input = e.target as HTMLInputElement;
+  // type=number 时过滤小数点、科学计数法等，只保留正整数
+  const raw = input.value;
+  const cleaned = raw.replace(/[^\d]/g, '');
+  p.value = cleaned;
+  if (raw !== cleaned) input.value = cleaned;
+  p.error = '';
+}
+function onDimKeydown(e: KeyboardEvent) {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    applyDimPanel();
+  } else if (e.key === 'Escape') {
+    closeDimPanel();
+  }
+}
+function applyDimPanel() {
+  const p = dimPanel.value;
+  const s = selection.value;
+  if (!p || !s) return;
+  const raw = p.value.trim();
+  const num = Number(raw);
+  const isRow = p.type === 'row';
+  const min = isRow ? MIN_ROW_HEIGHT : MIN_COL_WIDTH;
+  const max = isRow ? MAX_ROW_HEIGHT : MAX_COL_WIDTH;
+  if (raw === '' || !Number.isFinite(num)) {
+    p.error = t(locale.value, 'dimNumberError');
+    return;
+  }
+  if (num < min || num > max) {
+    p.error = t(locale.value, 'dimRangeError').replace('{min}', String(min)).replace('{max}', String(max));
+    return;
+  }
+  const v = num;
+  saveUndo();
+  if (isRow) {
+    for (let r = s.startRow; r <= s.endRow; r++) rowHeights.value[r] = v;
+  } else {
+    for (let c = s.startCol; c <= s.endCol; c++) colWidths.value[c] = v;
+  }
+  scheduleRender();
+  emitModelData();
+  closeDimPanel();
+}
+function closeDimPanel() {
+  rdlDim();
+  dimPanel.value = null;
+}
+function resetRowHeight() {
+  const s = selection.value;
+  if (!s) return;
+  saveUndo();
+  for (let r = s.startRow; r <= s.endRow; r++) rowHeights.value[r] = undefined;
+  scheduleRender();
+  emitModelData();
+}
+function resetColWidth() {
+  const s = selection.value;
+  if (!s) return;
+  saveUndo();
+  for (let c = s.startCol; c <= s.endCol; c++) colWidths.value[c] = DEFAULT_COL_WIDTH;
+  scheduleRender();
+  emitModelData();
+}
+
 // ============ 编辑输入框 CSS ============
 const editInputStyle = computed(() => {
   const hidden = !editingCell.value;
   const pos = editingCell.value ?? activeCell.value;
   const c = pos.col, r = pos.row;
+  const st = cells[cellKey(c, r)]?.style;
+  const fsz = renderFontSize(cellFontSize(c, r));
+  const ffa = typeof st?.fontFamily === 'string' && st.fontFamily ? st.fontFamily : DEFAULT_FONT_FAMILY;
+  const fw = st?.fontWeight === 'bold' ? 'bold' : 'normal';
+  const fs = st?.fontStyle === 'italic' ? 'italic' : 'normal';
+  const td = st?.underline === 'underline' ? 'underline' : st?.strikethrough === 'line-through' ? 'line-through' : 'none';
+  const tdBoth = st?.underline === 'underline' && st?.strikethrough === 'line-through' ? 'underline line-through' : td;
+  const tc = typeof st?.color === 'string' ? st.color : undefined;
+  const bg = typeof st?.backgroundColor === 'string' ? st.backgroundColor : undefined;
   return {
     left: `${HEADER_WIDTH + colPositions.value[c]! - scrollX.value}px`,
     top: `${HEADER_HEIGHT + rowPositions.value[r]! - scrollY.value}px`,
     width: `${colWidths.value[c]!}px`,
-    height: `${rowHeights.value[r]!}px`,
+    height: `${getRowHeight(r)}px`,
+    fontFamily: ffa,
+    fontSize: `${fsz}px`,
+    fontWeight: fw,
+    fontStyle: fs,
+    textDecoration: tdBoth,
     opacity: hidden ? 0 : 1,
     pointerEvents: hidden ? 'none' as const : 'auto' as const,
-    color: hidden ? 'transparent' : undefined,
+    color: hidden ? 'transparent' : tc,
     caretColor: hidden ? 'transparent' : undefined,
     borderColor: hidden ? 'transparent' : undefined,
-    background: hidden ? 'transparent' : undefined,
+    background: hidden ? 'transparent' : bg,
     boxShadow: hidden ? 'none' : undefined,
   };
 });
@@ -1346,7 +1765,7 @@ function onMouseDown(e: MouseEvent) {
       saveUndo();
       isResizingR = true;
       rszTR = r;
-      rszSS = rowHeights.value[r]!;
+      rszSS = getRowHeight(r);
       rszSG = gy;
       scheduleRender();
       return;
@@ -1402,13 +1821,18 @@ function onMouseMove(e: MouseEvent) {
   if (isResizingR) {
     const y = getCanvasXY(e, canvasRef.value).y;
     const d = (y - HEADER_HEIGHT + scrollY.value) - rszSG;
-    if (rszSS + d >= 24) rowHeights.value[rszTR] = rszSS + d;
+    if (rszSS + d >= MIN_ROW_HEIGHT) rowHeights.value[rszTR] = rszSS + d;
     scheduleRender();
     return;
   }
   if (!isDragging) {
     const cvs = canvasRef.value;
     if (!cvs) return;
+    // 格式刷激活时，光标切换为复制/刷子样式
+    if (paintFmt.value) {
+      cvs.style.cursor = 'copy';
+      return;
+    }
     const p = getCanvasXY(e, cvs);
     if (p.y < HEADER_HEIGHT && p.x >= HEADER_WIDTH) {
       const c = hitCol(p.x - HEADER_WIDTH + scrollX.value);
@@ -1457,10 +1881,9 @@ function onMouseUp(e: MouseEvent) {
   isResizingC = false;
   isResizingR = false;
   if (w) scheduleOptEmit();
-  // 格式刷：在单元格区域松开时应用格式
+  // 格式刷：松开时应用格式（支持单元格区域、表头整行整列、左上角全选）
   if (paintFmt.value) {
-    const p = getCanvasXY(e, canvasRef.value);
-    if (p.x >= HEADER_WIDTH && p.y >= HEADER_HEIGHT) applyPaintFormat();
+    applyPaintFormat();
   }
 }
 function onMouseLeave() {
@@ -1881,68 +2304,52 @@ onBeforeUnmount(() => {
     :style="outerStyle"
   >
     <!-- 工具栏 -->
-    <div class="toolbar">
-      <button
-        class="toolbar-btn"
-        :class="{ 'toolbar-btn--disabled': !canUndo }"
-        :title="t(locale, 'undo')"
-        :disabled="!canUndo"
-        @click="undo()"
-      >
-        <svg
-          class="toolbar-btn__icon"
-          viewBox="0 0 1024 1024"
-          fill="currentColor"
-        >
-          <path d="M596.16 284.064H258.56l101.376-101.44a31.968 31.968 0 1 0-45.248-45.216L178.56 273.504c-11.904 11.872-18.496 27.84-18.56 44.8a63.04 63.04 0 0 0 18.56 45.28l136.128 136.16a31.904 31.904 0 0 0 45.248 0 31.968 31.968 0 0 0 0-45.248l-106.752-106.496H596.16c114.88 0 208.32 93.312 208.32 208s-93.44 208-208.32 208h-223.36a32 32 0 0 0 0 64h223.36c150.144 0 272.32-122.016 272.32-272 0-149.984-122.176-272-272.32-272" />
-        </svg>
-      </button>
-      <button
-        class="toolbar-btn"
-        :class="{ 'toolbar-btn--disabled': !canRedo }"
-        :title="t(locale, 'redo')"
-        :disabled="!canRedo"
-        @click="redo()"
-      >
-        <svg
-          class="toolbar-btn__icon"
-          viewBox="0 0 1024 1024"
-          fill="currentColor"
-        >
-          <path transform="translate(1024, 0) scale(-1, 1)" d="M596.16 284.064H258.56l101.376-101.44a31.968 31.968 0 1 0-45.248-45.216L178.56 273.504c-11.904 11.872-18.496 27.84-18.56 44.8a63.04 63.04 0 0 0 18.56 45.28l136.128 136.16a31.904 31.904 0 0 0 45.248 0 31.968 31.968 0 0 0 0-45.248l-106.752-106.496H596.16c114.88 0 208.32 93.312 208.32 208s-93.44 208-208.32 208h-223.36a32 32 0 0 0 0 64h223.36c150.144 0 272.32-122.016 272.32-272 0-149.984-122.176-272-272.32-272" />
-        </svg>
-      </button>
-      <button
-        class="toolbar-btn"
-        :class="{ 'toolbar-btn--active': paintFmt !== null }"
-        :title="t(locale, 'paintFormat')"
-        :disabled="!hasSelection"
-        @click="onPaintFormat"
-      >
-        <svg
-          class="toolbar-btn__icon"
-          viewBox="0 0 1024 1024"
-          fill="currentColor"
-        >
-          <path d="M722.285714 438.857143a36.571429 36.571429 0 0 1-36.571428 36.571428h-512a36.571429 36.571429 0 0 1-36.571429-36.571428V164.571429a36.571429 36.571429 0 0 1 36.571429-36.571429h512a36.571429 36.571429 0 0 1 36.571428 36.571429V256h128a36.571429 36.571429 0 0 1 36.571429 36.571429v294.4a36.571429 36.571429 0 0 1-31.890286 36.278857L448 675.766857V859.428571a36.571429 36.571429 0 0 1-32.292571 36.315429l-4.278858 0.256a36.571429 36.571429 0 0 1-36.571428-36.571429v-215.771428a36.571429 36.571429 0 0 1 31.890286-36.278857l406.966857-52.553143V329.142857h-91.428572v109.714286z m-73.142857-237.714286h-438.857143V402.285714h438.857143V201.142857z" />
-        </svg>
-      </button>
-      <button
-        class="toolbar-btn"
-        :class="{ 'toolbar-btn--disabled': !hasSelection }"
-        :title="t(locale, 'clearFormat')"
-        :disabled="!hasSelection"
-        @click="clearFormat()"
-      >
-        <svg
-          class="toolbar-btn__icon"
-          viewBox="0 0 1024 1024"
-          fill="currentColor"
-        >
-          <path d="M672.748 105.674c-3.666-3.799-8.778-5.949-14.125-5.949-5.341 0-10.459 2.15-14.119 5.949L10.418 754.633c-7.789 8.163-7.789 20.798 0 28.967l123.353 126.213c7.782 7.979 23.113 14.461 34.111 14.461h395.042c12.774-0.742 24.882-5.854 34.162-14.461l416.525-426.362c7.751-8.163 7.751-20.76 0-28.916l-340.92-348.861h0.057zM557.85 832.801c-9.273 8.582-21.343 13.707-34.111 14.461H217.888c-12.781-0.742-24.882-5.867-34.162-14.461l-58.074-59.482c-7.782-8.163-7.782-20.804 0-28.967l232.333-237.87c3.666-3.799 8.778-5.949 14.125-5.949s10.453 2.15 14.119 5.949l231.102 236.551c7.744 8.157 7.744 20.753 0 28.916l-59.539 60.909 0.058-0.057z m0 0" />
-        </svg>
-      </button>
-    </div>
+    <Toolbar
+      :locale="locale"
+      :can-undo="canUndo"
+      :can-redo="canRedo"
+      :paint-fmt-active="paintFmt !== null"
+      :has-selection="hasSelection"
+      :font-family-options="fontFamilyOptions"
+      :font-size-options="fontSizeOptions"
+      :sel-font-family="selFontFamily"
+      :sel-font-size="selFontSize"
+      :font-size-input="fontSizeInput"
+      :font-size-menu-open="fontSizeMenuOpen"
+      :sel-font-weight="selFontWeight"
+      :sel-font-style="selFontStyle"
+      :sel-underline="selUnderline"
+      :sel-strikethrough="selStrikethrough"
+      :sel-text-color="selTextColor"
+      :text-color-menu-open="textColorMenuOpen"
+      :sel-fill-color="selFillColor"
+      :fill-color-menu-open="fillColorMenuOpen"
+      :cached-text-color="cachedTextColor"
+      :cached-fill-color="cachedFillColor"
+      @undo="undo()"
+      @redo="redo()"
+      @paint-format="onPaintFormat"
+      @clear-format="clearFormat()"
+      @font-family-change="onFontFamilyChange($event)"
+      @font-size-input="onFontSizeInput($event)"
+      @font-size-blur="onFontSizeBlur"
+      @font-size-keydown="onFontSizeKeydown($event)"
+      @font-size-change="onFontSizeChange($event)"
+      @update:font-size-menu-open="fontSizeMenuOpen = $event"
+      @font-size-toggle="toggleFontSizeMenu()"
+      @font-size-step-up="onFontSizeStepUp"
+      @font-size-step-down="onFontSizeStepDown"
+      @bold-toggle="toggleFontWeight"
+      @italic-toggle="toggleFontStyle"
+      @underline-toggle="toggleUnderline"
+      @strikethrough-toggle="toggleStrikethrough"
+      @text-color-change="onTextColorChange($event)"
+      @update:text-color-menu-open="textColorMenuOpen = $event"
+      @fill-color-change="onFillColorChange($event)"
+      @update:fill-color-menu-open="fillColorMenuOpen = $event"
+      @apply-text-color="applyCachedTextColor"
+      @apply-fill-color="applyCachedFillColor"
+    />
 
     <!-- 编辑栏 -->
     <div class="formula-bar">
@@ -2061,46 +2468,21 @@ onBeforeUnmount(() => {
     </div>
 
     <!-- Sheet 标签栏 -->
-    <div
-      class="tab-bar"
-      @contextmenu="onTabBarCtx"
-    >
-      <div class="tab-list">
-        <template
-          v-for="(s, i) in sheets"
-          :key="s.id"
-        >
-          <div
-            class="tab-item"
-            :class="{ 'tab-item--active': i === activeSheetIndex }"
-            @click="onTabClick(i)"
-            @dblclick.prevent="onTabDblClick(i)"
-            @contextmenu="onTabCtxMenu($event, i)"
-          >
-            <template v-if="renTab === i">
-              <input
-                class="tab-rename-input"
-                :value="renTabVal"
-                @input="renTabVal = ($event.target as HTMLInputElement).value"
-                @keydown="onTabRenameKd"
-                @blur="commitTabRename"
-                @click.stop
-              >
-            </template>
-            <template v-else>
-              <span class="tab-item__name">{{ s.name }}</span>
-            </template>
-          </div>
-        </template>
-      </div>
-      <button
-        class="tab-bar__add-btn"
-        :title="t(locale, 'addSheet')"
-        @click="addSheet(); scheduleRender()"
-      >
-        +
-      </button>
-    </div>
+    <Tabbar
+      :locale="locale"
+      :sheets="sheets"
+      :active-sheet-index="activeSheetIndex"
+      :ren-tab="renTab"
+      :ren-tab-val="renTabVal"
+      @tab-click="onTabClick($event)"
+      @tab-dblclick="onTabDblClick($event)"
+      @tab-contextmenu="onTabCtxMenu($event.ev, $event.i)"
+      @tab-rename-input="renTabVal = $event"
+      @tab-rename-keydown="onTabRenameKd($event)"
+      @tab-rename-commit="commitTabRename"
+      @tabbar-contextmenu="onTabBarCtx($event)"
+      @add-sheet="addSheet(); scheduleRender()"
+    />
 
     <!-- 右键菜单 -->
     <Teleport to="body">
@@ -2144,32 +2526,65 @@ onBeforeUnmount(() => {
         </template>
       </div>
     </Teleport>
+
+    <!-- 行高/列宽浮动设置栏 -->
+    <Teleport to="body">
+      <div
+        v-if="dimPanel"
+        class="dim-panel"
+        :style="{ left: dimPanel.x + 'px', top: dimPanel.y + 'px' }"
+        @mousedown.stop
+        @click.stop
+      >
+        <div class="dim-panel__title">
+          {{ dimPanel.type === 'row' ? t(locale, 'rowHeight') : t(locale, 'colWidth') }}
+        </div>
+        <div class="dim-panel__body">
+          <input
+            ref="dimInputRef"
+            class="dim-panel__input"
+            :class="{ 'dim-panel__input--error': dimPanel.error }"
+            type="number"
+            step="1"
+            min="1"
+            inputmode="numeric"
+            :value="dimPanel.value"
+            @input="onDimInput"
+            @keydown="onDimKeydown"
+          >
+          <span class="dim-panel__unit">px</span>
+        </div>
+        <div
+          v-if="dimPanel.error"
+          class="dim-panel__error"
+        >
+          {{ dimPanel.error }}
+        </div>
+        <div class="dim-panel__footer">
+          <button
+            class="dim-panel__btn dim-panel__btn--primary"
+            @click="applyDimPanel"
+          >
+            {{ t(locale, 'ok') }}
+          </button>
+          <button
+            class="dim-panel__btn"
+            @click="closeDimPanel"
+          >
+            {{ t(locale, 'cancel') }}
+          </button>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
 <style scoped>
 .spreadsheet-outer { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 .formula-bar { display: flex; align-items: start; height: 32px; min-height: 32px; padding: 0; gap: 0; }
-.toolbar { display: flex; align-items: center; height: 32px; min-height: 32px; gap: 2px; padding: 0 6px; background: var(--sp-toolbar-bg); border-bottom: 1px solid var(--sp-toolbar-border); user-select: none; }
-.toolbar-btn { display: flex; align-items: center; justify-content: center; width: 30px; height: 26px; border: none; border-radius: 3px; background: transparent; color: var(--sp-toolbar-btn-color); cursor: pointer; padding: 0; }
-.toolbar-btn:hover:not(:disabled) { background: var(--sp-toolbar-btn-hover-bg); }
-.toolbar-btn:active:not(:disabled) { opacity: 0.7; }
-.toolbar-btn--active { background: var(--sp-toolbar-btn-hover-bg); color: var(--sp-toolbar-btn-active-color); }
-.toolbar-btn:disabled { color: var(--sp-toolbar-btn-disabled-color); cursor: default; }
-.toolbar-btn__icon { width: 18px; height: 18px; }
 .formula-bar__cell-label { width: 48px; min-width: 48px; height: 28px; line-height: 28px; text-align: center; font-size: 12px; font-weight: 600; color: var(--sp-formula-bar-label-color); background: var(--sp-formula-bar-label-bg); border: 1px solid var(--sp-formula-bar-label-border); border-radius: 2px; user-select: none; }
 .formula-bar__input { flex: 1; height: 28px; border: 1px solid var(--sp-formula-bar-input-border); border-radius: 2px; outline: none; padding: 0 6px; margin-left: 4px; font-size: 13px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; color: var(--sp-formula-bar-input-color); background: var(--sp-formula-bar-input-bg); }
 .formula-bar__input:focus { border-color: var(--sp-formula-bar-input-focus-border); box-shadow: 0 0 0 1px var(--sp-formula-bar-input-focus-shadow); }
-.tab-bar { display: flex; align-items: stretch; height: 30px; min-height: 30px; background: var(--sp-tab-bar-bg); border-top: 1px solid var(--sp-tab-bar-border); user-select: none; margin-top: 4px; }
-.tab-list { display: flex; align-items: flex-start; flex: 1; overflow: hidden; gap: 1px; padding: 0 1px; }
-.tab-item { display: flex; align-items: center; height: 28px; min-width: 0; max-width: 120px; padding: 0 10px; cursor: pointer; border: 1px solid var(--sp-tab-inactive-border); background: var(--sp-tab-inactive-bg); color: var(--sp-tab-inactive-color); font-size: 14px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; white-space: nowrap; transition: background 0.1s; }
-.tab-item:hover { background: var(--sp-tab-hover-bg); }
-.tab-item--active { height: 28px; background: var(--sp-tab-active-bg); color: var(--sp-tab-active-color); border-color: var(--sp-tab-active-bg) var(--sp-tab-bar-border) var(--sp-tab-bar-border); border-top: 2px solid var(--sp-tab-active-border); font-size: 16px; }
-.tab-item--active:hover { background: var(--sp-tab-active-bg); }
-.tab-item__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tab-rename-input { width: 100%; height: 18px; border: none; border-radius: 0; outline: none; padding: 0; font-size: 16px; font-family: inherit; background: var(--sp-tab-active-bg); color: var(--sp-tab-active-color); box-sizing: border-box; }
-.tab-bar__add-btn { width: 24px; min-width: 24px; height: 24px; margin: 0 4px 3px 3px; border: none; background: transparent; color: var(--sp-tab-add-btn-color); font-size: 16px; line-height: 22px; text-align: center; cursor: pointer; padding: 0; }
-.tab-bar__add-btn:hover { background: var(--sp-tab-add-btn-hover-bg); }
 .spreadsheet-wrapper { flex: 1; position: relative; overflow: hidden; background: var(--sp-wrapper-bg); }
 .grid-canvas { position: absolute; top: 0; left: 0; display: block; outline: none; cursor: cell; }
 .grid-canvas:focus { outline: none; }
@@ -2205,4 +2620,19 @@ onBeforeUnmount(() => {
 .context-submenu--left { left: auto; right: 100%; }
 .context-menu__item:hover > .context-submenu { display: block; }
 .context-submenu .context-menu__item { justify-content: flex-start; }
+
+/* 行高/列宽浮动设置栏 */
+.dim-panel { position: fixed; z-index: 10002; width: 220px; background: #fff; border: 1px solid #ccc; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); padding: 10px 12px; box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; user-select: none; }
+.dim-panel__title { font-size: 13px; font-weight: 600; color: #333; margin-bottom: 8px; }
+.dim-panel__body { display: flex; align-items: center; gap: 6px; }
+.dim-panel__input { flex: 1; height: 26px; border: 1px solid #c0c0c0; border-radius: 3px; outline: none; padding: 0 6px; font-size: 13px; color: #1a1a1a; background: #fff; box-sizing: border-box; }
+.dim-panel__input:focus { border-color: #0078d7; box-shadow: 0 0 0 1px rgba(0, 120, 215, 0.3); }
+.dim-panel__input--error { border-color: #d93025; box-shadow: 0 0 0 1px rgba(217, 48, 37, 0.3); }
+.dim-panel__unit { font-size: 12px; color: #888; }
+.dim-panel__error { margin-top: 6px; font-size: 12px; color: #d93025; line-height: 1.4; }
+.dim-panel__footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+.dim-panel__btn { height: 26px; padding: 0 14px; border: 1px solid #ccc; border-radius: 3px; background: #fff; color: #333; font-size: 13px; cursor: pointer; }
+.dim-panel__btn:hover { background: #f0f0f0; }
+.dim-panel__btn--primary { border-color: #0078d7; background: #0078d7; color: #fff; }
+.dim-panel__btn--primary:hover { background: #0069c0; }
 </style>

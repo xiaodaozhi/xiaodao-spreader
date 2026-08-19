@@ -48,13 +48,13 @@ export interface SheetState {
   scrollX: number;
   scrollY: number;
   colWidths: number[];
-  rowHeights: number[];
+  rowHeights: (number | undefined)[];
 }
 
 export interface UndoSnapshot {
   cells: Record<string, CellData>;
   colWidths: number[];
-  rowHeights: number[];
+  rowHeights: (number | undefined)[];
 }
 
 export interface ContextMenuItem {
