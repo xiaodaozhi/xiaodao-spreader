@@ -7,6 +7,7 @@ import { colToLabel, resolveSize, writeClipboardText, getCanvasXY } from './util
 import { FormulaDeps, parseFormulaRefs, clearEvalCache, computeCellValue, shiftFormulaRefs } from './formula';
 import { buildOuterStyle } from './theme';
 import type { CellCoord, CellData, SelectionRange, SheetState, SheetModelData, ContextMenuItem } from './types';
+import type { BorderType } from './borderPicker.vue';
 
 // ============ Props ============
 const props = withDefaults(defineProps<{
@@ -488,10 +489,19 @@ const fillColorMenuOpen = ref(false);
 function toggleTextColorMenu() {
   textColorMenuOpen.value = !textColorMenuOpen.value;
   fillColorMenuOpen.value = false;
+  borderMenuOpen.value = false;
 }
 function toggleFillColorMenu() {
   fillColorMenuOpen.value = !fillColorMenuOpen.value;
   textColorMenuOpen.value = false;
+  borderMenuOpen.value = false;
+}
+function onBorderMenuToggle(v: boolean) {
+  borderMenuOpen.value = v;
+  if (v) {
+    textColorMenuOpen.value = false;
+    fillColorMenuOpen.value = false;
+  }
 }
 function onTextColorChange(v: string) {
   cachedTextColor.value = v;
@@ -539,6 +549,120 @@ const selFillColor = computed(() => {
   }
   return mixed ? '' : (first ?? '');
 });
+
+// ============ 边框 ============
+const cachedBorder = ref<BorderType>('none');
+const borderMenuOpen = ref(false);
+
+/** 边框默认颜色（与网格线区分） */
+const BORDER_COLOR = '#444';
+
+/**
+ * 将 BorderType 转换为每个单元格四边的边框宽度 { top, bottom, left, right }。
+ * 宽度 0 = 无边框，1 = 细线，2 = 粗线。
+ * 行业通行规则：每个单元格存储自己的四边边框，相邻单元格共享的边线
+ *   由较宽的一方决定渲染（例如 A 的右边框=2，B 的左边框=1，则共享边画宽度 2）。
+ */
+function borderTypeToWidths(bt: BorderType, col: number, row: number, sel: SelectionRange): { top: number; bottom: number; left: number; right: number } {
+  const isEdgeTop = row === sel.startRow;
+  const isEdgeBottom = row === sel.endRow;
+  const isEdgeLeft = col === sel.startCol;
+  const isEdgeRight = col === sel.endCol;
+  const w = { top: 0, bottom: 0, left: 0, right: 0 };
+  switch (bt) {
+    case 'none':
+      return w;
+    case 'bottom':
+      if (isEdgeBottom) w.bottom = 1;
+      break;
+    case 'top':
+      if (isEdgeTop) w.top = 1;
+      break;
+    case 'left':
+      if (isEdgeLeft) w.left = 1;
+      break;
+    case 'right':
+      if (isEdgeRight) w.right = 1;
+      break;
+    case 'all':
+      w.top = 1; w.bottom = 1; w.left = 1; w.right = 1;
+      break;
+    case 'outer':
+      if (isEdgeTop) w.top = 1;
+      if (isEdgeBottom) w.bottom = 1;
+      if (isEdgeLeft) w.left = 1;
+      if (isEdgeRight) w.right = 1;
+      break;
+    case 'thickOuter':
+      if (isEdgeTop) w.top = 2;
+      if (isEdgeBottom) w.bottom = 2;
+      if (isEdgeLeft) w.left = 2;
+      if (isEdgeRight) w.right = 2;
+      break;
+  }
+  return w;
+}
+
+function onBorderChange(bt: BorderType) {
+  cachedBorder.value = bt;
+  const sel = selection.value;
+  if (!sel) return;
+  saveUndo();
+  if (bt === 'none') {
+    // 清除选区内所有边框属性
+    for (let c = sel.startCol; c <= sel.endCol; c++) {
+      for (let r = sel.startRow; r <= sel.endRow; r++) {
+        applyBorderToCell(c, r, { top: 0, bottom: 0, left: 0, right: 0 }, true);
+      }
+    }
+  } else {
+    // 对选区中每个单元格只增加对应边框（不删除已有边框）
+    for (let c = sel.startCol; c <= sel.endCol; c++) {
+      for (let r = sel.startRow; r <= sel.endRow; r++) {
+        const w = borderTypeToWidths(bt, c, r, sel);
+        applyBorderToCell(c, r, w, false);
+      }
+    }
+  }
+  scheduleRender();
+  emitModelData();
+}
+
+function applyBorderToCell(col: number, row: number, w: { top: number; bottom: number; left: number; right: number }, clearZero: boolean = true) {
+  const k = cellKey(col, row);
+  const val = cells[k]?.value ?? '';
+  const st = cells[k]?.style ? { ...cells[k]!.style } : {};
+  // 边框属性存储为 borderTopWidth / borderBottomWidth / borderLeftWidth / borderRightWidth
+  // 颜色统一用 borderColor（当前只有默认颜色）
+  const dirs = ['Top', 'Bottom', 'Left', 'Right'] as const;
+  const vals = [w.top, w.bottom, w.left, w.right];
+  for (let i = 0; i < 4; i++) {
+    const prop = `border${dirs[i]}Width`;
+    if (vals[i] === 0) {
+      // clearZero=false 时只增加边框，不删除已有边框
+      if (clearZero) delete st[prop];
+    } else {
+      st[prop] = vals[i];
+      st.borderColor = BORDER_COLOR;
+    }
+  }
+  // 如果没有设置任何边框宽度，清除 borderColor
+  const hasBorder = dirs.some(d => st[`border${d}Width`] !== undefined);
+  if (!hasBorder) delete st.borderColor;
+  const style = Object.keys(st).length ? st : null;
+  if (val === '' && style === null) delCell(k);
+  else cells[k] = { value: val, style };
+}
+
+function applyCachedBorder() {
+  onBorderChange(cachedBorder.value);
+}
+
+/** 获取单元格某侧边框宽度（0 表示无边框） */
+function cellBorderWidth(col: number, row: number, side: 'Top' | 'Bottom' | 'Left' | 'Right'): number {
+  const st = cells[cellKey(col, row)]?.style;
+  return (st?.[`border${side}Width`] as number) || 0;
+}
 
 // ============ 剪贴板 ============
 let copySourceRange: SelectionRange | null = null;
@@ -1065,6 +1189,55 @@ function render() {
             rCtx.stroke();
           }
           rCtx.restore();
+        }
+      }
+      // 绘制单元格边框（考虑相邻单元格共享边：取较宽一方）
+      // 上/左边框由每个单元格自己绘制（覆盖与上方/左方单元格的共享边）
+      // 下/右边框仅由最后一行/最后一列绘制，避免重复绘制共享边
+      const cst = cells[cellKey(col, row)]?.style;
+      const ownT = (cst?.borderTopWidth as number) || 0;
+      const ownL = (cst?.borderLeftWidth as number) || 0;
+      const ownB = (cst?.borderBottomWidth as number) || 0;
+      const ownR = (cst?.borderRightWidth as number) || 0;
+      const wT = Math.max(ownT, cellBorderWidth(col, row - 1, 'Bottom'));
+      const wL = Math.max(ownL, cellBorderWidth(col - 1, row, 'Right'));
+      if (wT > 0 || wL > 0 || ownB > 0 || ownR > 0) {
+        rCtx.strokeStyle = BORDER_COLOR;
+        // 上边框
+        if (wT > 0) {
+          rCtx.lineWidth = wT;
+          rCtx.beginPath();
+          const ty = y + wT / 2 - 0.5;
+          rCtx.moveTo(x, ty);
+          rCtx.lineTo(x + cw, ty);
+          rCtx.stroke();
+        }
+        // 左边框
+        if (wL > 0) {
+          rCtx.lineWidth = wL;
+          rCtx.beginPath();
+          const lx = x + wL / 2 - 0.5;
+          rCtx.moveTo(lx, y);
+          rCtx.lineTo(lx, y + rh);
+          rCtx.stroke();
+        }
+        // 下边框（仅最后一行，避免与下一行的上边框重复）
+        if (row === eR && ownB > 0) {
+          rCtx.lineWidth = ownB;
+          rCtx.beginPath();
+          const by = y + rh - ownB / 2 + 0.5;
+          rCtx.moveTo(x, by);
+          rCtx.lineTo(x + cw, by);
+          rCtx.stroke();
+        }
+        // 右边框（仅最后一列，避免与右侧单元格的左边框重复）
+        if (col === eC && ownR > 0) {
+          rCtx.lineWidth = ownR;
+          rCtx.beginPath();
+          const rx = x + cw - ownR / 2 + 0.5;
+          rCtx.moveTo(rx, y);
+          rCtx.lineTo(rx, y + rh);
+          rCtx.stroke();
         }
       }
     }
@@ -2326,6 +2499,8 @@ onBeforeUnmount(() => {
       :fill-color-menu-open="fillColorMenuOpen"
       :cached-text-color="cachedTextColor"
       :cached-fill-color="cachedFillColor"
+      :border-menu-open="borderMenuOpen"
+      :cached-border="cachedBorder"
       @undo="undo()"
       @redo="redo()"
       @paint-format="onPaintFormat"
@@ -2349,6 +2524,9 @@ onBeforeUnmount(() => {
       @update:fill-color-menu-open="fillColorMenuOpen = $event"
       @apply-text-color="applyCachedTextColor"
       @apply-fill-color="applyCachedFillColor"
+      @update:border-menu-open="onBorderMenuToggle($event)"
+      @border-change="onBorderChange($event)"
+      @apply-border="applyCachedBorder"
     />
 
     <!-- 编辑栏 -->

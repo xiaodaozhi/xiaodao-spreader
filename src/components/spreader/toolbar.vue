@@ -2,6 +2,33 @@
 import { t, type FontOption } from './constants';
 import SpDropdown from './dropdown.vue';
 import ColorPicker from './colorPicker.vue';
+import BorderPicker, { type BorderType } from './borderPicker.vue';
+
+// 田字型边框按钮图标：4 个外边 + 1 条竖中线 + 1 条横中线（与 borderPicker.vue 保持一致）
+interface BorderSeg { name: string; x1: number; y1: number; x2: number; y2: number; }
+const BORDER_SEGS: BorderSeg[] = [
+  { name: 'top', x1: 4, y1: 4, x2: 26, y2: 4 },
+  { name: 'bottom', x1: 4, y1: 26, x2: 26, y2: 26 },
+  { name: 'left', x1: 4, y1: 4, x2: 4, y2: 26 },
+  { name: 'right', x1: 26, y1: 4, x2: 26, y2: 26 },
+  { name: 'vMid', x1: 15, y1: 4, x2: 15, y2: 26 },
+  { name: 'hMid', x1: 4, y1: 15, x2: 26, y2: 15 },
+];
+const SOLID_SEGS: Record<BorderType, string[]> = {
+  bottom: ['bottom'], top: ['top'], left: ['left'], right: ['right'], none: [],
+  all: ['top', 'bottom', 'left', 'right', 'vMid', 'hMid'],
+  outer: ['top', 'bottom', 'left', 'right'],
+  thickOuter: ['top', 'bottom', 'left', 'right'],
+};
+const THICK_SEGS: Record<BorderType, string[]> = {
+  bottom: [], top: [], left: [], right: [], none: [], all: [], outer: [],
+  thickOuter: ['top', 'bottom', 'left', 'right'],
+};
+function segRole(bt: BorderType, name: string): 'solid' | 'dashed' | 'thick' {
+  if (THICK_SEGS[bt].includes(name)) return 'thick';
+  if (SOLID_SEGS[bt].includes(name)) return 'solid';
+  return 'dashed';
+}
 
 const props = defineProps<{
   locale: string;
@@ -25,6 +52,8 @@ const props = defineProps<{
   fillColorMenuOpen: boolean;
   cachedTextColor: string;
   cachedFillColor: string;
+  borderMenuOpen: boolean;
+  cachedBorder: BorderType;
 }>();
 
 const emit = defineEmits<{
@@ -51,6 +80,9 @@ const emit = defineEmits<{
   (e: 'update:fill-color-menu-open', v: boolean): void;
   (e: 'apply-text-color'): void;
   (e: 'apply-fill-color'): void;
+  (e: 'update:border-menu-open', v: boolean): void;
+  (e: 'border-change', v: BorderType): void;
+  (e: 'apply-border'): void;
 }>();
 </script>
 
@@ -276,6 +308,41 @@ const emit = defineEmits<{
           :locale="locale"
           @update:model-open="emit('update:fill-color-menu-open', $event)"
           @change="emit('fill-color-change', $event)"
+        />
+      </div>
+      <!-- 边框 -->
+      <div class="toolbar-split">
+        <button
+          class="toolbar-btn toolbar-split__main"
+          :title="t(locale, 'borders')"
+          :disabled="!hasSelection"
+          @click="emit('apply-border')"
+        >
+          <svg viewBox="0 0 30 30" fill="none" stroke="currentColor">
+            <line
+              v-for="s in BORDER_SEGS"
+              :key="s.name"
+              :x1="s.x1" :y1="s.y1" :x2="s.x2" :y2="s.y2"
+              :stroke-width="segRole(cachedBorder, s.name) === 'thick' ? 3 : 1.5"
+              :stroke-dasharray="segRole(cachedBorder, s.name) === 'dashed' ? '0 4' : 'none'"
+              :stroke-linecap="segRole(cachedBorder, s.name) === 'dashed' ? 'round' : 'square'"
+            />
+          </svg>
+        </button>
+        <button
+          class="toolbar-btn toolbar-split__arrow"
+          :title="t(locale, 'borders')"
+          :disabled="!hasSelection"
+          @click="emit('update:border-menu-open', !borderMenuOpen)"
+        >
+          <svg viewBox="0 0 1024 1024" fill="currentColor"><path d="M180.053 361.387a32 32 0 0 1 45.227 0L512 648.107l286.72-286.72a32 32 0 1 1 45.227 45.227l-309.334 309.333a32 32 0 0 1-45.226 0L180.053 406.613a32 32 0 0 1 0-45.226z" /></svg>
+        </button>
+        <BorderPicker
+          :model-open="borderMenuOpen"
+          :locale="locale"
+          :current-border="cachedBorder"
+          @update:model-open="emit('update:border-menu-open', $event)"
+          @change="emit('border-change', $event)"
         />
       </div>
     </div>
