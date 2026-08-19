@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, nextTick, onBeforeUnmount } from 'vue';
+import { ref, watch, nextTick, onBeforeUnmount } from 'vue';
 import { t } from './constants';
 
 export type BorderType = 'none' | 'bottom' | 'top' | 'left' | 'right' | 'all' | 'outer' | 'thickOuter';
@@ -29,11 +29,6 @@ const BORDER_OPTIONS: { key: BorderType; i18nKey: string }[] = [
   { key: 'outer', i18nKey: 'borderOuter' },
   { key: 'thickOuter', i18nKey: 'borderThickOuter' },
 ];
-
-// 下拉菜单中不显示当前已选中的边框类型
-const visibleOptions = computed(() =>
-  BORDER_OPTIONS.filter(o => o.key !== props.currentBorder)
-);
 
 // 田字型边框图标：4 个外边 + 1 条竖中线 + 1 条横中线
 interface BorderSeg { name: string; x1: number; y1: number; x2: number; y2: number; }
@@ -113,10 +108,9 @@ defineExpose({ open, openMenu, close });
         @mousedown.stop
       >
         <button
-          v-for="opt in visibleOptions"
+          v-for="opt in BORDER_OPTIONS"
           :key="opt.key"
           class="border-picker__item"
-          :class="{ 'border-picker__item--active': currentBorder === opt.key }"
           :title="t(locale, opt.i18nKey)"
           @click="selectBorder(opt.key)"
         >
@@ -169,7 +163,6 @@ defineExpose({ open, openMenu, close });
   white-space: nowrap;
 }
 .border-picker__item:hover { background: #eef3f9; }
-.border-picker__item--active { background: #e5f1fb; color: #0078d7; }
 .border-picker__icon { width: 18px; height: 18px; flex-shrink: 0; }
 .border-picker__label { overflow: hidden; text-overflow: ellipsis; }
 .menu-pop-enter-active, .menu-pop-leave-active { transition: opacity 0.12s ease-out, transform 0.12s ease-out; }
