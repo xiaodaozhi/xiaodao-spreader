@@ -61,8 +61,10 @@ function measureFontMetrics(family: string, size: number, weight: string, style:
   if (!ctx) return { ascent: size * 0.8, descent: size * 0.2 };
   ctx.font = key;
   const m = ctx.measureText('M');
-  const ascent = m.actualBoundingBoxAscent || size * 0.8;
-  const descent = m.actualBoundingBoxDescent || size * 0.2;
+  const rawAsc = m.actualBoundingBoxAscent;
+  const rawDesc = m.actualBoundingBoxDescent;
+  const ascent = rawAsc || size * 0.8;
+  const descent = rawDesc || size * 0.2;
   const a = Math.max(ascent, size * 0.5);
   const d = Math.max(descent, size * 0.15);
   const result = { ascent: a, descent: d };
@@ -138,21 +140,25 @@ function getRowHeight(r: number): number {
       ctx.font = `${fstyle} ${fw} ${fs}px ${ffa}`;
       const firstLine = v.split('\n')[0] || v;
       const m = ctx.measureText(firstLine);
-      const a = m.actualBoundingBoxAscent || fs * 0.8;
-      const d = m.actualBoundingBoxDescent || fs * 0.2;
+      const rawAsc = m.actualBoundingBoxAscent;
+      const rawDesc = m.actualBoundingBoxDescent;
+      const a = rawAsc || fs * 0.8;
+      const d = rawDesc || fs * 0.2;
       const cellAsc = Math.max(a, fs * 0.5);
       const cellDesc = Math.max(d, fs * 0.15);
       if (cellAsc > maxAsc) maxAsc = cellAsc;
       if (cellDesc > maxDesc) maxDesc = cellDesc;
       if (fs > maxFs) maxFs = fs;
       const stWrap = st?.wrap === 'wrap';
+      let cellLines: number;
       if (stWrap) {
         const cw = colWidths.value[c]!;
         const lines = getWrappedLines(ctx, v, Math.max(0, cw - 10), true);
-        if (lines.length > maxLines) maxLines = lines.length;
+        cellLines = lines.length;
+        if (cellLines > maxLines) maxLines = cellLines;
       } else {
-        const lines = v.split('\n').length;
-        if (lines > maxLines) maxLines = lines;
+        cellLines = v.split('\n').length;
+        if (cellLines > maxLines) maxLines = cellLines;
       }
     } else if (fs > maxFs) {
       maxFs = fs;
@@ -161,8 +167,10 @@ function getRowHeight(r: number): number {
       if (metrics.descent > maxDesc) maxDesc = metrics.descent;
     }
   }
-  const calculated = BASE_CELL_VPAD * 2 + maxLines * (maxAsc + maxDesc);
-  return Math.min(MAX_ROW_HEIGHT, Math.max(DEFAULT_ROW_HEIGHT, Math.round(calculated)));
+  const lineH = maxFs;
+  const calculated = BASE_CELL_VPAD * 2 + maxLines * lineH;
+  const finalHeight = Math.min(MAX_ROW_HEIGHT, Math.max(DEFAULT_ROW_HEIGHT, Math.round(calculated)));
+  return finalHeight;
 }
 /** 判断行是否为自动行高（无显式行高属性） */
 function isAutoRow(r: number): boolean {
@@ -1308,14 +1316,16 @@ function render() {
           let maxDesc = 0;
           for (const line of textLines) {
             const m = rCtx.measureText(line);
-            const a = m.actualBoundingBoxAscent || fsz * 0.8;
-            const d = m.actualBoundingBoxDescent || fsz * 0.2;
+            const rawAsc = m.actualBoundingBoxAscent;
+            const rawDesc = m.actualBoundingBoxDescent;
+            const a = rawAsc || fsz * 0.8;
+            const d = rawDesc || fsz * 0.2;
             maxAsc = Math.max(maxAsc, a);
             maxDesc = Math.max(maxDesc, d);
           }
           maxAsc = Math.max(maxAsc, fsz * 0.5);
           maxDesc = Math.max(maxDesc, fsz * 0.15);
-          const lineH = maxAsc + maxDesc;
+          const lineH = fsz;
           const totalH = textLines.length * lineH;
           let ty: number;
           if (vAlign === 'middle') ty = y + (rh - totalH) / 2 + maxAsc;
