@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue';
 import { HEADER_HEIGHT, HEADER_WIDTH, SB_SIZE, DEFAULT_COL_WIDTH, DEFAULT_ROW_HEIGHT, MIN_COL_WIDTH, MIN_ROW_HEIGHT, MAX_COL_WIDTH, MAX_ROW_HEIGHT, UNDO_MAX, t, lightTheme, darkTheme, DEFAULT_FONT_FAMILY, DEFAULT_FONT_SIZE, FONT_FAMILIES, FONT_SIZES, H_ALIGN_OPTIONS, V_ALIGN_OPTIONS } from './constants';
+import type { MergeType } from './constants';
 import Toolbar from './toolbar.vue';
 import Tabbar from './tabbar.vue';
 import { colToLabel, resolveSize, writeClipboardText, getCanvasXY } from './utils';
@@ -34,6 +35,7 @@ let lastEmittedData = '';
 
 // ============ 核心数据 ============
 const cells = reactive<Record<string, CellData>>({});
+const merges = reactive<Record<string, SelectionRange>>({});
 const formulaDeps = new FormulaDeps();
 const selection = ref<SelectionRange | null>(null);
 const activeCell = ref<CellCoord>({ col: 0, row: 0 });
@@ -152,8 +154,15 @@ function getRowHeight(r: number): number {
       const stWrap = st?.wrap === 'wrap';
       let cellLines: number;
       if (stWrap) {
-        const cw = colWidths.value[c]!;
-        const lines = getWrappedLines(ctx, v, Math.max(0, cw - 10), true);
+        // 合并单元格使用合并后的总宽度进行换行计算
+        const mergeInfo = findMerge(c, r);
+        let wrapWidth: number;
+        if (mergeInfo && c === mergeInfo.range.startCol && r === mergeInfo.range.startRow) {
+          wrapWidth = colPositions.value[mergeInfo.range.endCol + 1]! - colPositions.value[c]!;
+        } else {
+          wrapWidth = colWidths.value[c]!;
+        }
+        const lines = getWrappedLines(ctx, v, Math.max(0, wrapWidth - 10), true);
         cellLines = lines.length;
         if (cellLines > maxLines) maxLines = cellLines;
       } else {
@@ -186,15 +195,22 @@ const totalHeight = computed(() => rowPositions.value[rowCount]!);
 
 // ============ 选区操作 ============
 function selectCell(c: number, r: number) {
-  activeCell.value = { col: c, row: r };
-  selection.value = { startCol: c, startRow: r, endCol: c, endRow: r };
+  // 如果点击合并单元格，选区扩展为整个合并区域，活跃单元格为锚点
+  const m = findMerge(c, r);
+  if (m) {
+    activeCell.value = { col: m.range.startCol, row: m.range.startRow };
+    selection.value = { ...m.range };
+  } else {
+    activeCell.value = { col: c, row: r };
+    selection.value = { startCol: c, startRow: r, endCol: c, endRow: r };
+  }
 }
 function selectRange(sC: number, sR: number, eC: number, eR: number) {
-  activeCell.value = { col: sC, row: sR };
-  selection.value = {
-    startCol: Math.min(sC, eC), startRow: Math.min(sR, eR),
-    endCol: Math.max(sC, eC), endRow: Math.max(sR, eR),
-  };
+  // 活跃单元格 = 起始位置（若在合并区域内则取锚点）
+  const m = findMerge(sC, sR);
+  activeCell.value = m ? { col: m.range.startCol, row: m.range.startRow } : { col: sC, row: sR };
+  // 扩展选区以完全包含重叠的合并单元格
+  selection.value = expandSelectionForMerges(sC, sR, eC, eR);
 }
 function selectAll() {
   selectRange(0, 0, colCount - 1, rowCount - 1);
@@ -208,6 +224,60 @@ function cellKey(c: number, r: number) {
 }
 function delCell(k: string) {
   Reflect.deleteProperty(cells, k);
+}
+
+// ============ 合并单元格：辅助函数 ============
+/** 查找包含指定单元格的合并区域，返回 { range, anchor } 或 null */
+function findMerge(c: number, r: number): { range: SelectionRange; anchor: string } | null {
+  for (const key in merges) {
+    const m = merges[key];
+    if (!m) continue;
+    if (c >= m.startCol && c <= m.endCol && r >= m.startRow && r <= m.endRow) {
+      return { range: m, anchor: key };
+    }
+  }
+  return null;
+}
+/** 判断单元格是否为合并区域的锚点（左上角） */
+function isMergeAnchor(c: number, r: number): boolean {
+  return merges[cellKey(c, r)] !== undefined;
+}
+/** 获取合并单元格的跨距 { w, h }（像素宽度/高度），非合并返回单格尺寸 */
+function mergedSpan(c: number, r: number): { w: number; h: number } {
+  const m = findMerge(c, r);
+  if (m && c === m.range.startCol && r === m.range.startRow) {
+    const w = colPositions.value[m.range.endCol + 1]! - colPositions.value[c]!;
+    const h = rowPositions.value[m.range.endRow + 1]! - rowPositions.value[r]!;
+    return { w, h };
+  }
+  return { w: colWidths.value[c]!, h: getRowHeight(r) };
+}
+/**
+ * 扩展选区以完全包含所有与当前选区部分重叠的合并单元格。
+ * 反复扩展直到稳定（因为扩展可能引入新的重叠合并）。
+ */
+function expandSelectionForMerges(sC: number, sR: number, eC: number, eR: number): SelectionRange {
+  let minC = Math.min(sC, eC);
+  let maxC = Math.max(sC, eC);
+  let minR = Math.min(sR, eR);
+  let maxR = Math.max(sR, eR);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const key in merges) {
+      const m = merges[key];
+      if (!m) continue;
+      // 检查是否有部分重叠（一个矩形与另一个矩形相交但非包含）
+      const overlap = m.startCol <= maxC && m.endCol >= minC && m.startRow <= maxR && m.endRow >= minR;
+      if (overlap) {
+        if (m.startCol < minC) { minC = m.startCol; changed = true; }
+        if (m.endCol > maxC) { maxC = m.endCol; changed = true; }
+        if (m.startRow < minR) { minR = m.startRow; changed = true; }
+        if (m.endRow > maxR) { maxR = m.endRow; changed = true; }
+      }
+    }
+  }
+  return { startCol: minC, startRow: minR, endCol: maxC, endRow: maxR };
 }
 
 // ============ 单元格读写 ============
@@ -270,18 +340,33 @@ function cancelEdit() {
 
 // ============ 导航 ============
 function moveActive(dC: number, dR: number) {
-  selectCell(
-    Math.max(0, Math.min(colCount - 1, activeCell.value.col + dC)),
-    Math.max(0, Math.min(rowCount - 1, activeCell.value.row + dR)),
-  );
+  const cur = activeCell.value;
+  let newC = Math.max(0, Math.min(colCount - 1, cur.col + dC));
+  let newR = Math.max(0, Math.min(rowCount - 1, cur.row + dR));
+
+  const curMerge = findMerge(cur.col, cur.row);
+  const targetMerge = findMerge(newC, newR);
+
+  // 如果当前在合并区域内，且移动后仍在同一合并区域，则跳过整个合并区域
+  if (curMerge && targetMerge && curMerge.anchor === targetMerge.anchor) {
+    if (dC > 0) newC = curMerge.range.endCol + 1;
+    else if (dC < 0) newC = curMerge.range.startCol - 1;
+    if (dR > 0) newR = curMerge.range.endRow + 1;
+    else if (dR < 0) newR = curMerge.range.startRow - 1;
+    newC = Math.max(0, Math.min(colCount - 1, newC));
+    newR = Math.max(0, Math.min(rowCount - 1, newR));
+  }
+
+  selectCell(newC, newR);
 }
 function ensureVisible(c: number, r: number) {
   const gw = Math.max(0, viewSize.w - HEADER_WIDTH - SB_SIZE);
   const gh = Math.max(0, viewSize.h - HEADER_HEIGHT - SB_SIZE);
   const cx = colPositions.value[c]!;
   const cy = rowPositions.value[r]!;
-  const cw = colWidths.value[c]!;
-  const ch = getRowHeight(r);
+  const m = findMerge(c, r);
+  const cw = m ? colPositions.value[m.range.endCol + 1]! - colPositions.value[c]! : colWidths.value[c]!;
+  const ch = m ? rowPositions.value[m.range.endRow + 1]! - rowPositions.value[r]! : getRowHeight(r);
   let sx = scrollX.value;
   let sy = scrollY.value;
   if (cx < sx) sx = cx;
@@ -333,6 +418,7 @@ function takeSnap(): UndoSnap {
     sheets: sheets.value.map((s) => ({
       id: s.id, name: s.name,
       cells: cloneCells(s.cells),
+      merges: s.merges ? { ...s.merges } : {},
       selection: s.selection ? { ...s.selection } : null,
       activeCell: s.activeCell ? { ...s.activeCell } : { col: 0, row: 0 },
       scrollX: s.scrollX, scrollY: s.scrollY,
@@ -394,6 +480,9 @@ function applyPaintFormat() {
   saveUndo();
   for (let c = sel.startCol; c <= sel.endCol; c++) {
     for (let r = sel.startRow; r <= sel.endRow; r++) {
+      // 跳过合并区域的覆盖单元格（非锚点）
+      const m = findMerge(c, r);
+      if (m && (c !== m.range.startCol || r !== m.range.startRow)) continue;
       const st = pf.styles[`${c - sel.startCol},${r - sel.startRow}`] ?? null;
       const k = cellKey(c, r);
       const val = cells[k]?.value ?? '';
@@ -411,6 +500,9 @@ function clearFormat() {
   saveUndo();
   for (let c = sel.startCol; c <= sel.endCol; c++) {
     for (let r = sel.startRow; r <= sel.endRow; r++) {
+      // 跳过合并区域的覆盖单元格（非锚点）
+      const m = findMerge(c, r);
+      if (m && (c !== m.range.startCol || r !== m.range.startRow)) continue;
       const k = cellKey(c, r);
       const val = cells[k]?.value ?? '';
       if (val === '') delCell(k);
@@ -465,6 +557,9 @@ function applyStyleToSelection(prop: string, value: unknown) {
   saveUndo();
   for (let c = sel.startCol; c <= sel.endCol; c++) {
     for (let r = sel.startRow; r <= sel.endRow; r++) {
+      // 跳过合并区域的覆盖单元格（非锚点），样式只应用到锚点
+      const m = findMerge(c, r);
+      if (m && (c !== m.range.startCol || r !== m.range.startRow)) continue;
       const k = cellKey(c, r);
       const val = cells[k]?.value ?? '';
       const st = cells[k]?.style ? { ...cells[k]!.style } : {};
@@ -574,6 +669,12 @@ function onFontSizeKeydown(e: KeyboardEvent) {
 function toggleFontSizeMenu(e?: MouseEvent) {
   if (e) e.preventDefault();
   fontSizeMenuOpen.value = !fontSizeMenuOpen.value;
+  if (fontSizeMenuOpen.value) {
+    mergeMenuOpen.value = false;
+    borderMenuOpen.value = false;
+    textColorMenuOpen.value = false;
+    fillColorMenuOpen.value = false;
+  }
 }
 
 function onFontSizeStepUp() {
@@ -637,17 +738,20 @@ function toggleTextColorMenu() {
   textColorMenuOpen.value = !textColorMenuOpen.value;
   fillColorMenuOpen.value = false;
   borderMenuOpen.value = false;
+  mergeMenuOpen.value = false;
 }
 function toggleFillColorMenu() {
   fillColorMenuOpen.value = !fillColorMenuOpen.value;
   textColorMenuOpen.value = false;
   borderMenuOpen.value = false;
+  mergeMenuOpen.value = false;
 }
 function onBorderMenuToggle(v: boolean) {
   borderMenuOpen.value = v;
   if (v) {
     textColorMenuOpen.value = false;
     fillColorMenuOpen.value = false;
+    mergeMenuOpen.value = false;
   }
 }
 function onTextColorChange(v: string) {
@@ -711,10 +815,16 @@ const BORDER_COLOR = '#444';
  *   由较宽的一方决定渲染（例如 A 的右边框=2，B 的左边框=1，则共享边画宽度 2）。
  */
 function borderTypeToWidths(bt: BorderType, col: number, row: number, sel: SelectionRange): { top: number; bottom: number; left: number; right: number } {
-  const isEdgeTop = row === sel.startRow;
-  const isEdgeBottom = row === sel.endRow;
-  const isEdgeLeft = col === sel.startCol;
-  const isEdgeRight = col === sel.endCol;
+  // 合并单元格的锚点：使用合并区域的边界来判断是否在选区边缘
+  const m = findMerge(col, row);
+  const ec = m ? m.range.endCol : col;
+  const er = m ? m.range.endRow : row;
+  const sc = m ? m.range.startCol : col;
+  const sr = m ? m.range.startRow : row;
+  const isEdgeTop = sr === sel.startRow;
+  const isEdgeBottom = er === sel.endRow;
+  const isEdgeLeft = sc === sel.startCol;
+  const isEdgeRight = ec === sel.endCol;
   const w = { top: 0, bottom: 0, left: 0, right: 0 };
   switch (bt) {
     case 'none':
@@ -756,16 +866,20 @@ function onBorderChange(bt: BorderType) {
   if (!sel) return;
   saveUndo();
   if (bt === 'none') {
-    // 清除选区内所有边框属性
+    // 清除选区内所有边框属性（跳过合并区域的非锚点单元格）
     for (let c = sel.startCol; c <= sel.endCol; c++) {
       for (let r = sel.startRow; r <= sel.endRow; r++) {
+        const m = findMerge(c, r);
+        if (m && (c !== m.range.startCol || r !== m.range.startRow)) continue;
         applyBorderToCell(c, r, { top: 0, bottom: 0, left: 0, right: 0 }, true);
       }
     }
   } else {
-    // 对选区中每个单元格只增加对应边框（不删除已有边框）
+    // 对选区中每个单元格只增加对应边框（跳过合并区域的非锚点单元格）
     for (let c = sel.startCol; c <= sel.endCol; c++) {
       for (let r = sel.startRow; r <= sel.endRow; r++) {
+        const m = findMerge(c, r);
+        if (m && (c !== m.range.startCol || r !== m.range.startRow)) continue;
         const w = borderTypeToWidths(bt, c, r, sel);
         applyBorderToCell(c, r, w, false);
       }
@@ -805,10 +919,146 @@ function applyCachedBorder() {
   onBorderChange(cachedBorder.value);
 }
 
-/** 获取单元格某侧边框宽度（0 表示无边框） */
+/** 获取单元格某侧边框宽度（0 表示无边框）。
+ *  合并单元格：锚点的边框属性代表整个合并区域的外边框；
+ *  合并区域内部的覆盖单元格返回 0。 */
 function cellBorderWidth(col: number, row: number, side: 'Top' | 'Bottom' | 'Left' | 'Right'): number {
+  const m = findMerge(col, row);
+  if (m) {
+    const anchorStyle = cells[m.anchor]?.style;
+    if (side === 'Top' && row === m.range.startRow) return (anchorStyle?.borderTopWidth as number) || 0;
+    if (side === 'Bottom' && row === m.range.endRow) return (anchorStyle?.borderBottomWidth as number) || 0;
+    if (side === 'Left' && col === m.range.startCol) return (anchorStyle?.borderLeftWidth as number) || 0;
+    if (side === 'Right' && col === m.range.endCol) return (anchorStyle?.borderRightWidth as number) || 0;
+    return 0;
+  }
   const st = cells[cellKey(col, row)]?.style;
   return (st?.[`border${side}Width`] as number) || 0;
+}
+
+// ============ 合并单元格：操作 ============
+const mergeMenuOpen = ref(false);
+
+function onMergeMenuToggle(v: boolean) {
+  mergeMenuOpen.value = v;
+  if (v) {
+    textColorMenuOpen.value = false;
+    fillColorMenuOpen.value = false;
+    borderMenuOpen.value = false;
+    fontSizeMenuOpen.value = false;
+  }
+}
+
+/** 移除与指定范围重叠的所有合并 */
+function removeOverlappingMerges(sC: number, sR: number, eC: number, eR: number) {
+  const toRemove: string[] = [];
+  for (const key in merges) {
+    const m = merges[key];
+    if (!m) continue;
+    if (m.startCol <= eC && m.endCol >= sC && m.startRow <= eR && m.endRow >= sR) {
+      toRemove.push(key);
+    }
+  }
+  for (const key of toRemove) delete merges[key];
+}
+
+/** 合并后居中：保留左上角值，清除其他单元格值，水平居中 */
+function mergeAndCenter() {
+  const sel = selection.value;
+  if (!sel || (sel.startCol === sel.endCol && sel.startRow === sel.endRow)) return;
+  saveUndo();
+  removeOverlappingMerges(sel.startCol, sel.startRow, sel.endCol, sel.endRow);
+  // 保留左上角值，清除其他单元格
+  const anchorKey = cellKey(sel.startCol, sel.startRow);
+  const anchorVal = cells[anchorKey]?.value ?? '';
+  for (let c = sel.startCol; c <= sel.endCol; c++) {
+    for (let r = sel.startRow; r <= sel.endRow; r++) {
+      if (c === sel.startCol && r === sel.startRow) continue;
+      clearCellsInRange(c, c, r, r);
+    }
+  }
+  // 水平居中
+  const st = cells[anchorKey]?.style ? { ...cells[anchorKey]!.style } : {};
+  st.textAlign = 'center';
+  cells[anchorKey] = { value: anchorVal, style: st };
+  // 记录合并
+  merges[anchorKey] = { startCol: sel.startCol, startRow: sel.startRow, endCol: sel.endCol, endRow: sel.endRow };
+  selectCell(sel.startCol, sel.startRow);
+  scheduleRender();
+  emitModelData();
+}
+
+/** 跨越合并：每行单独合并 */
+function mergeAcross() {
+  const sel = selection.value;
+  if (!sel || sel.startCol === sel.endCol) return;
+  saveUndo();
+  for (let r = sel.startRow; r <= sel.endRow; r++) {
+    removeOverlappingMerges(sel.startCol, r, sel.endCol, r);
+    const anchorKey = cellKey(sel.startCol, r);
+    const anchorVal = cells[anchorKey]?.value ?? '';
+    for (let c = sel.startCol + 1; c <= sel.endCol; c++) {
+      clearCellsInRange(c, c, r, r);
+    }
+    merges[anchorKey] = { startCol: sel.startCol, startRow: r, endCol: sel.endCol, endRow: r };
+  }
+  // 重新选中区域以更新活跃单元格为合并锚点
+  selectRange(sel.startCol, sel.startRow, sel.endCol, sel.endRow);
+  scheduleRender();
+  emitModelData();
+}
+
+/** 合并单元格（不改变对齐） */
+function mergeCells() {
+  const sel = selection.value;
+  if (!sel || (sel.startCol === sel.endCol && sel.startRow === sel.endRow)) return;
+  saveUndo();
+  removeOverlappingMerges(sel.startCol, sel.startRow, sel.endCol, sel.endRow);
+  const anchorKey = cellKey(sel.startCol, sel.startRow);
+  const anchorVal = cells[anchorKey]?.value ?? '';
+  for (let c = sel.startCol; c <= sel.endCol; c++) {
+    for (let r = sel.startRow; r <= sel.endRow; r++) {
+      if (c === sel.startCol && r === sel.startRow) continue;
+      clearCellsInRange(c, c, r, r);
+    }
+  }
+  merges[anchorKey] = { startCol: sel.startCol, startRow: sel.startRow, endCol: sel.endCol, endRow: sel.endRow };
+  selectCell(sel.startCol, sel.startRow);
+  scheduleRender();
+  emitModelData();
+}
+
+/** 取消合并单元格 */
+function unmergeCells() {
+  const sel = selection.value;
+  if (!sel) return;
+  saveUndo();
+  removeOverlappingMerges(sel.startCol, sel.startRow, sel.endCol, sel.endRow);
+  scheduleRender();
+  emitModelData();
+}
+
+/** 工具栏左侧按钮：单选已合并单元格时取消合并，否则合并后居中 */
+function onApplyMerge() {
+  const sel = selection.value;
+  if (!sel) return;
+  // 检查选区是否恰好是一个合并区域
+  const m = findMerge(sel.startCol, sel.startRow);
+  if (m && sel.startCol === m.range.startCol && sel.startRow === m.range.startRow
+      && sel.endCol === m.range.endCol && sel.endRow === m.range.endRow) {
+    unmergeCells();
+  } else {
+    mergeAndCenter();
+  }
+}
+
+function onMergeChange(v: MergeType) {
+  switch (v) {
+    case 'mergeCenter': mergeAndCenter(); break;
+    case 'mergeAcross': mergeAcross(); break;
+    case 'mergeCells': mergeCells(); break;
+    case 'unmergeCells': unmergeCells(); break;
+  }
 }
 
 // ============ 剪贴板 ============
@@ -1014,7 +1264,7 @@ function nid() {
 }
 function mkSheet(name: string): SheetState {
   return {
-    id: nid(), name, cells: {},
+    id: nid(), name, cells: {}, merges: {},
     selection: { startCol: 0, startRow: 0, endCol: 0, endRow: 0 },
     activeCell: { col: 0, row: 0 },
     scrollX: 0, scrollY: 0,
@@ -1028,6 +1278,7 @@ function saveSheet() {
   const s = sheets.value[activeSheetIndex.value];
   if (!s) return;
   s.cells = { ...cells };
+  s.merges = { ...merges };
   s.selection = selection.value ? { ...selection.value } : null;
   s.activeCell = { ...activeCell.value };
   s.scrollX = scrollX.value;
@@ -1040,6 +1291,9 @@ function loadSheet(i: number) {
   if (!s) return;
   Object.keys(cells).forEach((k) => delCell(k));
   Object.assign(cells, s.cells);
+  // 清空并重新加载合并信息
+  Object.keys(merges).forEach((k) => delete merges[k]);
+  if (s.merges) Object.assign(merges, s.merges);
   selection.value = s.selection ? { ...s.selection } : null;
   activeCell.value = { ...s.activeCell };
   scrollX.value = s.scrollX;
@@ -1094,6 +1348,7 @@ function dupSheet(i: number) {
   }
   const cp: SheetState = {
     id: nid(), name: nn, cells: { ...src.cells },
+    merges: src.merges ? { ...src.merges } : {},
     selection: src.selection ? { ...src.selection } : null,
     activeCell: src.activeCell ? { ...src.activeCell } : { col: 0, row: 0 },
     scrollX: src.scrollX, scrollY: src.scrollY,
@@ -1127,6 +1382,9 @@ function emitModelData() {
       if (v.style) cs[k]!.style = v.style;
     }
     const sh: SheetModelData = { name: s.name, cells: cs };
+    if (s.merges && Object.keys(s.merges).length) {
+      sh.merges = { ...s.merges };
+    }
     const cw: Record<number, number> = {};
     for (let i = 0; i < s.colWidths.length; i++) {
       if (s.colWidths[i] !== 100) cw[i] = s.colWidths[i]!;
@@ -1160,6 +1418,14 @@ function scheduleOptEmit() {
 // ============ 主题 & CSS ============
 const themeColors = computed(() => props.theme === 'dark' ? darkTheme : lightTheme);
 const outerStyle = computed(() => buildOuterStyle(themeColors.value, props.width, props.height, resolveSize));
+// 溢出菜单通过 Teleport 渲染到 body，需要显式传递 CSS 变量
+const toolbarThemeVars = computed(() => {
+  const vars: Record<string, string> = {};
+  for (const [k, v] of Object.entries(outerStyle.value)) {
+    if (k.startsWith('--')) vars[k] = v;
+  }
+  return vars;
+});
 
 // ============ 模板 refs & 滚动控制 ============
 const wrapperRef = ref<HTMLDivElement | null>(null);
@@ -1261,16 +1527,26 @@ function render() {
   // 网格单元格
   rCtx.save();
   rCtx.beginPath();
-  rCtx.rect(HW + 0.5, HH + 0.5, W - HW - 1, H - HH - 1);
+  rCtx.rect(HW, HH, W - HW, H - HH);
   rCtx.clip();
   const sel = selection.value;
   const ed = editingCell.value;
   for (let row = sR; row <= eR; row++) {
     for (let col = sC; col <= eC; col++) {
+      // 合并单元格：跳过被覆盖的非锚点单元格（由锚点统一绘制整个合并区域）
+      const mergeInfo = findMerge(col, row);
+      if (mergeInfo && !(col === mergeInfo.range.startCol && row === mergeInfo.range.startRow)) {
+        continue;
+      }
       const x = HW + cP[col]! - sx;
       const y = HH + rP[row]! - sy;
-      const cw = cW[col]!;
-      const rh = rH[row]!;
+      // 合并锚点使用合并后的总宽高
+      let cw = cW[col]!;
+      let rh = rH[row]!;
+      if (mergeInfo) {
+        cw = cP[mergeInfo.range.endCol + 1]! - cP[col]!;
+        rh = rP[mergeInfo.range.endRow + 1]! - rP[row]!;
+      }
       if (x + cw < HW || y + rh < HH || x > W || y > H) continue;
       if (isSelected(col, row)) {
         rCtx.fillStyle = cs.selectionBg;
@@ -1364,6 +1640,7 @@ function render() {
       // 绘制单元格边框（考虑相邻单元格共享边：取较宽一方）
       // 上/左边框由每个单元格自己绘制（覆盖与上方/左方单元格的共享边）
       // 下/右边框仅由最后一行/最后一列绘制，避免重复绘制共享边
+      // 合并单元格的锚点始终绘制四条边框（因为其他单元格不会为合并区域的外边缘绘制边框）
       const cst = cells[cellKey(col, row)]?.style;
       const ownT = (cst?.borderTopWidth as number) || 0;
       const ownL = (cst?.borderLeftWidth as number) || 0;
@@ -1372,42 +1649,19 @@ function render() {
       const wT = Math.max(ownT, cellBorderWidth(col, row - 1, 'Bottom'));
       const wL = Math.max(ownL, cellBorderWidth(col - 1, row, 'Right'));
       if (wT > 0 || wL > 0 || ownB > 0 || ownR > 0) {
-        rCtx.strokeStyle = BORDER_COLOR;
-        // 上边框
+        rCtx.fillStyle = BORDER_COLOR;
+        const cp = 1 / rDpr;
         if (wT > 0) {
-          rCtx.lineWidth = wT;
-          rCtx.beginPath();
-          const ty = y + wT / 2 - 0.5;
-          rCtx.moveTo(x, ty);
-          rCtx.lineTo(x + cw, ty);
-          rCtx.stroke();
+          rCtx.fillRect(x - cp, y, cw + 2 * cp, wT);
         }
-        // 左边框
+        if (ownB > 0 && (mergeInfo || row === eR)) {
+          rCtx.fillRect(x - cp, y + rh - ownB, cw + 2 * cp, ownB);
+        }
         if (wL > 0) {
-          rCtx.lineWidth = wL;
-          rCtx.beginPath();
-          const lx = x + wL / 2 - 0.5;
-          rCtx.moveTo(lx, y);
-          rCtx.lineTo(lx, y + rh);
-          rCtx.stroke();
+          rCtx.fillRect(x, y - cp, wL, rh + 2 * cp);
         }
-        // 下边框（仅最后一行，避免与下一行的上边框重复）
-        if (row === eR && ownB > 0) {
-          rCtx.lineWidth = ownB;
-          rCtx.beginPath();
-          const by = y + rh - ownB / 2 + 0.5;
-          rCtx.moveTo(x, by);
-          rCtx.lineTo(x + cw, by);
-          rCtx.stroke();
-        }
-        // 右边框（仅最后一列，避免与右侧单元格的左边框重复）
-        if (col === eC && ownR > 0) {
-          rCtx.lineWidth = ownR;
-          rCtx.beginPath();
-          const rx = x + cw - ownR / 2 + 0.5;
-          rCtx.moveTo(rx, y);
-          rCtx.lineTo(rx, y + rh);
-          rCtx.stroke();
+        if (ownR > 0 && (mergeInfo || col === eC)) {
+          rCtx.fillRect(x + cw - ownR, y - cp, ownR, rh + 2 * cp);
         }
       }
     }
@@ -1980,7 +2234,10 @@ const editInputStyle = computed(() => {
   const bg = typeof st?.backgroundColor === 'string' ? st.backgroundColor : undefined;
   const hAlign = typeof st?.textAlign === 'string' ? st.textAlign : 'left';
   const vAlign = typeof st?.verticalAlign === 'string' ? st.verticalAlign : 'top';
-  const rhVal = getRowHeight(r);
+  // 合并单元格使用合并后的总宽高
+  const m = findMerge(c, r);
+  const cwVal = m ? colPositions.value[m.range.endCol + 1]! - colPositions.value[c]! : colWidths.value[c]!;
+  const rhVal = m ? rowPositions.value[m.range.endRow + 1]! - rowPositions.value[r]! : getRowHeight(r);
   const BORDER = 2;
   // 使用与 Canvas 相同的字体度量
   const { ascent: asc, descent: desc } = measureFontMetrics(ffa, fsz, fw, fs);
@@ -1998,7 +2255,7 @@ const editInputStyle = computed(() => {
   return {
     left: `${HEADER_WIDTH + colPositions.value[c]! - scrollX.value}px`,
     top: `${HEADER_HEIGHT + rowPositions.value[r]! - scrollY.value}px`,
-    width: `${colWidths.value[c]!}px`,
+    width: `${cwVal}px`,
     height: `${rhVal}px`,
     fontFamily: ffa,
     fontSize: `${fsz}px`,
@@ -2675,6 +2932,7 @@ watch(() => [props.width, props.height], () => {
 });
 watch(() => props.theme, () => scheduleRender());
 watch(() => ({ ...cells }), () => nextTick(emitModelData), { deep: false });
+watch(() => ({ ...merges }), () => { nextTick(emitModelData); scheduleRender(); }, { deep: false });
 watch(activeSheetIndex, () => nextTick(emitModelData));
 watch(() => modelData.value, (v) => {
   if (!v || v.length === 0) return;
@@ -2696,6 +2954,11 @@ watch(() => modelData.value, (v) => {
       for (const [r, h] of Object.entries(s.rowHeights)) {
         const ri = Number(r);
         if (ri >= 0 && ri < rowCount && h >= 24) sh.rowHeights[ri] = h;
+      }
+    }
+    if (s.merges) {
+      for (const [k, mr] of Object.entries(s.merges)) {
+        sh.merges![k] = { ...mr };
       }
     }
     return sh;
@@ -2743,6 +3006,8 @@ onBeforeUnmount(() => {
       :sel-h-align="selHAlign"
       :sel-v-align="selVAlign"
       :sel-wrap="selWrap"
+      :merge-menu-open="mergeMenuOpen"
+      :theme-vars="toolbarThemeVars"
       @undo="undo()"
       @redo="redo()"
       @paint-format="onPaintFormat"
@@ -2772,6 +3037,9 @@ onBeforeUnmount(() => {
       @h-align-change="onHAlignChange($event)"
       @v-align-change="onVAlignChange($event)"
       @wrap-toggle="onWrapToggle"
+      @update:merge-menu-open="onMergeMenuToggle($event)"
+      @merge-change="onMergeChange($event)"
+      @apply-merge="onApplyMerge"
     />
 
     <!-- 编辑栏 -->

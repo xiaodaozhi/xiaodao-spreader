@@ -12,11 +12,13 @@ const props = withDefaults(defineProps<{
   colorKey?: string;
   currentColor?: string;
   locale?: string;
+  triggerEl?: HTMLElement | null;
 }>(), {
   modelOpen: undefined,
   colorKey: 'text',
   currentColor: '',
   locale: 'zh-CN',
+  triggerEl: null,
 });
 
 const emit = defineEmits<{
@@ -175,6 +177,7 @@ function isSelected(value: string): boolean {
 const open = ref(false);
 const rootRef = ref<HTMLDivElement | null>(null);
 const menuRef = ref<HTMLDivElement | null>(null);
+const pos = ref<{ left?: number; right?: number; top: number }>({ top: 0 });
 
 watch(() => props.modelOpen, (v) => {
   if (v !== undefined && v !== open.value) {
@@ -184,15 +187,33 @@ watch(() => props.modelOpen, (v) => {
 
 function onClickOutside(e: MouseEvent) {
   const el = rootRef.value;
-  if (el && !el.contains(e.target as Node)) {
-    close();
-  }
+  const mEl = menuRef.value;
+  const t = e.target as Node;
+  if (el && el.contains(t)) return;
+  if (mEl && mEl.contains(t)) return;
+  close();
 }
 
 function openMenu() {
   open.value = true;
   if (props.modelOpen !== undefined) emit('update:modelOpen', true);
   nextTick(() => {
+    const el = props.triggerEl ?? rootRef.value;
+    if (el) {
+      const r = el.getBoundingClientRect();
+      const menuH = 150;
+      const estMenuW = 120;
+      let right: number | undefined = window.innerWidth - r.right;
+      let top = r.bottom + 4;
+      let posLeft: number | undefined;
+      if (r.left - estMenuW < 4) {
+        right = undefined;
+        posLeft = Math.max(4, r.left);
+      }
+      if (top + menuH > window.innerHeight - 4) top = r.top - menuH - 4;
+      if (top < 4) top = 4;
+      pos.value = right !== undefined ? { right, top } : { left: posLeft!, top };
+    }
     document.addEventListener('mousedown', onClickOutside);
   });
 }
@@ -218,42 +239,43 @@ defineExpose({ open, openMenu, close });
 
 <template>
   <div ref="rootRef" class="color-picker">
-    <Transition name="menu-pop">
-    <div
-      v-if="open"
-      ref="menuRef"
-      class="color-picker__menu"
-      @mousedown.stop
-    >
+    <Teleport to="body">
+      <Transition name="menu-pop">
       <div
-        v-for="(row, ri) in groups"
-        :key="ri"
-        class="color-picker__row"
+        v-if="open"
+        ref="menuRef"
+        class="color-picker__menu"
+        :style="{ left: pos.left !== undefined ? pos.left + 'px' : undefined, right: pos.right !== undefined ? pos.right + 'px' : undefined, top: pos.top + 'px' }"
+        @mousedown.stop
       >
-        <button
-          v-for="c in row"
-          :key="c.value"
-          class="color-picker__swatch"
-          :class="{ 'color-picker__swatch--selected': isSelected(c.value) }"
-          :title="labelOf(c.key)"
-          :style="{
-            background: c.value || 'transparent',
-            border: !c.value ? '1px dashed #999' : '1px solid rgba(0,0,0,0.15)',
-          }"
-          @click="selectColor(c.value)"
-        />
+        <div
+          v-for="(row, ri) in groups"
+          :key="ri"
+          class="color-picker__row"
+        >
+          <button
+            v-for="c in row"
+            :key="c.value"
+            class="color-picker__swatch"
+            :class="{ 'color-picker__swatch--selected': isSelected(c.value) }"
+            :title="labelOf(c.key)"
+            :style="{
+              background: c.value || 'transparent',
+              border: !c.value ? '1px dashed #999' : '1px solid rgba(0,0,0,0.15)',
+            }"
+            @click="selectColor(c.value)"
+          />
+        </div>
       </div>
-    </div>
-    </Transition>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
 <style scoped>
 .color-picker { position: relative; display: inline-flex; height: 26px; }
 .color-picker__menu {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 0;
+  position: fixed;
   z-index: 9999;
   background: #fff;
   border: 1px solid var(--sp-toolbar-border, #d0d0d0);

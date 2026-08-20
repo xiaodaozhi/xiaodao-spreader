@@ -35,6 +35,7 @@ export interface SpreadsheetData {
 export interface SheetModelData {
   name: string;
   cells: Record<string, { value: string; style?: Record<string, unknown> }>;
+  merges?: Record<string, SelectionRange>;
   colWidths?: Record<number, number>;
   rowHeights?: Record<number, number>;
 }
@@ -43,6 +44,7 @@ export interface SheetState {
   id: string;
   name: string;
   cells: Record<string, CellData>;
+  merges: Record<string, SelectionRange>;
   selection: SelectionRange | null;
   activeCell: CellCoord;
   scrollX: number;

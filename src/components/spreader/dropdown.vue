@@ -12,6 +12,7 @@ const props = withDefaults(defineProps<{
   modelOpen?: boolean;
   hideTrigger?: boolean;
   align?: 'left' | 'right';
+  triggerEl?: HTMLElement | null;
 }>(), {
   width: 'auto',
   menuWidth: undefined,
@@ -20,6 +21,7 @@ const props = withDefaults(defineProps<{
   modelOpen: undefined,
   hideTrigger: false,
   align: 'left',
+  triggerEl: null,
 });
 
 const emit = defineEmits<{
@@ -52,7 +54,7 @@ function scrollBy(d: number) {
 function openMenu() {
   open.value = true;
   if (props.modelOpen !== undefined) emit('update:modelOpen', true);
-  const el = rootRef.value;
+  const el = props.triggerEl ?? rootRef.value;
   if (!el) return;
   const r = el.getBoundingClientRect();
   const menuH = vc.value * 22 + (scrollable.value ? 2 * 15 : 0) + 8;
@@ -274,9 +276,9 @@ onBeforeUnmount(() => {
   text-align: left;
 }
 .sp-dropdown__caret {
-  width: 12px;
-  height: 12px;
-  min-width: 12px;
+  width: 10px;
+  height: 10px;
+  min-width: 10px;
   opacity: 0.7;
 }
 .sp-dropdown__menu {

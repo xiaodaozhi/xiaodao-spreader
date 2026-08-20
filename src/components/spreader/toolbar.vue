@@ -4,6 +4,8 @@ import { t, type FontOption } from './constants';
 import SpDropdown from './dropdown.vue';
 import ColorPicker from './colorPicker.vue';
 import BorderPicker, { type BorderType } from './borderPicker.vue';
+import MergePicker from './mergePicker.vue';
+import type { MergeType } from './constants';
 
 // 田字型边框按钮图标：4 个外边 + 1 条竖中线 + 1 条横中线（与 borderPicker.vue 保持一致）
 interface BorderSeg { name: string; x1: number; y1: number; x2: number; y2: number; }
@@ -36,12 +38,17 @@ function segRole(bt: BorderType, name: string): 'solid' | 'dashed' | 'thick' {
 const TOOL_KEYS = [
   'undo', 'redo', 'paint', 'clear', 'sep1', 'font', 'fontSize', 'sep2',
   'bold', 'italic', 'underline', 'strike', 'sep3', 'textColor', 'fillColor', 'border',
-  'sep4', 'hAlign', 'vAlign', 'wrap',
+  'sep4', 'hAlign', 'vAlign', 'wrap', 'merge',
 ] as const;
 
 const rootEl = ref<HTMLElement | null>(null);
 const overflowMenuEl = ref<HTMLElement | null>(null);
 const moreBtnEl = ref<HTMLElement | null>(null);
+const textColorArrowRef = ref<HTMLElement | null>(null);
+const fillColorArrowRef = ref<HTMLElement | null>(null);
+const borderArrowRef = ref<HTMLElement | null>(null);
+const mergeArrowRef = ref<HTMLElement | null>(null);
+const fontSizeArrowRef = ref<HTMLElement | null>(null);
 const overflowKeys = ref<Set<string>>(new Set());
 const overflowOpen = ref(false);
 const skipCloseAnim = ref(false);
@@ -107,12 +114,14 @@ const menuPosVersion = ref(0);
 
 const menuStyle = computed(() => {
   const btn = moreBtnEl.value;
+  const base: Record<string, string> = { position: 'fixed', top: '0px', right: '0px' };
   if (!btn) {
-    return { position: 'fixed' as const, top: '0px', right: '0px' };
+    return { ...props.themeVars, ...base };
   }
   void menuPosVersion.value;
   const rect = btn.getBoundingClientRect();
   return {
+    ...props.themeVars,
     position: 'fixed' as const,
     top: `${rect.bottom + 4}px`,
     right: `${window.innerWidth - rect.right}px`,
@@ -193,6 +202,8 @@ const props = defineProps<{
   selWrap: boolean;
   hAlignOptions: FontOption[];
   vAlignOptions: FontOption[];
+  mergeMenuOpen: boolean;
+  themeVars?: Record<string, string>;
 }>();
 
 const emit = defineEmits<{
@@ -225,6 +236,9 @@ const emit = defineEmits<{
   (e: 'h-align-change', v: string | number): void;
   (e: 'v-align-change', v: string | number): void;
   (e: 'wrap-toggle'): void;
+  (e: 'update:merge-menu-open', v: boolean): void;
+  (e: 'merge-change', v: MergeType): void;
+  (e: 'apply-merge'): void;
 }>();
 </script>
 
@@ -304,7 +318,8 @@ const emit = defineEmits<{
           class="toolbar-font"
           :model-value="selFontFamily"
           :options="fontFamilyOptions"
-          :width="110"
+          :width="isOverflow('font') ? '100%' : 110"
+          :menu-width="isOverflow('font') ? 120 : undefined"
           :visible-count="8"
           :title="t(locale, 'fontFamily')"
           @change="emit('font-family-change', $event)"
@@ -331,16 +346,18 @@ const emit = defineEmits<{
             class="toolbar-font-size__dropdown"
             :model-value="selFontSize"
             :options="fontSizeOptions"
-            :width="56"
-            :menu-width="56"
+            :width="isOverflow('fontSize') ? '100%' : 56"
+            :menu-width="isOverflow('fontSize') ? 120 : 56"
             :visible-count="9"
             :title="t(locale, 'fontSize')"
             :hide-trigger="true"
             :model-open="fontSizeMenuOpen"
+            :trigger-el="fontSizeArrowRef"
             @update:model-open="emit('update:font-size-menu-open', $event)"
             @change="emit('font-size-change', $event)"
           />
           <button
+            ref="fontSizeArrowRef"
             class="toolbar-font-size__btn"
             type="button"
             :title="t(locale, 'fontSize')"
@@ -455,6 +472,7 @@ const emit = defineEmits<{
             </svg>
           </button>
           <button
+            ref="textColorArrowRef"
             class="toolbar-btn toolbar-split__arrow"
             :title="t(locale, 'fontColor')"
             :disabled="!hasSelection"
@@ -467,6 +485,7 @@ const emit = defineEmits<{
             color-key="text"
             :current-color="selTextColor"
             :locale="locale"
+            :trigger-el="textColorArrowRef"
             @update:model-open="emit('update:text-color-menu-open', $event)"
             @change="emit('text-color-change', $event)"
           />
@@ -490,6 +509,7 @@ const emit = defineEmits<{
             </svg>
           </button>
           <button
+            ref="fillColorArrowRef"
             class="toolbar-btn toolbar-split__arrow"
             :title="t(locale, 'fillColor')"
             :disabled="!hasSelection"
@@ -502,6 +522,7 @@ const emit = defineEmits<{
             color-key="fill"
             :current-color="selFillColor"
             :locale="locale"
+            :trigger-el="fillColorArrowRef"
             @update:model-open="emit('update:fill-color-menu-open', $event)"
             @change="emit('fill-color-change', $event)"
           />
@@ -531,6 +552,7 @@ const emit = defineEmits<{
             </svg>
           </button>
           <button
+            ref="borderArrowRef"
             class="toolbar-btn toolbar-split__arrow"
             :title="t(locale, 'borders')"
             :disabled="!hasSelection"
@@ -542,6 +564,7 @@ const emit = defineEmits<{
             :model-open="borderMenuOpen"
             :locale="locale"
             :current-border="cachedBorder"
+            :trigger-el="borderArrowRef"
             @update:model-open="emit('update:border-menu-open', $event)"
             @change="emit('border-change', $event)"
           />
@@ -560,7 +583,8 @@ const emit = defineEmits<{
           class="toolbar-align"
           :model-value="selHAlign"
           :options="hAlignOptions"
-          :width="44"
+          :width="isOverflow('hAlign') ? '100%' : 44"
+          :menu-width="isOverflow('hAlign') ? 120 : undefined"
           :visible-count="3"
           align="right"
           :title="t(locale, 'hAlign')"
@@ -576,7 +600,8 @@ const emit = defineEmits<{
           class="toolbar-align"
           :model-value="selVAlign"
           :options="vAlignOptions"
-          :width="44"
+          :width="isOverflow('vAlign') ? '100%' : 44"
+          :menu-width="isOverflow('vAlign') ? 120 : undefined"
           :visible-count="3"
           align="right"
           :title="t(locale, 'vAlign')"
@@ -593,6 +618,38 @@ const emit = defineEmits<{
         >
           <svg viewBox="0 0 1024 1024" fill="currentColor"><path d="M896 179.2a38.4 38.4 0 0 0-76.8 0v665.6a38.4 38.4 0 0 0 76.8 0v-665.6zM204.8 281.6A38.4 38.4 0 0 0 204.8 358.4h179.2a38.4 38.4 0 0 0 0-76.8H204.8zM550.4 281.6a38.4 38.4 0 0 0 0 76.8h51.2c35.328 0 64 28.672 64 64v179.2c0 35.328-28.672 64-64 64H246.272l36.864-36.864a38.4 38.4 0 1 0-54.272-54.272l-102.4 102.4a38.4 38.4 0 0 0 0 54.272l102.4 102.4a38.4 38.4 0 0 0 54.272-54.272l-36.864-36.864h355.328a140.8 140.8 0 0 0 140.8-140.8v-179.2a140.8 140.8 0 0 0-140.8-140.8h-51.2z" /></svg>
         </button>
+      </div>
+    </Teleport>
+
+    <!-- 合并单元格 -->
+    <Teleport :disabled="!isOverflow('merge')" :to="overflowMenuEl ?? undefined">
+      <div class="tb-item" data-key="merge">
+        <div class="toolbar-split">
+          <button
+            class="toolbar-btn toolbar-split__main"
+            :title="t(locale, 'mergeCenter')"
+            :disabled="!hasSelection"
+            @click="emit('apply-merge')"
+          >
+            <svg viewBox="0 0 1024 1024" fill="currentColor"><path d="M709.952 465.92l88-76.032C801.92 385.984 806.656 384 812.032 384s10.048 1.984 14.08 5.952C830.08 393.92 832 398.656 832 403.968L832 448l32 0C881.664 448 896 462.336 896 480S881.664 512 864 512L832 512l0 44.032c0 5.376-1.92 10.112-5.952 14.08C822.08 574.08 817.344 576 812.032 576s-10.048-1.92-14.08-5.952L709.952 494.08C705.984 490.112 704 485.376 704 480S705.984 469.952 709.952 465.92zM378.048 465.92 290.048 389.952C286.08 385.984 281.344 384 275.968 384s-10.048 1.984-14.08 5.952C257.92 393.92 256 398.656 256 403.968L256 448 224 448C206.336 448 192 462.336 192 480S206.336 512 224 512L256 512l0 44.032c0 5.376 1.92 10.112 5.952 14.08C265.92 574.08 270.656 576 275.968 576s10.048-1.92 14.08-5.952L378.048 494.08C382.016 490.112 384 485.376 384 480S382.016 469.952 378.048 465.92zM448 128 128 128l0 704 320 0 0-128 64 0 0 128c0 35.392-28.608 64-64 64L128 896c-35.392 0-64-28.608-64-64L64 128c0-35.392 28.608-64 64-64l320 0 0 0c35.392 0 64 28.608 64 64l0 128L448 256 448 128M640 128l320 0 0 704-320 0 0-128L576 704l0 128c0 35.392 28.608 64 64 64l320 0c35.392 0 64-28.608 64-64L1024 128c0-35.392-28.608-64-64-64l-320 0 0 0C604.608 64 576 92.608 576 128l0 128 64 0L640 128M722.304 642.304c0 8.512-3.52 16.32-10.496 23.36s-15.424 10.624-25.344 10.624c-5.76 0-10.688-1.088-14.72-3.136-4.096-2.048-7.616-4.928-10.432-8.512s-5.824-9.088-9.024-16.512-5.952-13.952-8.32-19.648l-17.28-46.016L479.36 582.464 462.08 629.568c-6.72 18.304-12.48 30.656-17.344 37.12s-12.544 9.6-23.424 9.6c-9.28 0-17.408-3.456-24.512-10.24s-10.624-14.592-10.624-23.232c0-4.992 0.896-10.176 2.496-15.488S393.024 614.592 396.8 605.056l92.672-238.016C492.096 360.256 495.296 352 499.008 342.464s7.68-17.536 11.904-23.872 9.664-11.456 16.576-15.36c6.784-3.968 15.232-5.888 25.344-5.888 10.176 0 18.752 1.92 25.472 5.888 6.848 3.968 12.352 8.96 16.64 15.104 4.096 6.208 7.744 12.8 10.624 19.904s6.528 16.576 11.008 28.352l94.656 236.48C718.592 621.056 722.304 634.112 722.304 642.304zM606.912 526.784 552.32 375.552 498.624 526.784 606.912 526.784z"/></svg>
+          </button>
+          <button
+            ref="mergeArrowRef"
+            class="toolbar-btn toolbar-split__arrow"
+            :title="t(locale, 'mergeCells')"
+            :disabled="!hasSelection"
+            @click="emit('update:merge-menu-open', !mergeMenuOpen)"
+          >
+            <svg viewBox="0 0 1024 1024" fill="currentColor"><path d="M180.053 361.387a32 32 0 0 1 45.227 0L512 648.107l286.72-286.72a32 32 0 1 1 45.227 45.227l-309.334 309.333a32 32 0 0 1-45.226 0L180.053 406.613a32 32 0 0 1 0-45.226z" /></svg>
+          </button>
+          <MergePicker
+            :model-open="mergeMenuOpen"
+            :locale="locale"
+            :trigger-el="mergeArrowRef"
+            @update:model-open="emit('update:merge-menu-open', $event)"
+            @change="emit('merge-change', $event)"
+          />
+        </div>
       </div>
     </Teleport>
 
@@ -634,7 +691,7 @@ const emit = defineEmits<{
 .toolbar-font { flex: 0 0 auto; }
 .toolbar-align { flex: 0 0 auto; }
 .toolbar-font-size { display: inline-flex; align-items: center; gap: 0; height: 26px; position: relative; }
-.toolbar-font-size__input { width: 36px; height: 26px; border: 1px solid transparent; border-right: none; border-radius: 3px 0 0 3px; background: transparent; color: var(--sp-toolbar-btn-color); font-size: 12px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; text-align: center; padding: 0 2px; outline: none; box-sizing: border-box; -moz-appearance: textfield; }
+.toolbar-font-size__input { width: 36px; height: 26px; border: 1px solid transparent; border-right: none; border-radius: 3px 0 0 3px; background: transparent; color: var(--sp-toolbar-btn-color); font-size: 12px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; text-align: left; padding: 0 5px; outline: none; box-sizing: border-box; appearance: none; -moz-appearance: textfield; }
 .toolbar-font-size__input::-webkit-outer-spin-button,
 .toolbar-font-size__input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .toolbar-font-size__input:hover { background: var(--sp-toolbar-btn-hover-bg); }
@@ -670,13 +727,46 @@ const emit = defineEmits<{
 .overflow-menu .tb-item { width: 100%; }
 .overflow-menu .toolbar-sep { width: 100%; height: 1px; margin: 2px 0; }
 .overflow-menu .toolbar-split { width: 100%; }
-.overflow-menu .toolbar-split__main { flex: 1 1 auto; justify-content: flex-start; }
+.overflow-menu .toolbar-split__main { flex: 1 1 auto; justify-content: flex-start; padding-left: 6px; }
 .overflow-menu .toolbar-font-size { width: 100%; justify-content: flex-start; }
 .overflow-menu .toolbar-font { width: 100%; }
 .overflow-menu .toolbar-align { width: 100%; }
+.overflow-menu .toolbar-btn:not(.toolbar-btn--step):not(.toolbar-split__arrow) { width: 100%; justify-content: flex-start; padding-left: 6px; }
+.overflow-menu .toolbar-color { width: 100%; }
+.overflow-menu .toolbar-wrap { width: 100%; justify-content: flex-start; }
 
 /* 统一弹出动画：fade + scale */
 .menu-pop-enter-active, .menu-pop-leave-active { transition: opacity 0.12s ease-out, transform 0.12s ease-out; }
 .menu-pop-enter-from, .menu-pop-leave-to { opacity: 0; transform: scale(0.9); }
+</style>
+
+<!-- 非 scoped 样式：溢出菜单通过 Teleport 渲染到 body，scoped 样式无法穿透 -->
+<style>
+.overflow-menu .tb-item { width: 100%; }
+.overflow-menu .toolbar-sep { width: 100%; height: 1px; margin: 2px 0; }
+.overflow-menu .toolbar-split { width: 100%; }
+.overflow-menu .toolbar-split__main { flex: 1 1 auto; justify-content: flex-start; padding-left: 6px; }
+.overflow-menu .toolbar-font-size { width: 100%; justify-content: flex-start; }
+.overflow-menu .toolbar-font { width: 100%; }
+.overflow-menu .toolbar-align { width: 100%; }
+.overflow-menu .toolbar-btn:not(.toolbar-btn--step):not(.toolbar-split__arrow) { width: 100%; justify-content: flex-start; padding-left: 6px; }
+.overflow-menu .toolbar-color { width: 100%; }
+.overflow-menu .toolbar-wrap { width: 100%; justify-content: flex-start; }
+.overflow-menu .toolbar-font-size__input { flex: 1 1 auto; width: auto; min-width: 40px; }
+
+.overflow-menu .toolbar-btn:hover:not(:disabled) { background: var(--sp-toolbar-btn-hover-bg); }
+.overflow-menu .toolbar-btn:active:not(:disabled) { opacity: 0.7; }
+.overflow-menu .toolbar-btn--active { background: var(--sp-toolbar-btn-hover-bg); color: var(--sp-toolbar-btn-active-color); }
+.overflow-menu .toolbar-btn:disabled { color: var(--sp-toolbar-btn-disabled-color); cursor: default; }
+
+.overflow-menu .toolbar-split__main:hover:not(:disabled) { background: var(--sp-toolbar-btn-hover-bg); }
+.overflow-menu .toolbar-split__arrow:hover:not(:disabled) { background: var(--sp-toolbar-btn-hover-bg); }
+
+.overflow-menu .toolbar-font-size__input:hover { background: var(--sp-toolbar-btn-hover-bg); }
+.overflow-menu .toolbar-font-size__input:focus { border-color: var(--sp-toolbar-border); background: #fff; }
+.overflow-menu .toolbar-font-size__btn:hover { background: var(--sp-toolbar-btn-hover-bg); }
+
+.overflow-menu .toolbar-more:hover { background: var(--sp-toolbar-btn-hover-bg); }
+.overflow-menu .toolbar-more--active { background: var(--sp-toolbar-btn-hover-bg); color: var(--sp-toolbar-btn-active-color); }
 </style>
 
