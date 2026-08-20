@@ -1040,7 +1040,7 @@ function focusEditInput(selectAllText = false) {
       if (document.activeElement === inp) inp.blur();
       return;
     }
-    inp.focus();
+    inp.focus({ preventScroll: true });
     if (selectAllText) inp.select();
   });
 }
@@ -2820,3 +2820,4 @@ onBeforeUnmount(() => {
 .dim-panel__btn--primary { border-color: #0078d7; background: #0078d7; color: #fff; }
 .dim-panel__btn--primary:hover { background: #0069c0; }
 </style>
+
