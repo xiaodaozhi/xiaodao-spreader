@@ -7,8 +7,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, onMounted } from 'vue'
 import Spreadsheet from './components/spreader/spreader.vue'
+
+onMounted(() => {
+  document.title = '小刀电子表格 | Xiaodao Spreader'
+})
 
 interface SheetModelData {
   name: string

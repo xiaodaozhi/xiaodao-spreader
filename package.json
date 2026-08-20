@@ -27,6 +27,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build && vue-tsc -p tsconfig.build.json",
+    "build:demo": "vite build --mode demo",
     "preview": "vite preview",
     "type-check": "vue-tsc --noEmit",
     "prepublishOnly": "npm run build"
