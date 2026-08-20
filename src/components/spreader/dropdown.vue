@@ -6,16 +6,20 @@ const props = withDefaults(defineProps<{
   modelValue: string | number;
   options: FontOption[];
   width?: string | number;
+  menuWidth?: string | number;
   visibleCount?: number;
   title?: string;
   modelOpen?: boolean;
   hideTrigger?: boolean;
+  align?: 'left' | 'right';
 }>(), {
   width: 'auto',
+  menuWidth: undefined,
   visibleCount: 8,
   title: '',
   modelOpen: undefined,
   hideTrigger: false,
+  align: 'left',
 });
 
 const emit = defineEmits<{
@@ -29,15 +33,17 @@ const viewStart = ref(0);
 const rootRef = ref<HTMLDivElement | null>(null);
 const listRef = ref<HTMLDivElement | null>(null);
 const menuRef = ref<HTMLDivElement | null>(null);
-const pos = ref({ left: 0, top: 0, up: false });
+const pos = ref<{ left?: number; right?: number; top: number; up: boolean }>({ top: 0, up: false });
 const tY = ref(0);
 const tDrag = ref(false);
 
 const current = computed(() => props.options.find((o) => String(o.value) === String(props.modelValue)));
+const effMenuWidth = computed(() => props.menuWidth);
 const vc = computed(() => Math.min(props.visibleCount, props.options.length));
 const list = computed(() => props.options.slice(viewStart.value, viewStart.value + vc.value));
 const canUp = computed(() => viewStart.value > 0);
 const canDown = computed(() => viewStart.value + vc.value < props.options.length);
+const scrollable = computed(() => props.options.length > vc.value);
 
 function scrollBy(d: number) {
   viewStart.value = Math.max(0, Math.min(props.options.length - vc.value, viewStart.value + d));
@@ -49,14 +55,22 @@ function openMenu() {
   const el = rootRef.value;
   if (!el) return;
   const r = el.getBoundingClientRect();
-  const menuH = vc.value * 26 + 2 * 15 + 8;
+  const menuH = vc.value * 22 + (scrollable.value ? 2 * 15 : 0) + 8;
   const spaceBelow = window.innerHeight - r.bottom - 4;
   const up = spaceBelow < menuH && r.top - 4 > menuH;
-  pos.value = {
-    left: r.left,
-    top: up ? r.top - menuH - 4 : r.bottom + 4,
-    up,
-  };
+  if (props.align === 'right') {
+    pos.value = {
+      right: window.innerWidth - r.right,
+      top: up ? r.top - menuH - 4 : r.bottom + 4,
+      up,
+    };
+  } else {
+    pos.value = {
+      left: r.left,
+      top: up ? r.top - menuH - 4 : r.bottom + 4,
+      up,
+    };
+  }
   const idx = props.options.findIndex((o) => String(o.value) === String(props.modelValue));
   viewStart.value = idx >= 0
     ? Math.max(0, Math.min(idx - Math.floor(vc.value / 2), props.options.length - vc.value))
@@ -158,7 +172,8 @@ onBeforeUnmount(() => {
       :title="title"
       @click="toggle"
     >
-      <span class="sp-dropdown__value">{{ current?.label ?? '' }}</span>
+      <span v-if="current?.icon" class="sp-dropdown__icon" v-html="current.icon"></span>
+      <span v-else class="sp-dropdown__value">{{ current?.label ?? '' }}</span>
       <svg
         class="sp-dropdown__caret"
         viewBox="0 0 1024 1024"
@@ -174,10 +189,11 @@ onBeforeUnmount(() => {
         ref="menuRef"
         class="sp-dropdown__menu"
         :class="{ 'sp-dropdown__menu--up': pos.up }"
-        :style="{ left: pos.left + 'px', top: pos.top + 'px', width: typeof width === 'number' ? width + 'px' : width }"
+        :style="{ left: pos.left !== undefined ? pos.left + 'px' : undefined, right: pos.right !== undefined ? pos.right + 'px' : undefined, top: pos.top + 'px', minWidth: effMenuWidth !== undefined ? (typeof effMenuWidth === 'number' ? effMenuWidth + 'px' : effMenuWidth) : undefined }"
         @keydown="onKeydown"
       >
         <button
+          v-if="scrollable"
           type="button"
           class="sp-dropdown__nav"
           :class="{ 'sp-dropdown__nav--disabled': !canUp }"
@@ -200,9 +216,13 @@ onBeforeUnmount(() => {
             class="sp-dropdown__item"
             :class="{ 'sp-dropdown__item--active': String(o.value) === String(modelValue) }"
             @click="select(o)"
-          >{{ o.label }}</button>
+          >
+            <span v-if="o.icon" class="sp-dropdown__item-icon" v-html="o.icon"></span>
+            <span class="sp-dropdown__item-label">{{ o.label }}</span>
+          </button>
         </div>
         <button
+          v-if="scrollable"
           type="button"
           class="sp-dropdown__nav"
           :class="{ 'sp-dropdown__nav--disabled': !canDown }"
@@ -265,10 +285,10 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   background: #fff;
-  border: 1px solid #ccc;
+  border: 1px solid var(--sp-toolbar-border, #d0d0d0);
   border-radius: 4px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-  padding: 4px 0;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  padding: 4px;
   box-sizing: border-box;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
   transform-origin: top center;
@@ -284,9 +304,10 @@ onBeforeUnmount(() => {
   min-height: 15px;
   border: none;
   background: transparent;
-  color: #666;
+  color: var(--sp-toolbar-btn-color, #666);
   cursor: pointer;
   padding: 0;
+  border-radius: 3px;
 }
 .sp-dropdown__nav:hover:not(:disabled) { background: #eef3f9; }
 .sp-dropdown__nav:disabled { color: #ccc; cursor: default; }
@@ -297,22 +318,24 @@ onBeforeUnmount(() => {
   overflow: hidden;
   touch-action: none;
 }
+.sp-dropdown__icon { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; }
+.sp-dropdown__icon :deep(svg) { width: 18px; height: 18px; display: block; }
+.sp-dropdown__item-icon { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; }
+.sp-dropdown__item-icon :deep(svg) { width: 16px; height: 16px; display: block; }
+.sp-dropdown__item-label { white-space: nowrap; }
 .sp-dropdown__item {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   width: 100%;
-  height: 26px;
-  min-height: 26px;
   border: none;
   background: transparent;
-  color: #333;
-  font-size: 13px;
-  text-align: left;
+  color: var(--sp-toolbar-btn-color, #444);
+  font-size: 12px;
   cursor: pointer;
-  padding: 0 10px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  padding: 4px 8px;
   box-sizing: border-box;
+  border-radius: 3px;
 }
 .sp-dropdown__item:hover { background: #eef3f9; }
 .sp-dropdown__item--active { background: #e5f1fb; color: #0078d7; }

@@ -36,6 +36,7 @@ function segRole(bt: BorderType, name: string): 'solid' | 'dashed' | 'thick' {
 const TOOL_KEYS = [
   'undo', 'redo', 'paint', 'clear', 'sep1', 'font', 'fontSize', 'sep2',
   'bold', 'italic', 'underline', 'strike', 'sep3', 'textColor', 'fillColor', 'border',
+  'sep4', 'hAlign', 'vAlign',
 ] as const;
 
 const rootEl = ref<HTMLElement | null>(null);
@@ -187,6 +188,10 @@ const props = defineProps<{
   cachedFillColor: string;
   borderMenuOpen: boolean;
   cachedBorder: BorderType;
+  selHAlign: string;
+  selVAlign: string;
+  hAlignOptions: FontOption[];
+  vAlignOptions: FontOption[];
 }>();
 
 const emit = defineEmits<{
@@ -216,6 +221,8 @@ const emit = defineEmits<{
   (e: 'update:border-menu-open', v: boolean): void;
   (e: 'border-change', v: BorderType): void;
   (e: 'apply-border'): void;
+  (e: 'h-align-change', v: string | number): void;
+  (e: 'v-align-change', v: string | number): void;
 }>();
 </script>
 
@@ -536,6 +543,42 @@ const emit = defineEmits<{
       </div>
     </Teleport>
 
+    <Teleport :disabled="!isOverflow('sep4')" :to="overflowMenuEl ?? undefined">
+      <div class="tb-item" data-key="sep4"><div class="toolbar-sep" /></div>
+    </Teleport>
+
+    <!-- 水平对齐 -->
+    <Teleport :disabled="!isOverflow('hAlign')" :to="overflowMenuEl ?? undefined">
+      <div class="tb-item" data-key="hAlign">
+        <SpDropdown
+          class="toolbar-align"
+          :model-value="selHAlign"
+          :options="hAlignOptions"
+          :width="44"
+          :visible-count="3"
+          align="right"
+          :title="t(locale, 'hAlign')"
+          @change="emit('h-align-change', $event)"
+        />
+      </div>
+    </Teleport>
+
+    <!-- 垂直对齐 -->
+    <Teleport :disabled="!isOverflow('vAlign')" :to="overflowMenuEl ?? undefined">
+      <div class="tb-item" data-key="vAlign">
+        <SpDropdown
+          class="toolbar-align"
+          :model-value="selVAlign"
+          :options="vAlignOptions"
+          :width="44"
+          :visible-count="3"
+          align="right"
+          :title="t(locale, 'vAlign')"
+          @change="emit('v-align-change', $event)"
+        />
+      </div>
+    </Teleport>
+
     <!-- 「更多」按钮 -->
     <button
       v-if="hasOverflow"
@@ -572,6 +615,7 @@ const emit = defineEmits<{
 .tb-item { display: flex; align-items: center; flex: 0 0 auto; }
 .toolbar-sep { width: 1px; height: 18px; margin: 0 4px; background: var(--sp-toolbar-border); }
 .toolbar-font { flex: 0 0 auto; }
+.toolbar-align { flex: 0 0 auto; }
 .toolbar-font-size { display: inline-flex; align-items: center; gap: 0; height: 26px; position: relative; }
 .toolbar-font-size__input { width: 36px; height: 26px; border: 1px solid transparent; border-right: none; border-radius: 3px 0 0 3px; background: transparent; color: var(--sp-toolbar-btn-color); font-size: 12px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; text-align: center; padding: 0 2px; outline: none; box-sizing: border-box; }
 .toolbar-font-size__input:hover { background: var(--sp-toolbar-btn-hover-bg); }
@@ -610,6 +654,7 @@ const emit = defineEmits<{
 .overflow-menu .toolbar-split__main { flex: 1 1 auto; justify-content: flex-start; }
 .overflow-menu .toolbar-font-size { width: 100%; justify-content: flex-start; }
 .overflow-menu .toolbar-font { width: 100%; }
+.overflow-menu .toolbar-align { width: 100%; }
 
 /* 统一弹出动画：fade + scale */
 .menu-pop-enter-active, .menu-pop-leave-active { transition: opacity 0.12s ease-out, transform 0.12s ease-out; }

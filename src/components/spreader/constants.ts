@@ -53,6 +53,14 @@ export const i18n: Record<string, Record<string, string>> = {
     fontColor: '文字颜色',
     fillColor: '填充颜色',
     borders: '边框',
+    hAlign: '水平对齐',
+    vAlign: '垂直对齐',
+    alignLeft: '左端对齐',
+    alignCenter: '居中对齐',
+    alignRight: '右端对齐',
+    alignTop: '顶端对齐',
+    alignMiddle: '垂直居中',
+    alignBottom: '底端对齐',
     borderBottom: '下框线',
     borderTop: '上框线',
     borderLeft: '左框线',
@@ -64,7 +72,7 @@ export const i18n: Record<string, Record<string, string>> = {
     fontDefault: '默认',
     rowHeight: '行高',
     colWidth: '列宽',
-    defaultRowHeight: '默认行高',
+    autoRowHeight: '自动行高',
     defaultColWidth: '默认列宽',
     ok: '确定',
     cancel: '取消',
@@ -151,6 +159,14 @@ export const i18n: Record<string, Record<string, string>> = {
     fontColor: 'Font Color',
     fillColor: 'Fill Color',
     borders: 'Borders',
+    hAlign: 'Horizontal Align',
+    vAlign: 'Vertical Align',
+    alignLeft: 'Align Left',
+    alignCenter: 'Align Center',
+    alignRight: 'Align Right',
+    alignTop: 'Align Top',
+    alignMiddle: 'Align Middle',
+    alignBottom: 'Align Bottom',
     borderBottom: 'Bottom Border',
     borderTop: 'Top Border',
     borderLeft: 'Left Border',
@@ -162,7 +178,7 @@ export const i18n: Record<string, Record<string, string>> = {
     fontDefault: 'Default',
     rowHeight: 'Row Height',
     colWidth: 'Column Width',
-    defaultRowHeight: 'Default Row Height',
+    autoRowHeight: 'Auto Row Height',
     defaultColWidth: 'Default Column Width',
     ok: 'OK',
     cancel: 'Cancel',
@@ -229,6 +245,8 @@ export const DEFAULT_FONT_SIZE = 10;
 export interface FontOption {
   label: string;
   value: string | number;
+  /** 触发器/菜单项图标，提供时以图标取代文本标签展示在触发器上 */
+  icon?: string;
 }
 
 export const FONT_FAMILIES: FontOption[] = [
@@ -265,6 +283,35 @@ export const FONT_SIZES: FontOption[] = [
   { label: '36', value: 36 },
   { label: '48', value: 48 },
   { label: '72', value: 72 },
+];
+
+// ============ 对齐选项 ============
+// 图标统一 1:1 (viewBox 24x24)、无外框，仅以线条示意对齐方向
+export interface AlignOption {
+  value: string;
+  labelKey: string;
+  icon: string;
+}
+
+const H_ALIGN_LEFT_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="19" y2="6"/><line x1="3" y1="12" x2="15" y2="12"/><line x1="3" y1="18" x2="17" y2="18"/></svg>';
+const H_ALIGN_CENTER_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="6" y1="12" x2="18" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg>';
+const H_ALIGN_RIGHT_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="5" y1="6" x2="21" y2="6"/><line x1="9" y1="12" x2="21" y2="12"/><line x1="7" y1="18" x2="21" y2="18"/></svg>';
+
+// 垂直对齐：三条竖线（中间稍短），顶端/底端对齐附加横线（与竖线留间距）
+const V_ALIGN_TOP_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="6" y1="7" x2="6" y2="20"/><line x1="12" y1="7" x2="12" y2="16"/><line x1="18" y1="7" x2="18" y2="20"/><line x1="4" y1="3" x2="20" y2="3"/></svg>';
+const V_ALIGN_MIDDLE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="6" y1="4" x2="6" y2="20"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="18" y1="4" x2="18" y2="20"/></svg>';
+const V_ALIGN_BOTTOM_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="6" y1="4" x2="6" y2="17"/><line x1="12" y1="8" x2="12" y2="17"/><line x1="18" y1="4" x2="18" y2="17"/><line x1="4" y1="21" x2="20" y2="21"/></svg>';
+
+export const H_ALIGN_OPTIONS: AlignOption[] = [
+  { value: 'left', labelKey: 'alignLeft', icon: H_ALIGN_LEFT_ICON },
+  { value: 'center', labelKey: 'alignCenter', icon: H_ALIGN_CENTER_ICON },
+  { value: 'right', labelKey: 'alignRight', icon: H_ALIGN_RIGHT_ICON },
+];
+
+export const V_ALIGN_OPTIONS: AlignOption[] = [
+  { value: 'top', labelKey: 'alignTop', icon: V_ALIGN_TOP_ICON },
+  { value: 'middle', labelKey: 'alignMiddle', icon: V_ALIGN_MIDDLE_ICON },
+  { value: 'bottom', labelKey: 'alignBottom', icon: V_ALIGN_BOTTOM_ICON },
 ];
 
 

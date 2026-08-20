@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue';
-import { HEADER_HEIGHT, HEADER_WIDTH, SB_SIZE, DEFAULT_COL_WIDTH, DEFAULT_ROW_HEIGHT, MIN_COL_WIDTH, MIN_ROW_HEIGHT, MAX_COL_WIDTH, MAX_ROW_HEIGHT, UNDO_MAX, t, lightTheme, darkTheme, DEFAULT_FONT_FAMILY, DEFAULT_FONT_SIZE, FONT_FAMILIES, FONT_SIZES } from './constants';
+import { HEADER_HEIGHT, HEADER_WIDTH, SB_SIZE, DEFAULT_COL_WIDTH, DEFAULT_ROW_HEIGHT, MIN_COL_WIDTH, MIN_ROW_HEIGHT, MAX_COL_WIDTH, MAX_ROW_HEIGHT, UNDO_MAX, t, lightTheme, darkTheme, DEFAULT_FONT_FAMILY, DEFAULT_FONT_SIZE, FONT_FAMILIES, FONT_SIZES, H_ALIGN_OPTIONS, V_ALIGN_OPTIONS } from './constants';
 import Toolbar from './toolbar.vue';
 import Tabbar from './tabbar.vue';
 import { colToLabel, resolveSize, writeClipboardText, getCanvasXY } from './utils';
@@ -45,21 +45,12 @@ const scrollX = ref(0);
 const scrollY = ref(0);
 
 // ============ 高 DPI 字号缩放 ============
-// 在高 DPI 显示器上，CSS 像素物理尺寸偏小，字号视觉上会偏小。
-// 根据设备像素比适度放大渲染字号，使文字更易读（dpr=1 不缩放，dpr=2 约 1.25，上限 1.5）。
-const FONT_DPI_SCALE = (() => {
-  if (typeof window === 'undefined') return 1;
-  const dpr = window.devicePixelRatio || 1;
-  return dpr > 1 ? Math.min(1.5, 1 + (dpr - 1) * 0.25) : 1;
-})();
-/** 读取单元格的字号属性值（未缩放，用于下拉框匹配） */
+/** 基准上下内边距（px）——以默认字号10px、默认行高24px为基准，每侧7px */
+const BASE_CELL_VPAD = (DEFAULT_ROW_HEIGHT - DEFAULT_FONT_SIZE) / 2;
+/** 读取单元格的字号属性值 */
 function cellFontSize(c: number, r: number): number {
   const st = cells[cellKey(c, r)]?.style;
   return typeof st?.fontSize === 'number' && st.fontSize > 0 ? st.fontSize : DEFAULT_FONT_SIZE;
-}
-/** 字号在当前 DPI 下的实际渲染像素值 */
-function renderFontSize(fsz: number): number {
-  return Math.round(fsz * FONT_DPI_SCALE);
 }
 
 // ============ 列位置/行位置计算 ============
@@ -68,7 +59,8 @@ const colPositions = computed(() => {
   for (let i = 0; i < colCount; i++) p.push(p[i]! + colWidths.value[i]!);
   return p;
 });
-/** 计算行的实际高度：显式行高优先，否则按行内最大渲染字号自动撑大（不小于默认行高） */
+/** 计算行的实际高度：显式行高优先，否则按行内最大字号自动撑大（不小于默认行高）
+ *  注意：行高使用逻辑字号（非 DPI 缩放），DPI 缩放仅影响 Canvas 渲染清晰度 */
 function getRowHeight(r: number): number {
   const h = rowHeights.value[r];
   if (h !== undefined && h !== null && h > 0) return h;
@@ -77,9 +69,12 @@ function getRowHeight(r: number): number {
     const fs = cellFontSize(c, r);
     if (fs > maxFs) maxFs = fs;
   }
-  const effMax = renderFontSize(maxFs);
-  // 行高 = 文字行高(1.2×渲染字号) + 上下各 4px padding
-  return Math.max(DEFAULT_ROW_HEIGHT, Math.round(effMax * 1.2 + 8));
+  // 自动行高 = max(默认行高, 逻辑字号 + 基准上下边距×2)
+  return Math.max(DEFAULT_ROW_HEIGHT, Math.round(maxFs + BASE_CELL_VPAD * 2));
+}
+/** 判断行是否为自动行高（无显式行高属性） */
+function isAutoRow(r: number): boolean {
+  return rowHeights.value[r] === undefined;
 }
 const rowPositions = computed(() => {
   const p = [0];
@@ -389,6 +384,35 @@ function onFontFamilyChange(v: string | number) {
 function onFontSizeChange(v: string | number) {
   applyStyleToSelection('fontSize', v);
   fontSizeMenuOpen.value = false;
+}
+
+// ============ 工具栏：对齐 ============
+const hAlignOptions = computed(() =>
+  H_ALIGN_OPTIONS.map((o) => ({ label: t(locale.value, o.labelKey), value: o.value, icon: o.icon }))
+);
+const vAlignOptions = computed(() =>
+  V_ALIGN_OPTIONS.map((o) => ({ label: t(locale.value, o.labelKey), value: o.value, icon: o.icon }))
+);
+// 以选区左上角（首单元格）的对齐属性为显示基准；无属性默认左对齐 / 顶端对齐
+const selHAlign = computed(() => {
+  const sel = selection.value;
+  if (!sel) return 'left';
+  const st = cells[cellKey(sel.startCol, sel.startRow)]?.style;
+  const a = typeof st?.textAlign === 'string' ? st.textAlign : '';
+  return a === 'center' || a === 'right' ? a : 'left';
+});
+const selVAlign = computed(() => {
+  const sel = selection.value;
+  if (!sel) return 'top';
+  const st = cells[cellKey(sel.startCol, sel.startRow)]?.style;
+  const a = typeof st?.verticalAlign === 'string' ? st.verticalAlign : '';
+  return a === 'middle' || a === 'bottom' ? a : 'top';
+});
+function onHAlignChange(v: string | number) {
+  applyStyleToSelection('textAlign', v);
+}
+function onVAlignChange(v: string | number) {
+  applyStyleToSelection('verticalAlign', v);
 }
 
 const fontSizeInput = ref('');
@@ -1069,9 +1093,9 @@ function render() {
   rCtx = cvs.getContext('2d');
   if (!rCtx) return;
   rDpr = window.devicePixelRatio || 1;
-  const r = wrapper.getBoundingClientRect();
-  const W = r.width;
-  const H = r.height;
+  const rect = wrapper.getBoundingClientRect();
+  const W = rect.width;
+  const H = rect.height;
   viewSize.w = W;
   viewSize.h = H;
   cvs.width = W * rDpr;
@@ -1147,13 +1171,15 @@ function render() {
         const v = getCellValue(col, row);
         if (v) {
           const st = cells[cellKey(col, row)]?.style;
-          const fsz = renderFontSize(cellFontSize(col, row));
+          const fsz = cellFontSize(col, row);
           const ffa = typeof st?.fontFamily === 'string' && st.fontFamily ? st.fontFamily : DEFAULT_FONT_FAMILY;
           const fw = st?.fontWeight === 'bold' ? 'bold' : 'normal';
           const fs = st?.fontStyle === 'italic' ? 'italic' : 'normal';
           const hasU = st?.underline === 'underline';
           const hasS = st?.strikethrough === 'line-through';
           const txtColor = typeof st?.color === 'string' ? st.color : '';
+          const hAlign = typeof st?.textAlign === 'string' ? st.textAlign : 'left';
+          const vAlign = typeof st?.verticalAlign === 'string' ? st.verticalAlign : 'top';
           rCtx.fillStyle = txtColor || cs.cellText;
           rCtx.font = `${fs} ${fw} ${fsz}px ${ffa}`;
           rCtx.textBaseline = 'alphabetic';
@@ -1162,30 +1188,33 @@ function render() {
           rCtx.rect(x + 5, y + 1, cw - 10, rh - 2);
           rCtx.clip();
           const m = rCtx.measureText(v);
-          const dy = (m.actualBoundingBoxAscent - m.actualBoundingBoxDescent) / 2;
-          const tx = x + 5;
-          const ty = y + rh / 2 + dy;
+          const asc = fsz * 0.8;
+          const desc = fsz * 0.2;
+          const h = asc + desc;
+          let tx: number;
+          if (hAlign === 'center') tx = x + cw / 2 - m.width / 2;
+          else if (hAlign === 'right') tx = x + cw - 5 - m.width;
+          else tx = x + 5;
+          let ty: number;
+          if (vAlign === 'middle') ty = y + (rh - h) / 2 + asc;
+          else if (vAlign === 'bottom') ty = y + rh - BASE_CELL_VPAD - desc;
+          else ty = y + BASE_CELL_VPAD + asc;
           rCtx.fillText(v, tx, ty);
           if (hasU) {
-            const bl = m.actualBoundingBoxLeft ?? 0;
-            const ad = m.actualBoundingBoxDescent ?? 0;
             rCtx.strokeStyle = txtColor || cs.cellText;
             rCtx.lineWidth = 1;
             rCtx.beginPath();
-            rCtx.moveTo(tx + bl, ty + ad + 1);
-            rCtx.lineTo(tx + bl + m.width, ty + ad + 1);
+            rCtx.moveTo(tx, ty + desc + 1);
+            rCtx.lineTo(tx + m.width, ty + desc + 1);
             rCtx.stroke();
           }
           if (hasS) {
-            const bl = m.actualBoundingBoxLeft ?? 0;
-            const ad = m.actualBoundingBoxDescent ?? 0;
-            const ah = m.actualBoundingBoxAscent ?? fsz;
             rCtx.strokeStyle = txtColor || cs.cellText;
             rCtx.lineWidth = 1;
-            const midY = ty - (ah - ad) * 0.25;
+            const midY = ty - h * 0.25;
             rCtx.beginPath();
-            rCtx.moveTo(tx + bl, midY);
-            rCtx.lineTo(tx + bl + m.width, midY);
+            rCtx.moveTo(tx, midY);
+            rCtx.lineTo(tx + m.width, midY);
             rCtx.stroke();
           }
           rCtx.restore();
@@ -1567,7 +1596,7 @@ function onRowHdrCtx(e: MouseEvent, row: number) {
     },
     { label: `${t(locale.value, 'rowHeight')}...`, action: () => openDimPanel('row', mx, my) },
     {
-      label: t(locale.value, 'defaultRowHeight'),
+      label: t(locale.value, 'autoRowHeight'),
       action: () => resetRowHeight(),
     },
   ]);
@@ -1782,7 +1811,7 @@ const editInputStyle = computed(() => {
   const pos = editingCell.value ?? activeCell.value;
   const c = pos.col, r = pos.row;
   const st = cells[cellKey(c, r)]?.style;
-  const fsz = renderFontSize(cellFontSize(c, r));
+  const fsz = cellFontSize(c, r);
   const ffa = typeof st?.fontFamily === 'string' && st.fontFamily ? st.fontFamily : DEFAULT_FONT_FAMILY;
   const fw = st?.fontWeight === 'bold' ? 'bold' : 'normal';
   const fs = st?.fontStyle === 'italic' ? 'italic' : 'normal';
@@ -1790,16 +1819,35 @@ const editInputStyle = computed(() => {
   const tdBoth = st?.underline === 'underline' && st?.strikethrough === 'line-through' ? 'underline line-through' : td;
   const tc = typeof st?.color === 'string' ? st.color : undefined;
   const bg = typeof st?.backgroundColor === 'string' ? st.backgroundColor : undefined;
+  const hAlign = typeof st?.textAlign === 'string' ? st.textAlign : 'left';
+  const vAlign = typeof st?.verticalAlign === 'string' ? st.verticalAlign : 'top';
+  const rhVal = getRowHeight(r);
+  const lineH = fsz;
+  const BORDER = 2;
+  // 可用于文字的内容高度 = 行高 - 上下边框 - 字号
+  const availH = Math.max(0, rhVal - BORDER * 2 - lineH);
+  // 减去边框偏移的上下内边距
+  const pv = Math.max(0, BASE_CELL_VPAD - BORDER);
+  let padTop = 0, padBottom = 0;
+  if (vAlign === 'middle') { padTop = Math.floor(availH / 2); padBottom = availH - padTop; }
+  else if (vAlign === 'top') { padTop = Math.min(pv, availH); padBottom = availH - padTop; }
+  else if (vAlign === 'bottom') { padBottom = Math.min(pv, availH); padTop = availH - padBottom; }
   return {
     left: `${HEADER_WIDTH + colPositions.value[c]! - scrollX.value}px`,
     top: `${HEADER_HEIGHT + rowPositions.value[r]! - scrollY.value}px`,
     width: `${colWidths.value[c]!}px`,
-    height: `${getRowHeight(r)}px`,
+    height: `${rhVal}px`,
     fontFamily: ffa,
     fontSize: `${fsz}px`,
+    lineHeight: 1,
     fontWeight: fw,
     fontStyle: fs,
     textDecoration: tdBoth,
+    textAlign: hAlign as 'left' | 'center' | 'right',
+    paddingTop: `${padTop}px`,
+    paddingRight: '3px',
+    paddingBottom: `${padBottom}px`,
+    paddingLeft: '3px',
     opacity: hidden ? 0 : 1,
     pointerEvents: hidden ? 'none' as const : 'auto' as const,
     color: hidden ? 'transparent' : tc,
@@ -2501,6 +2549,10 @@ onBeforeUnmount(() => {
       :cached-fill-color="cachedFillColor"
       :border-menu-open="borderMenuOpen"
       :cached-border="cachedBorder"
+      :h-align-options="hAlignOptions"
+      :v-align-options="vAlignOptions"
+      :sel-h-align="selHAlign"
+      :sel-v-align="selVAlign"
       @undo="undo()"
       @redo="redo()"
       @paint-format="onPaintFormat"
@@ -2527,6 +2579,8 @@ onBeforeUnmount(() => {
       @update:border-menu-open="onBorderMenuToggle($event)"
       @border-change="onBorderChange($event)"
       @apply-border="applyCachedBorder"
+      @h-align-change="onHAlignChange($event)"
+      @v-align-change="onVAlignChange($event)"
     />
 
     <!-- 编辑栏 -->
