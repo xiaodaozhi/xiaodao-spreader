@@ -61,6 +61,7 @@ export const i18n: Record<string, Record<string, string>> = {
     alignTop: '顶端对齐',
     alignMiddle: '垂直居中',
     alignBottom: '底端对齐',
+    wrap: '自动换行',
     borderBottom: '下框线',
     borderTop: '上框线',
     borderLeft: '左框线',
@@ -167,6 +168,7 @@ export const i18n: Record<string, Record<string, string>> = {
     alignTop: 'Align Top',
     alignMiddle: 'Align Middle',
     alignBottom: 'Align Bottom',
+    wrap: 'Wrap Text',
     borderBottom: 'Bottom Border',
     borderTop: 'Top Border',
     borderLeft: 'Left Border',
@@ -313,6 +315,8 @@ export const V_ALIGN_OPTIONS: AlignOption[] = [
   { value: 'middle', labelKey: 'alignMiddle', icon: V_ALIGN_MIDDLE_ICON },
   { value: 'bottom', labelKey: 'alignBottom', icon: V_ALIGN_BOTTOM_ICON },
 ];
+
+export const WRAP_ICON = '<svg viewBox="0 0 1024 1024" fill="currentColor"><path d="M896 179.2a38.4 38.4 0 0 0-76.8 0v665.6a38.4 38.4 0 0 0 76.8 0v-665.6zM204.8 281.6A38.4 38.4 0 0 0 204.8 358.4h179.2a38.4 38.4 0 0 0 0-76.8H204.8zM550.4 281.6a38.4 38.4 0 0 0 0 76.8h51.2c35.328 0 64 28.672 64 64v179.2c0 35.328-28.672 64-64 64H246.272l36.864-36.864a38.4 38.4 0 1 0-54.272-54.272l-102.4 102.4a38.4 38.4 0 0 0 0 54.272l102.4 102.4a38.4 38.4 0 0 0 54.272-54.272l-36.864-36.864h355.328a140.8 140.8 0 0 0 140.8-140.8v-179.2a140.8 140.8 0 0 0-140.8-140.8h-51.2z" /></svg>';
 
 
 // ============ 主题色盘 ============

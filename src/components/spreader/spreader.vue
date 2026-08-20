@@ -47,6 +47,64 @@ const scrollY = ref(0);
 // ============ 高 DPI 字号缩放 ============
 /** 基准上下内边距（px）——以默认字号10px、默认行高24px为基准，每侧7px */
 const BASE_CELL_VPAD = (DEFAULT_ROW_HEIGHT - DEFAULT_FONT_SIZE) / 2;
+
+// ============ 字体度量（Canvas 与 input 共用） ============
+const fontMetricsCache = new Map<string, { ascent: number; descent: number }>();
+let fontMetricsCanvas: HTMLCanvasElement | null = null;
+
+function measureFontMetrics(family: string, size: number, weight: string, style: string): { ascent: number; descent: number } {
+  const key = `${style} ${weight} ${size}px ${family}`;
+  const cached = fontMetricsCache.get(key);
+  if (cached) return cached;
+  if (!fontMetricsCanvas) fontMetricsCanvas = document.createElement('canvas');
+  const ctx = fontMetricsCanvas.getContext('2d');
+  if (!ctx) return { ascent: size * 0.8, descent: size * 0.2 };
+  ctx.font = key;
+  const m = ctx.measureText('M');
+  const ascent = m.actualBoundingBoxAscent || size * 0.8;
+  const descent = m.actualBoundingBoxDescent || size * 0.2;
+  const a = Math.max(ascent, size * 0.5);
+  const d = Math.max(descent, size * 0.15);
+  const result = { ascent: a, descent: d };
+  fontMetricsCache.set(key, result);
+  return result;
+}
+
+function getFontMetricsForCell(c: number, r: number): { ascent: number; descent: number } {
+  const st = cells[cellKey(c, r)]?.style;
+  const fsz = cellFontSize(c, r);
+  const ffa = typeof st?.fontFamily === 'string' && st.fontFamily ? st.fontFamily : DEFAULT_FONT_FAMILY;
+  const fw = st?.fontWeight === 'bold' ? 'bold' : 'normal';
+  const fs = st?.fontStyle === 'italic' ? 'italic' : 'normal';
+  return measureFontMetrics(ffa, fsz, fw, fs);
+}
+
+/** 将文本按 \n 分割，并可选地按宽度自动换行 */
+function getWrappedLines(ctx: CanvasRenderingContext2D, text: string, maxWidth: number, wrap: boolean): string[] {
+  if (!text) return [''];
+  const paragraphs = text.split('\n');
+  const result: string[] = [];
+  for (const para of paragraphs) {
+    if (!wrap || maxWidth <= 0) {
+      result.push(para);
+    } else {
+      let currentLine = '';
+      for (let i = 0; i < para.length; i++) {
+        const ch = para[i]!;
+        const testLine = currentLine + ch;
+        const w = ctx.measureText(testLine).width;
+        if (w > maxWidth && currentLine) {
+          result.push(currentLine);
+          currentLine = ch;
+        } else {
+          currentLine = testLine;
+        }
+      }
+      result.push(currentLine);
+    }
+  }
+  return result;
+}
 /** 读取单元格的字号属性值 */
 function cellFontSize(c: number, r: number): number {
   const st = cells[cellKey(c, r)]?.style;
@@ -65,12 +123,46 @@ function getRowHeight(r: number): number {
   const h = rowHeights.value[r];
   if (h !== undefined && h !== null && h > 0) return h;
   let maxFs = DEFAULT_FONT_SIZE;
+  let maxAsc = maxFs * 0.8;
+  let maxDesc = maxFs * 0.2;
+  let maxLines = 1;
+  const ctx = fontMetricsCanvas ? fontMetricsCanvas.getContext('2d') : null;
   for (let c = 0; c < colCount; c++) {
     const fs = cellFontSize(c, r);
-    if (fs > maxFs) maxFs = fs;
+    const st = cells[cellKey(c, r)]?.style;
+    const ffa = typeof st?.fontFamily === 'string' && st.fontFamily ? st.fontFamily : DEFAULT_FONT_FAMILY;
+    const fw = st?.fontWeight === 'bold' ? 'bold' : 'normal';
+    const fstyle = st?.fontStyle === 'italic' ? 'italic' : 'normal';
+    const v = getCellValue(c, r);
+    if (v && ctx) {
+      ctx.font = `${fstyle} ${fw} ${fs}px ${ffa}`;
+      const firstLine = v.split('\n')[0] || v;
+      const m = ctx.measureText(firstLine);
+      const a = m.actualBoundingBoxAscent || fs * 0.8;
+      const d = m.actualBoundingBoxDescent || fs * 0.2;
+      const cellAsc = Math.max(a, fs * 0.5);
+      const cellDesc = Math.max(d, fs * 0.15);
+      if (cellAsc > maxAsc) maxAsc = cellAsc;
+      if (cellDesc > maxDesc) maxDesc = cellDesc;
+      if (fs > maxFs) maxFs = fs;
+      const stWrap = st?.wrap === 'wrap';
+      if (stWrap) {
+        const cw = colWidths.value[c]!;
+        const lines = getWrappedLines(ctx, v, Math.max(0, cw - 10), true);
+        if (lines.length > maxLines) maxLines = lines.length;
+      } else {
+        const lines = v.split('\n').length;
+        if (lines > maxLines) maxLines = lines;
+      }
+    } else if (fs > maxFs) {
+      maxFs = fs;
+      const metrics = measureFontMetrics(ffa, fs, fw, fstyle);
+      if (metrics.ascent > maxAsc) maxAsc = metrics.ascent;
+      if (metrics.descent > maxDesc) maxDesc = metrics.descent;
+    }
   }
-  // 自动行高 = max(默认行高, 逻辑字号 + 基准上下边距×2)
-  return Math.max(DEFAULT_ROW_HEIGHT, Math.round(maxFs + BASE_CELL_VPAD * 2));
+  const calculated = BASE_CELL_VPAD * 2 + maxLines * (maxAsc + maxDesc);
+  return Math.min(MAX_ROW_HEIGHT, Math.max(DEFAULT_ROW_HEIGHT, Math.round(calculated)));
 }
 /** 判断行是否为自动行高（无显式行高属性） */
 function isAutoRow(r: number): boolean {
@@ -408,11 +500,23 @@ const selVAlign = computed(() => {
   const a = typeof st?.verticalAlign === 'string' ? st.verticalAlign : '';
   return a === 'middle' || a === 'bottom' ? a : 'top';
 });
+const selWrap = computed(() => {
+  const sel = selection.value;
+  if (!sel) return false;
+  const st = cells[cellKey(sel.startCol, sel.startRow)]?.style;
+  return st?.wrap === 'wrap';
+});
 function onHAlignChange(v: string | number) {
   applyStyleToSelection('textAlign', v);
 }
 function onVAlignChange(v: string | number) {
   applyStyleToSelection('verticalAlign', v);
+}
+function onWrapToggle() {
+  const sel = selection.value;
+  if (!sel) return;
+  const cur = selWrap.value;
+  applyStyleToSelection('wrap', cur ? undefined : 'wrap');
 }
 
 const fontSizeInput = ref('');
@@ -422,20 +526,31 @@ watch(selFontSize, (v) => {
   fontSizeInput.value = v === 0 ? '' : String(v);
 }, { immediate: true });
 
-function onFontSizeInput(e: Event) {
-  const el = e.target as HTMLInputElement;
-  fontSizeInput.value = el.value.replace(/[^\d]/g, '');
+function onFontSizeInput(raw: string) {
+  const filtered = raw.replace(/[^\d]/g, '');
+  fontSizeInput.value = filtered;
+  // 实时更新选中单元格（范围5-72）
+  const num = parseInt(filtered, 10);
+  if (!isNaN(num) && num >= 5 && num <= 72) {
+    if (num !== selFontSize.value) {
+      applyStyleToSelection('fontSize', num);
+    }
+  }
 }
 
 function onFontSizeBlur() {
   const raw = fontSizeInput.value.trim();
   if (!raw) {
+    // 空值恢复当前单元格字号
     fontSizeInput.value = selFontSize.value === 0 ? '' : String(selFontSize.value);
     return;
   }
   let v = parseInt(raw, 10);
-  if (isNaN(v)) v = DEFAULT_FONT_SIZE;
-  v = Math.max(5, Math.min(72, v));
+  if (isNaN(v)) {
+    v = selFontSize.value === 0 ? DEFAULT_FONT_SIZE : selFontSize.value;
+  } else {
+    v = Math.max(5, Math.min(72, v));
+  }
   fontSizeInput.value = String(v);
   if (v !== selFontSize.value) {
     applyStyleToSelection('fontSize', v);
@@ -444,7 +559,7 @@ function onFontSizeBlur() {
 
 function onFontSizeKeydown(e: KeyboardEvent) {
   if (e.key === 'Enter') {
-    (e.target as HTMLInputElement).blur();
+    ;(e.target as HTMLInputElement).blur();
   }
 }
 
@@ -1041,7 +1156,7 @@ const outerStyle = computed(() => buildOuterStyle(themeColors.value, props.width
 // ============ 模板 refs & 滚动控制 ============
 const wrapperRef = ref<HTMLDivElement | null>(null);
 const canvasRef = ref<HTMLCanvasElement | null>(null);
-const editInputRef = ref<HTMLInputElement | null>(null);
+const editInputRef = ref<HTMLTextAreaElement | null>(null);
 const formulaBarRef = ref<HTMLInputElement | null>(null);
 const viewSize = reactive({ w: 800, h: 600 });
 const maxScrollX = computed(() => Math.max(0, totalWidth.value - Math.max(0, viewSize.w - HEADER_WIDTH - SB_SIZE)));
@@ -1187,35 +1302,51 @@ function render() {
           rCtx.beginPath();
           rCtx.rect(x + 5, y + 1, cw - 10, rh - 2);
           rCtx.clip();
-          const m = rCtx.measureText(v);
-          const asc = fsz * 0.8;
-          const desc = fsz * 0.2;
-          const h = asc + desc;
-          let tx: number;
-          if (hAlign === 'center') tx = x + cw / 2 - m.width / 2;
-          else if (hAlign === 'right') tx = x + cw - 5 - m.width;
-          else tx = x + 5;
-          let ty: number;
-          if (vAlign === 'middle') ty = y + (rh - h) / 2 + asc;
-          else if (vAlign === 'bottom') ty = y + rh - BASE_CELL_VPAD - desc;
-          else ty = y + BASE_CELL_VPAD + asc;
-          rCtx.fillText(v, tx, ty);
-          if (hasU) {
-            rCtx.strokeStyle = txtColor || cs.cellText;
-            rCtx.lineWidth = 1;
-            rCtx.beginPath();
-            rCtx.moveTo(tx, ty + desc + 1);
-            rCtx.lineTo(tx + m.width, ty + desc + 1);
-            rCtx.stroke();
+          const stWrap = st?.wrap === 'wrap';
+          const textLines = getWrappedLines(rCtx, v, cw - 10, stWrap);
+          let maxAsc = 0;
+          let maxDesc = 0;
+          for (const line of textLines) {
+            const m = rCtx.measureText(line);
+            const a = m.actualBoundingBoxAscent || fsz * 0.8;
+            const d = m.actualBoundingBoxDescent || fsz * 0.2;
+            maxAsc = Math.max(maxAsc, a);
+            maxDesc = Math.max(maxDesc, d);
           }
-          if (hasS) {
-            rCtx.strokeStyle = txtColor || cs.cellText;
-            rCtx.lineWidth = 1;
-            const midY = ty - h * 0.25;
-            rCtx.beginPath();
-            rCtx.moveTo(tx, midY);
-            rCtx.lineTo(tx + m.width, midY);
-            rCtx.stroke();
+          maxAsc = Math.max(maxAsc, fsz * 0.5);
+          maxDesc = Math.max(maxDesc, fsz * 0.15);
+          const lineH = maxAsc + maxDesc;
+          const totalH = textLines.length * lineH;
+          let ty: number;
+          if (vAlign === 'middle') ty = y + (rh - totalH) / 2 + maxAsc;
+          else if (vAlign === 'bottom') ty = y + rh - BASE_CELL_VPAD - maxDesc - (textLines.length - 1) * lineH;
+          else ty = y + BASE_CELL_VPAD + maxAsc;
+          for (let li = 0; li < textLines.length; li++) {
+            const line = textLines[li]!;
+            const lineTy = ty + li * lineH;
+            const m = rCtx.measureText(line);
+            let tx: number;
+            if (hAlign === 'center') tx = x + cw / 2 - m.width / 2;
+            else if (hAlign === 'right') tx = x + cw - 5 - m.width;
+            else tx = x + 5;
+            rCtx.fillText(line, tx, lineTy);
+            if (hasU) {
+              rCtx.strokeStyle = txtColor || cs.cellText;
+              rCtx.lineWidth = 1;
+              rCtx.beginPath();
+              rCtx.moveTo(tx, lineTy + maxDesc + 1);
+              rCtx.lineTo(tx + m.width, lineTy + maxDesc + 1);
+              rCtx.stroke();
+            }
+            if (hasS) {
+              rCtx.strokeStyle = txtColor || cs.cellText;
+              rCtx.lineWidth = 1;
+              const midY = lineTy - lineH * 0.25;
+              rCtx.beginPath();
+              rCtx.moveTo(tx, midY);
+              rCtx.lineTo(tx + m.width, midY);
+              rCtx.stroke();
+            }
           }
           rCtx.restore();
         }
@@ -1361,7 +1492,7 @@ function onFormulaBarFocus() {
   }
 }
 function onFormulaBarInput(e: Event) {
-  editValue.value = (e.target as HTMLInputElement).value;
+  editValue.value = (e.target as HTMLTextAreaElement).value;
 }
 function onFormulaBarKeydown(e: KeyboardEvent) {
   if (e.key === 'Enter') {
@@ -1756,6 +1887,24 @@ function onDimKeydown(e: KeyboardEvent) {
     closeDimPanel();
   }
 }
+function onDimBlur() {
+  const p = dimPanel.value;
+  if (!p) return;
+  const raw = p.value.trim();
+  const num = Number(raw);
+  const isRow = p.type === 'row';
+  const min = isRow ? MIN_ROW_HEIGHT : MIN_COL_WIDTH;
+  const max = isRow ? MAX_ROW_HEIGHT : MAX_COL_WIDTH;
+  if (raw === '' || !Number.isFinite(num)) {
+    // 空值或非法值：关闭面板，不应用
+    closeDimPanel();
+    return;
+  }
+  // 钳制到合法范围
+  const clamped = Math.max(min, Math.min(max, Math.round(num)));
+  p.value = String(clamped);
+  p.error = '';
+}
 function applyDimPanel() {
   const p = dimPanel.value;
   const s = selection.value;
@@ -1822,16 +1971,20 @@ const editInputStyle = computed(() => {
   const hAlign = typeof st?.textAlign === 'string' ? st.textAlign : 'left';
   const vAlign = typeof st?.verticalAlign === 'string' ? st.verticalAlign : 'top';
   const rhVal = getRowHeight(r);
-  const lineH = fsz;
   const BORDER = 2;
-  // 可用于文字的内容高度 = 行高 - 上下边框 - 字号
-  const availH = Math.max(0, rhVal - BORDER * 2 - lineH);
-  // 减去边框偏移的上下内边距
-  const pv = Math.max(0, BASE_CELL_VPAD - BORDER);
+  // 使用与 Canvas 相同的字体度量
+  const { ascent: asc, descent: desc } = measureFontMetrics(ffa, fsz, fw, fs);
+  const textH = asc + desc;
+  const numLines = editValue.value ? editValue.value.split('\n').length : 1;
+  const totalTextH = numLines * textH;
+  // textarea 使用 line-height: 1，文字顶部 = border + paddingTop
+  // 需要：border + paddingTop = BASE_CELL_VPAD (top对齐时)
+  const pv = BASE_CELL_VPAD - BORDER;
+  const availH = Math.max(0, rhVal - BORDER * 2 - totalTextH);
   let padTop = 0, padBottom = 0;
-  if (vAlign === 'middle') { padTop = Math.floor(availH / 2); padBottom = availH - padTop; }
-  else if (vAlign === 'top') { padTop = Math.min(pv, availH); padBottom = availH - padTop; }
-  else if (vAlign === 'bottom') { padBottom = Math.min(pv, availH); padTop = availH - padBottom; }
+  if (vAlign === 'middle') { padTop = Math.floor((rhVal - totalTextH) / 2); padBottom = Math.max(0, rhVal - totalTextH - padTop); }
+  else if (vAlign === 'top') { padTop = pv; padBottom = Math.max(0, rhVal - totalTextH - padTop); }
+  else if (vAlign === 'bottom') { padBottom = pv; padTop = Math.max(0, rhVal - totalTextH - padBottom); }
   return {
     left: `${HEADER_WIDTH + colPositions.value[c]! - scrollX.value}px`,
     top: `${HEADER_HEIGHT + rowPositions.value[r]! - scrollY.value}px`,
@@ -2035,14 +2188,20 @@ function onMouseMove(e: MouseEvent) {
   if (isResizingC) {
     const x = getCanvasXY(e, canvasRef.value).x;
     const d = (x - HEADER_WIDTH + scrollX.value) - rszSG;
-    if (rszSS + d >= 30) colWidths.value[rszTC] = rszSS + d;
+    const newW = rszSS + d;
+    if (newW >= MIN_COL_WIDTH && newW <= MAX_COL_WIDTH) colWidths.value[rszTC] = newW;
+    else if (newW < MIN_COL_WIDTH) colWidths.value[rszTC] = MIN_COL_WIDTH;
+    else colWidths.value[rszTC] = MAX_COL_WIDTH;
     scheduleRender();
     return;
   }
   if (isResizingR) {
     const y = getCanvasXY(e, canvasRef.value).y;
     const d = (y - HEADER_HEIGHT + scrollY.value) - rszSG;
-    if (rszSS + d >= MIN_ROW_HEIGHT) rowHeights.value[rszTR] = rszSS + d;
+    const newH = rszSS + d;
+    if (newH >= MIN_ROW_HEIGHT && newH <= MAX_ROW_HEIGHT) rowHeights.value[rszTR] = newH;
+    else if (newH < MIN_ROW_HEIGHT) rowHeights.value[rszTR] = MIN_ROW_HEIGHT;
+    else rowHeights.value[rszTR] = MAX_ROW_HEIGHT;
     scheduleRender();
     return;
   }
@@ -2359,7 +2518,7 @@ function onKeydown(e: KeyboardEvent) {
 let isEditComposing = false;
 let compositionJustEnded = false;
 function onEditInput(e: Event) {
-  const val = (e.target as HTMLInputElement).value;
+  const val = (e.target as HTMLTextAreaElement).value;
   if (!editingCell.value) {
     ensureVisible(activeCell.value.col, activeCell.value.row);
     startEdit(val);
@@ -2382,7 +2541,7 @@ function onEditCompositionEnd(e: CompositionEvent) {
   setTimeout(() => {
     compositionJustEnded = false;
   }, 0);
-  editValue.value = (e.target as HTMLInputElement).value;
+  editValue.value = (e.target as HTMLTextAreaElement).value;
 }
 function onEditKd(e: KeyboardEvent) {
   if (!editingCell.value) {
@@ -2392,7 +2551,20 @@ function onEditKd(e: KeyboardEvent) {
   }
   if (isEditComposing || isImeKeydown(e)) return;
   if (compositionJustEnded && (e.key === 'Enter' || e.key === 'Escape')) return;
-  if (e.key === 'Enter') {
+  if (e.key === 'Enter' && (e.altKey || e.metaKey)) {
+    // Alt+Enter 插入换行符
+    e.preventDefault();
+    const inp = editInputRef.value;
+    if (!inp) return;
+    const start = inp.selectionStart ?? inp.value.length;
+    const end = inp.selectionEnd ?? inp.value.length;
+    const val = inp.value;
+    const newVal = val.slice(0, start) + '\n' + val.slice(end);
+    editValue.value = newVal;
+    inp.value = newVal;
+    inp.selectionStart = inp.selectionEnd = start + 1;
+    scheduleRender();
+  } else if (e.key === 'Enter') {
     e.preventDefault();
     commitEdit();
     moveActive(0, 1);
@@ -2412,6 +2584,13 @@ function onEditKd(e: KeyboardEvent) {
     scheduleRender();
     focusEditInput();
   }
+}
+
+function onEditPaste(e: ClipboardEvent) {
+  // 粘贴时保留换行符，默认 textarea 已支持，无需特殊处理
+  // 但需要确保不会提交到单元格，等用户确认
+  if (!editingCell.value) return;
+  // 让默认粘贴行为发生，textarea 天然支持多行
 }
 function onEditBlur() {
   setTimeout(() => {
@@ -2553,6 +2732,7 @@ onBeforeUnmount(() => {
       :v-align-options="vAlignOptions"
       :sel-h-align="selHAlign"
       :sel-v-align="selVAlign"
+      :sel-wrap="selWrap"
       @undo="undo()"
       @redo="redo()"
       @paint-format="onPaintFormat"
@@ -2581,6 +2761,7 @@ onBeforeUnmount(() => {
       @apply-border="applyCachedBorder"
       @h-align-change="onHAlignChange($event)"
       @v-align-change="onVAlignChange($event)"
+      @wrap-toggle="onWrapToggle"
     />
 
     <!-- 编辑栏 -->
@@ -2620,7 +2801,7 @@ onBeforeUnmount(() => {
         @touchmove.prevent="onTouchMove"
         @touchend="onTouchEnd"
       />
-      <input
+      <textarea
         ref="editInputRef"
         class="cell-editor"
         :value="editValue"
@@ -2630,7 +2811,8 @@ onBeforeUnmount(() => {
         @compositionstart="onEditCompositionStart"
         @compositionend="onEditCompositionEnd"
         @blur="onEditBlur"
-      >
+        @paste="onEditPaste"
+      ></textarea>
       <!-- 垂直滚动条 -->
       <div
         v-if="maxScrollY > 0"
@@ -2786,6 +2968,7 @@ onBeforeUnmount(() => {
             :value="dimPanel.value"
             @input="onDimInput"
             @keydown="onDimKeydown"
+            @blur="onDimBlur"
           >
           <span class="dim-panel__unit">px</span>
         </div>
@@ -2842,7 +3025,7 @@ onBeforeUnmount(() => {
 .sb-thumb:hover { background: var(--sp-scroll-thumb-hover); }
 .sb-thumb--v { left: 1px; right: 1px; min-height: 16px; }
 .sb-thumb--h { top: 1px; bottom: 1px; min-width: 16px; }
-.cell-editor { position: absolute; border: 2px solid var(--sp-cell-editor-border); outline: none; padding: 0 4px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; font-size: 13px; color: var(--sp-cell-editor-color); background: var(--sp-cell-editor-bg); box-shadow: 0 0 0 1px var(--sp-cell-editor-shadow); z-index: 10; box-sizing: border-box; min-width: 0; }
+.cell-editor { position: absolute; border: 2px solid var(--sp-cell-editor-border); outline: none; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; font-size: 13px; color: var(--sp-cell-editor-color); background: var(--sp-cell-editor-bg); box-shadow: 0 0 0 1px var(--sp-cell-editor-shadow); z-index: 10; box-sizing: border-box; min-width: 0; overflow: hidden; padding: 0; margin: 0; -webkit-appearance: none; appearance: none; resize: none; white-space: pre-wrap; word-break: break-all; }
 </style>
 
 <style>

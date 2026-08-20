@@ -36,7 +36,7 @@ function segRole(bt: BorderType, name: string): 'solid' | 'dashed' | 'thick' {
 const TOOL_KEYS = [
   'undo', 'redo', 'paint', 'clear', 'sep1', 'font', 'fontSize', 'sep2',
   'bold', 'italic', 'underline', 'strike', 'sep3', 'textColor', 'fillColor', 'border',
-  'sep4', 'hAlign', 'vAlign',
+  'sep4', 'hAlign', 'vAlign', 'wrap',
 ] as const;
 
 const rootEl = ref<HTMLElement | null>(null);
@@ -190,6 +190,7 @@ const props = defineProps<{
   cachedBorder: BorderType;
   selHAlign: string;
   selVAlign: string;
+  selWrap: boolean;
   hAlignOptions: FontOption[];
   vAlignOptions: FontOption[];
 }>();
@@ -223,6 +224,7 @@ const emit = defineEmits<{
   (e: 'apply-border'): void;
   (e: 'h-align-change', v: string | number): void;
   (e: 'v-align-change', v: string | number): void;
+  (e: 'wrap-toggle'): void;
 }>();
 </script>
 
@@ -315,7 +317,10 @@ const emit = defineEmits<{
         <div class="toolbar-font-size">
           <input
             class="toolbar-font-size__input"
-            type="text"
+            type="number"
+            min="5"
+            max="72"
+            step="1"
             :value="fontSizeInput"
             :title="t(locale, 'fontSize')"
             @input="emit('font-size-input', ($event.target as HTMLInputElement).value)"
@@ -327,6 +332,7 @@ const emit = defineEmits<{
             :model-value="selFontSize"
             :options="fontSizeOptions"
             :width="56"
+            :menu-width="56"
             :visible-count="9"
             :title="t(locale, 'fontSize')"
             :hide-trigger="true"
@@ -577,6 +583,17 @@ const emit = defineEmits<{
           @change="emit('v-align-change', $event)"
         />
       </div>
+      <div class="tb-item" data-key="wrap">
+        <button
+          class="toolbar-btn"
+          :class="{ 'toolbar-btn--active': selWrap }"
+          type="button"
+          :title="t(locale, 'wrap')"
+          @click="emit('wrap-toggle')"
+        >
+          <svg viewBox="0 0 1024 1024" fill="currentColor"><path d="M896 179.2a38.4 38.4 0 0 0-76.8 0v665.6a38.4 38.4 0 0 0 76.8 0v-665.6zM204.8 281.6A38.4 38.4 0 0 0 204.8 358.4h179.2a38.4 38.4 0 0 0 0-76.8H204.8zM550.4 281.6a38.4 38.4 0 0 0 0 76.8h51.2c35.328 0 64 28.672 64 64v179.2c0 35.328-28.672 64-64 64H246.272l36.864-36.864a38.4 38.4 0 1 0-54.272-54.272l-102.4 102.4a38.4 38.4 0 0 0 0 54.272l102.4 102.4a38.4 38.4 0 0 0 54.272-54.272l-36.864-36.864h355.328a140.8 140.8 0 0 0 140.8-140.8v-179.2a140.8 140.8 0 0 0-140.8-140.8h-51.2z" /></svg>
+        </button>
+      </div>
     </Teleport>
 
     <!-- 「更多」按钮 -->
@@ -617,7 +634,9 @@ const emit = defineEmits<{
 .toolbar-font { flex: 0 0 auto; }
 .toolbar-align { flex: 0 0 auto; }
 .toolbar-font-size { display: inline-flex; align-items: center; gap: 0; height: 26px; position: relative; }
-.toolbar-font-size__input { width: 36px; height: 26px; border: 1px solid transparent; border-right: none; border-radius: 3px 0 0 3px; background: transparent; color: var(--sp-toolbar-btn-color); font-size: 12px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; text-align: center; padding: 0 2px; outline: none; box-sizing: border-box; }
+.toolbar-font-size__input { width: 36px; height: 26px; border: 1px solid transparent; border-right: none; border-radius: 3px 0 0 3px; background: transparent; color: var(--sp-toolbar-btn-color); font-size: 12px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; text-align: center; padding: 0 2px; outline: none; box-sizing: border-box; -moz-appearance: textfield; }
+.toolbar-font-size__input::-webkit-outer-spin-button,
+.toolbar-font-size__input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .toolbar-font-size__input:hover { background: var(--sp-toolbar-btn-hover-bg); }
 .toolbar-font-size__input:focus { border-color: var(--sp-toolbar-border); background: #fff; }
 .toolbar-font-size__btn { display: flex; align-items: center; justify-content: center; width: 16px; height: 26px; border: 1px solid transparent; border-left: none; border-radius: 0 3px 3px 0; background: transparent; color: var(--sp-toolbar-btn-color); cursor: pointer; padding: 0; }
