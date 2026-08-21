@@ -33,7 +33,7 @@ const BORDER_OPTIONS: { key: BorderType; i18nKey: string }[] = [
 ];
 
 // 田字型边框图标：4 个外边 + 1 条竖中线 + 1 条横中线
-interface BorderSeg { name: string; x1: number; y1: number; x2: number; y2: number; }
+interface BorderSeg { name: string; x1: number; y1: number; x2: number; y2: number }
 const BORDER_SEGS: BorderSeg[] = [
   { name: 'top', x1: 4, y1: 4, x2: 26, y2: 4 },
   { name: 'bottom', x1: 4, y1: 26, x2: 26, y2: 26 },
@@ -44,13 +44,23 @@ const BORDER_SEGS: BorderSeg[] = [
 ];
 // 各边框类型对应的实线段；粗外框线对应粗实线段；未列出者为虚线
 const SOLID_SEGS: Record<BorderType, string[]> = {
-  bottom: ['bottom'], top: ['top'], left: ['left'], right: ['right'], none: [],
+  bottom: ['bottom'],
+  top: ['top'],
+  left: ['left'],
+  right: ['right'],
+  none: [],
   all: ['top', 'bottom', 'left', 'right', 'vMid', 'hMid'],
   outer: ['top', 'bottom', 'left', 'right'],
   thickOuter: ['top', 'bottom', 'left', 'right'],
 };
 const THICK_SEGS: Record<BorderType, string[]> = {
-  bottom: [], top: [], left: [], right: [], none: [], all: [], outer: [],
+  bottom: [],
+  top: [],
+  left: [],
+  right: [],
+  none: [],
+  all: [],
+  outer: [],
   thickOuter: ['top', 'bottom', 'left', 'right'],
 };
 function segRole(bt: BorderType, name: string): 'solid' | 'dashed' | 'thick' {
@@ -66,7 +76,11 @@ const pos = ref<{ left?: number; right?: number; top: number }>({ top: 0 });
 
 watch(() => props.modelOpen, (v) => {
   if (v !== undefined && v !== open.value) {
-    if (v) openMenu(); else close();
+    if (v) {
+      openMenu();
+    } else {
+      close();
+    }
   }
 });
 
@@ -122,37 +136,46 @@ defineExpose({ open, openMenu, close });
 </script>
 
 <template>
-  <div ref="rootRef" class="border-picker">
+  <div
+    ref="rootRef"
+    class="border-picker"
+  >
     <Teleport to="body">
       <Transition name="menu-pop">
-      <div
-        v-if="open"
-        ref="menuRef"
-        class="border-picker__menu"
-        :style="{ left: pos.left !== undefined ? pos.left + 'px' : undefined, right: pos.right !== undefined ? pos.right + 'px' : undefined, top: pos.top + 'px' }"
-        @mousedown.stop
-      >
-        <button
-          v-for="opt in BORDER_OPTIONS"
-          :key="opt.key"
-          class="border-picker__item"
-          :title="t(locale, opt.i18nKey)"
-          @click="selectBorder(opt.key)"
+        <div
+          v-if="open"
+          ref="menuRef"
+          class="border-picker__menu"
+          :style="{ left: pos.left !== undefined ? pos.left + 'px' : undefined, right: pos.right !== undefined ? pos.right + 'px' : undefined, top: pos.top + 'px' }"
+          @mousedown.stop
         >
-          <svg viewBox="0 0 30 30" class="border-picker__icon">
-            <line
-              v-for="s in BORDER_SEGS"
-              :key="s.name"
-              :x1="s.x1" :y1="s.y1" :x2="s.x2" :y2="s.y2"
-              stroke="currentColor"
-              :stroke-width="segRole(opt.key, s.name) === 'thick' ? 3 : 1.5"
-              :stroke-dasharray="segRole(opt.key, s.name) === 'dashed' ? '0 4' : 'none'"
-              :stroke-linecap="segRole(opt.key, s.name) === 'dashed' ? 'round' : 'square'"
-            />
-          </svg>
-          <span class="border-picker__label">{{ t(locale, opt.i18nKey) }}</span>
-        </button>
-      </div>
+          <button
+            v-for="opt in BORDER_OPTIONS"
+            :key="opt.key"
+            class="border-picker__item"
+            :title="t(locale, opt.i18nKey)"
+            @click="selectBorder(opt.key)"
+          >
+            <svg
+              viewBox="0 0 30 30"
+              class="border-picker__icon"
+            >
+              <line
+                v-for="s in BORDER_SEGS"
+                :key="s.name"
+                :x1="s.x1"
+                :y1="s.y1"
+                :x2="s.x2"
+                :y2="s.y2"
+                stroke="currentColor"
+                :stroke-width="segRole(opt.key, s.name) === 'thick' ? 3 : 1.5"
+                :stroke-dasharray="segRole(opt.key, s.name) === 'dashed' ? '0 4' : 'none'"
+                :stroke-linecap="segRole(opt.key, s.name) === 'dashed' ? 'round' : 'square'"
+              />
+            </svg>
+            <span class="border-picker__label">{{ t(locale, opt.i18nKey) }}</span>
+          </button>
+        </div>
       </Transition>
     </Teleport>
   </div>

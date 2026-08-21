@@ -24,7 +24,11 @@ const pos = ref<{ left?: number; right?: number; top: number }>({ top: 0 });
 
 watch(() => props.modelOpen, (v) => {
   if (v !== undefined && v !== open.value) {
-    if (v) openMenu(); else close();
+    if (v) {
+      openMenu();
+    } else {
+      close();
+    }
   }
 });
 
@@ -39,7 +43,9 @@ function onClickOutside(e: MouseEvent) {
 
 function openMenu() {
   open.value = true;
-  if (props.modelOpen !== undefined) emit('update:modelOpen', true);
+  if (props.modelOpen !== undefined) {
+    emit('update:modelOpen', true);
+  }
   nextTick(() => {
     const el = props.triggerEl ?? rootRef.value;
     if (el) {
@@ -53,8 +59,12 @@ function openMenu() {
         right = undefined;
         posLeft = Math.max(4, r.left);
       }
-      if (top + menuH > window.innerHeight - 4) top = r.top - menuH - 4;
-      if (top < 4) top = 4;
+      if (top + menuH > window.innerHeight - 4) {
+        top = r.top - menuH - 4;
+      }
+      if (top < 4) {
+        top = 4;
+      }
       pos.value = right !== undefined ? { right, top } : { left: posLeft!, top };
     }
     document.addEventListener('mousedown', onClickOutside);
@@ -63,7 +73,9 @@ function openMenu() {
 
 function close() {
   open.value = false;
-  if (props.modelOpen !== undefined) emit('update:modelOpen', false);
+  if (props.modelOpen !== undefined) {
+    emit('update:modelOpen', false);
+  }
   document.removeEventListener('mousedown', onClickOutside);
 }
 
@@ -80,27 +92,39 @@ defineExpose({ open, openMenu, close });
 </script>
 
 <template>
-  <div ref="rootRef" class="merge-picker">
+  <div
+    ref="rootRef"
+    class="merge-picker"
+  >
     <Teleport to="body">
       <Transition name="menu-pop">
-      <div
-        v-if="open"
-        ref="menuRef"
-        class="merge-picker__menu"
-        :style="{ left: pos.left !== undefined ? pos.left + 'px' : undefined, right: pos.right !== undefined ? pos.right + 'px' : undefined, top: pos.top + 'px' }"
-        @mousedown.stop
-      >
-        <button
-          v-for="opt in MERGE_OPTIONS"
-          :key="opt.key"
-          class="merge-picker__item"
-          :title="t(locale, opt.labelKey)"
-          @click="selectMerge(opt.key)"
+        <div
+          v-if="open"
+          ref="menuRef"
+          class="merge-picker__menu"
+          :style="{
+            left: pos.left !== undefined ? pos.left + 'px' : undefined,
+            right: pos.right !== undefined ? pos.right + 'px' : undefined,
+            top: pos.top + 'px',
+          }"
+          @mousedown.stop
         >
-          <span class="merge-picker__icon" v-html="opt.icon" />
-          <span class="merge-picker__label">{{ t(locale, opt.labelKey) }}</span>
-        </button>
-      </div>
+          <button
+            v-for="opt in MERGE_OPTIONS"
+            :key="opt.key"
+            class="merge-picker__item"
+            :title="t(locale, opt.labelKey)"
+            @click="selectMerge(opt.key)"
+          >
+            <!-- eslint-disable vue/no-v-html -->
+            <span
+              class="merge-picker__icon"
+              v-html="opt.icon"
+            />
+            <!-- eslint-enable vue/no-v-html -->
+            <span class="merge-picker__label">{{ t(locale, opt.labelKey) }}</span>
+          </button>
+        </div>
       </Transition>
     </Teleport>
   </div>

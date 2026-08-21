@@ -74,7 +74,7 @@ function measureFontMetrics(family: string, size: number, weight: string, style:
   return result;
 }
 
-function getFontMetricsForCell(c: number, r: number): { ascent: number; descent: number } {
+function _getFontMetricsForCell(c: number, r: number): { ascent: number; descent: number } {
   const st = cells[cellKey(c, r)]?.style;
   const fsz = cellFontSize(c, r);
   const ffa = typeof st?.fontFamily === 'string' && st.fontFamily ? st.fontFamily : DEFAULT_FONT_FAMILY;
@@ -182,7 +182,7 @@ function getRowHeight(r: number): number {
   return finalHeight;
 }
 /** 判断行是否为自动行高（无显式行高属性） */
-function isAutoRow(r: number): boolean {
+function _isAutoRow(r: number): boolean {
   return rowHeights.value[r] === undefined;
 }
 const rowPositions = computed(() => {
@@ -239,11 +239,11 @@ function findMerge(c: number, r: number): { range: SelectionRange; anchor: strin
   return null;
 }
 /** 判断单元格是否为合并区域的锚点（左上角） */
-function isMergeAnchor(c: number, r: number): boolean {
+function _isMergeAnchor(c: number, r: number): boolean {
   return merges[cellKey(c, r)] !== undefined;
 }
 /** 获取合并单元格的跨距 { w, h }（像素宽度/高度），非合并返回单格尺寸 */
-function mergedSpan(c: number, r: number): { w: number; h: number } {
+function _mergedSpan(c: number, r: number): { w: number; h: number } {
   const m = findMerge(c, r);
   if (m && c === m.range.startCol && r === m.range.startRow) {
     const w = colPositions.value[m.range.endCol + 1]! - colPositions.value[c]!;
@@ -270,10 +270,22 @@ function expandSelectionForMerges(sC: number, sR: number, eC: number, eR: number
       // 检查是否有部分重叠（一个矩形与另一个矩形相交但非包含）
       const overlap = m.startCol <= maxC && m.endCol >= minC && m.startRow <= maxR && m.endRow >= minR;
       if (overlap) {
-        if (m.startCol < minC) { minC = m.startCol; changed = true; }
-        if (m.endCol > maxC) { maxC = m.endCol; changed = true; }
-        if (m.startRow < minR) { minR = m.startRow; changed = true; }
-        if (m.endRow > maxR) { maxR = m.endRow; changed = true; }
+        if (m.startCol < minC) {
+          minC = m.startCol;
+          changed = true;
+        }
+        if (m.endCol > maxC) {
+          maxC = m.endCol;
+          changed = true;
+        }
+        if (m.startRow < minR) {
+          minR = m.startRow;
+          changed = true;
+        }
+        if (m.endRow > maxR) {
+          maxR = m.endRow;
+          changed = true;
+        }
       }
     }
   }
@@ -521,10 +533,10 @@ function clearFormat() {
 
 // ============ 工具栏：字体 / 字号 ============
 const fontFamilyOptions = computed(() =>
-  FONT_FAMILIES.map((f) => ({ ...f, label: f.value === '' ? t(locale.value, 'fontDefault') : f.label }))
+  FONT_FAMILIES.map((f) => ({ ...f, label: f.value === '' ? t(locale.value, 'fontDefault') : f.label })),
 );
 const fontSizeOptions = computed(() =>
-  FONT_SIZES.map((f) => ({ ...f, label: String(f.value) }))
+  FONT_SIZES.map((f) => ({ ...f, label: String(f.value) })),
 );
 const FONT_FAMILY_MIXED = '\u0000';
 const selFontFamily = computed(() => {
@@ -569,7 +581,7 @@ function applyStyleToSelection(prop: string, value: unknown) {
       const k = cellKey(c, r);
       const val = cells[k]?.value ?? '';
       const st = cells[k]?.style ? { ...cells[k]!.style } : {};
-      if (value === '' || value === null || value === undefined || value === 0) delete st[prop];
+      if (value === '' || value === null || value === undefined || value === 0) Reflect.deleteProperty(st, prop);
       else st[prop] = value;
       const style = Object.keys(st).length ? st : null;
       if (val === '' && style === null) delCell(k);
@@ -589,10 +601,10 @@ function onFontSizeChange(v: string | number) {
 
 // ============ 工具栏：对齐 ============
 const hAlignOptions = computed(() =>
-  H_ALIGN_OPTIONS.map((o) => ({ label: t(locale.value, o.labelKey), value: o.value, icon: o.icon }))
+  H_ALIGN_OPTIONS.map((o) => ({ label: t(locale.value, o.labelKey), value: o.value, icon: o.icon })),
 );
 const vAlignOptions = computed(() =>
-  V_ALIGN_OPTIONS.map((o) => ({ label: t(locale.value, o.labelKey), value: o.value, icon: o.icon }))
+  V_ALIGN_OPTIONS.map((o) => ({ label: t(locale.value, o.labelKey), value: o.value, icon: o.icon })),
 );
 // 以选区左上角（首单元格）的对齐属性为显示基准；无属性默认左对齐 / 顶端对齐
 const selHAlign = computed(() => {
@@ -740,13 +752,13 @@ const cachedFillColor = ref<string>('');
 const textColorMenuOpen = ref(false);
 const fillColorMenuOpen = ref(false);
 
-function toggleTextColorMenu() {
+function _toggleTextColorMenu() {
   textColorMenuOpen.value = !textColorMenuOpen.value;
   fillColorMenuOpen.value = false;
   borderMenuOpen.value = false;
   mergeMenuOpen.value = false;
 }
-function toggleFillColorMenu() {
+function _toggleFillColorMenu() {
   fillColorMenuOpen.value = !fillColorMenuOpen.value;
   textColorMenuOpen.value = false;
   borderMenuOpen.value = false;
@@ -848,7 +860,10 @@ function borderTypeToWidths(bt: BorderType, col: number, row: number, sel: Selec
       if (isEdgeRight) w.right = 1;
       break;
     case 'all':
-      w.top = 1; w.bottom = 1; w.left = 1; w.right = 1;
+      w.top = 1;
+      w.bottom = 1;
+      w.left = 1;
+      w.right = 1;
       break;
     case 'outer':
       if (isEdgeTop) w.top = 1;
@@ -912,13 +927,13 @@ function setCellBorderSide(col: number, row: number, side: 'Top' | 'Bottom' | 'L
   const st = cells[k]?.style ? { ...cells[k]!.style } : {};
   const prop = `border${side}Width`;
   if (width === 0) {
-    if (clearZero) delete st[prop];
+    if (clearZero) Reflect.deleteProperty(st, prop);
   } else {
     st[prop] = width;
     st.borderColor = BORDER_COLOR;
   }
   const dirs = ['Top', 'Bottom', 'Left', 'Right'] as const;
-  const hasBorder = dirs.some(d => st[`border${d}Width`] !== undefined);
+  const hasBorder = dirs.some((d) => st[`border${d}Width`] !== undefined);
   if (!hasBorder) delete st.borderColor;
   const style = Object.keys(st).length ? st : null;
   if (val === '' && style === null) delCell(k);
@@ -956,14 +971,14 @@ function applyBorderToCell(col: number, row: number, w: { top: number; bottom: n
     const prop = `border${dirs[i]}Width`;
     if (vals[i] === 0) {
       // clearZero=false 时只增加边框，不删除已有边框
-      if (clearZero) delete st[prop];
+      if (clearZero) Reflect.deleteProperty(st, prop);
     } else {
       st[prop] = vals[i];
       st.borderColor = BORDER_COLOR;
     }
   }
   // 如果没有设置任何边框宽度，清除 borderColor
-  const hasBorder = dirs.some(d => st[`border${d}Width`] !== undefined);
+  const hasBorder = dirs.some((d) => st[`border${d}Width`] !== undefined);
   if (!hasBorder) delete st.borderColor;
   const style = Object.keys(st).length ? st : null;
   if (val === '' && style === null) delCell(k);
@@ -1016,7 +1031,7 @@ function removeOverlappingMerges(sC: number, sR: number, eC: number, eR: number)
       toRemove.push(key);
     }
   }
-  for (const key of toRemove) delete merges[key];
+  for (const key of toRemove) Reflect.deleteProperty(merges, key);
 }
 
 /** 合并后居中：保留左上角值，清除其他单元格值，水平居中 */
@@ -1053,7 +1068,7 @@ function mergeAcross() {
   for (let r = sel.startRow; r <= sel.endRow; r++) {
     removeOverlappingMerges(sel.startCol, r, sel.endCol, r);
     const anchorKey = cellKey(sel.startCol, r);
-    const anchorVal = cells[anchorKey]?.value ?? '';
+    const _anchorVal = cells[anchorKey]?.value ?? '';
     for (let c = sel.startCol + 1; c <= sel.endCol; c++) {
       clearCellsInRange(c, c, r, r);
     }
@@ -1072,7 +1087,7 @@ function mergeCells() {
   saveUndo();
   removeOverlappingMerges(sel.startCol, sel.startRow, sel.endCol, sel.endRow);
   const anchorKey = cellKey(sel.startCol, sel.startRow);
-  const anchorVal = cells[anchorKey]?.value ?? '';
+  const _anchorVal = cells[anchorKey]?.value ?? '';
   for (let c = sel.startCol; c <= sel.endCol; c++) {
     for (let r = sel.startRow; r <= sel.endRow; r++) {
       if (c === sel.startCol && r === sel.startRow) continue;
@@ -1102,7 +1117,7 @@ function onApplyMerge() {
   // 检查选区是否恰好是一个合并区域
   const m = findMerge(sel.startCol, sel.startRow);
   if (m && sel.startCol === m.range.startCol && sel.startRow === m.range.startRow
-      && sel.endCol === m.range.endCol && sel.endRow === m.range.endRow) {
+    && sel.endCol === m.range.endCol && sel.endRow === m.range.endRow) {
     unmergeCells();
   } else {
     mergeAndCenter();
@@ -1111,10 +1126,18 @@ function onApplyMerge() {
 
 function onMergeChange(v: MergeType) {
   switch (v) {
-    case 'mergeCenter': mergeAndCenter(); break;
-    case 'mergeAcross': mergeAcross(); break;
-    case 'mergeCells': mergeCells(); break;
-    case 'unmergeCells': unmergeCells(); break;
+    case 'mergeCenter':
+      mergeAndCenter();
+      break;
+    case 'mergeAcross':
+      mergeAcross();
+      break;
+    case 'mergeCells':
+      mergeCells();
+      break;
+    case 'unmergeCells':
+      unmergeCells();
+      break;
   }
 }
 
@@ -1417,7 +1440,7 @@ function loadSheet(i: number) {
   Object.keys(cells).forEach((k) => delCell(k));
   Object.assign(cells, s.cells);
   // 清空并重新加载合并信息
-  Object.keys(merges).forEach((k) => delete merges[k]);
+  Object.keys(merges).forEach((k) => Reflect.deleteProperty(merges, k));
   if (s.merges) Object.assign(merges, s.merges);
   selection.value = s.selection ? { ...s.selection } : null;
   activeCell.value = { ...s.activeCell };
@@ -1656,7 +1679,7 @@ function render() {
   rCtx.clip();
   const sel = selection.value;
   const ed = editingCell.value;
-  
+
   // 第一步：绘制背景色、选中状态、文本内容
   for (let row = sR; row <= eR; row++) {
     for (let col = sC; col <= eC; col++) {
@@ -1673,7 +1696,7 @@ function render() {
         rh = rP[mergeInfo.range.endRow + 1]! - rP[row]!;
       }
       if (x + cw < HW || y + rh < HH || x > W || y > H) continue;
-      
+
       // 单元格背景色
       const stBg = cells[cellKey(col, row)]?.style;
       const bgColor = typeof stBg?.backgroundColor === 'string' ? stBg.backgroundColor : '';
@@ -1770,7 +1793,7 @@ function render() {
       }
     }
   }
-  
+
   // 第二步：绘制边框（在所有背景色和文本之后绘制）
   for (let row = sR; row <= eR; row++) {
     for (let col = sC; col <= eC; col++) {
@@ -1787,7 +1810,7 @@ function render() {
         rh = rP[mergeInfo.range.endRow + 1]! - rP[row]!;
       }
       if (x + cw < HW || y + rh < HH || x > W || y > H) continue;
-      
+
       const cst = cells[cellKey(col, row)]?.style;
       const ownT = (cst?.borderTopWidth as number) || 0;
       const ownL = (cst?.borderLeftWidth as number) || 0;
@@ -1797,7 +1820,7 @@ function render() {
       const wL = Math.max(ownL, cellBorderWidth(col - 1, row, 'Right'));
       const wB = Math.max(ownB, cellBorderWidth(col, row + 1, 'Top'));
       const wR = Math.max(ownR, cellBorderWidth(col + 1, row, 'Left'));
-      
+
       if (wT > 0 || wL > 0 || wB > 0 || wR > 0) {
         rCtx.fillStyle = BORDER_COLOR;
         // 上边框
@@ -1819,7 +1842,7 @@ function render() {
       }
     }
   }
-  
+
   // 第三步：在对角单元格的对应角落绘制小方块以填充缺口
   // 例如：单元格左上角有上边框+左边框 → 在左上方向的对角单元格(col-1,row-1)的右下角画小方块
   for (let row = sR; row <= eR; row++) {
@@ -1837,7 +1860,7 @@ function render() {
         rh = rP[mergeInfo.range.endRow + 1]! - rP[row]!;
       }
       if (x + cw < HW || y + rh < HH || x > W || y > H) continue;
-      
+
       const ownT = (cells[cellKey(col, row)]?.style?.borderTopWidth as number) || 0;
       const ownL = (cells[cellKey(col, row)]?.style?.borderLeftWidth as number) || 0;
       const ownB = (cells[cellKey(col, row)]?.style?.borderBottomWidth as number) || 0;
@@ -1846,7 +1869,7 @@ function render() {
       const wL = Math.max(ownL, cellBorderWidth(col - 1, row, 'Right'));
       const wB = Math.max(ownB, cellBorderWidth(col, row + 1, 'Top'));
       const wR = Math.max(ownR, cellBorderWidth(col + 1, row, 'Left'));
-      
+
       rCtx.fillStyle = BORDER_COLOR;
       // 左上角：有上边框+左边框 → 在(col-1,row-1)的右下角画方块
       // 宽度=左边框粗细，高度=上边框粗细
@@ -2319,14 +2342,18 @@ function openDimPanel(type: 'row' | 'col', x: number, y: number) {
     const v = type === 'row' ? getRowHeight(s.startRow) : colWidths.value[s.startCol];
     cur = v != null && v > 0 ? String(Math.round(v)) : '';
   }
-  const pw = 220, ph = 118;
-  let px = x, py = y;
+  const pw = 220;
+  const ph = 118;
+  let px = x;
+  let py = y;
   if (px + pw > window.innerWidth) px = window.innerWidth - pw - 8;
   if (py + ph > window.innerHeight) py = window.innerHeight - ph - 8;
   if (px < 8) px = 8;
   if (py < 8) py = 8;
   dimPanel.value = { type, x: px, y: py, value: cur, error: '' };
-  dimCloseHandler = () => { dimPanel.value = null; };
+  dimCloseHandler = () => {
+    dimPanel.value = null;
+  };
   setTimeout(() => document.addEventListener('mousedown', dimCloseHandler!, { once: true }), 0);
   nextTick(() => {
     const inp = dimInputRef.value;
@@ -2451,11 +2478,19 @@ const editInputStyle = computed(() => {
   // textarea 使用 line-height: 1，文字顶部 = border + paddingTop
   // 需要：border + paddingTop = BASE_CELL_VPAD (top对齐时)
   const pv = BASE_CELL_VPAD - BORDER;
-  const availH = Math.max(0, rhVal - BORDER * 2 - totalTextH);
-  let padTop = 0, padBottom = 0;
-  if (vAlign === 'middle') { padTop = Math.floor((rhVal - totalTextH) / 2); padBottom = Math.max(0, rhVal - totalTextH - padTop); }
-  else if (vAlign === 'top') { padTop = pv; padBottom = Math.max(0, rhVal - totalTextH - padTop); }
-  else if (vAlign === 'bottom') { padBottom = pv; padTop = Math.max(0, rhVal - totalTextH - padBottom); }
+  const _availH = Math.max(0, rhVal - BORDER * 2 - totalTextH);
+  let padTop = 0;
+  let padBottom = 0;
+  if (vAlign === 'middle') {
+    padTop = Math.floor((rhVal - totalTextH) / 2);
+    padBottom = Math.max(0, rhVal - totalTextH - padTop);
+  } else if (vAlign === 'top') {
+    padTop = pv;
+    padBottom = Math.max(0, rhVal - totalTextH - padTop);
+  } else if (vAlign === 'bottom') {
+    padBottom = pv;
+    padTop = Math.max(0, rhVal - totalTextH - padBottom);
+  }
   return {
     left: `${HEADER_WIDTH + colPositions.value[c]! - scrollX.value}px`,
     top: `${HEADER_HEIGHT + rowPositions.value[r]! - scrollY.value}px`,
@@ -2726,7 +2761,7 @@ function onMouseMove(e: MouseEvent) {
   }
   scheduleRender();
 }
-function onMouseUp(e: MouseEvent) {
+function onMouseUp(_e: MouseEvent) {
   const w = isResizingC || isResizingR;
   isDragging = false;
   isResizingC = false;
@@ -3057,7 +3092,7 @@ function onEditKd(e: KeyboardEvent) {
   }
 }
 
-function onEditPaste(e: ClipboardEvent) {
+function onEditPaste(_e: ClipboardEvent) {
   // 粘贴时保留换行符，默认 textarea 已支持，无需特殊处理
   // 但需要确保不会提交到单元格，等用户确认
   if (!editingCell.value) return;
@@ -3089,7 +3124,8 @@ function applySize() {
 
 let resizeObs: ResizeObserver | null = null;
 onMounted(() => {
-  const pw = resolveSize(props.width), ph = resolveSize(props.height);
+  const pw = resolveSize(props.width);
+  const ph = resolveSize(props.height);
   if (pw == null || ph == null) {
     resizeObs = new ResizeObserver(() => applySize());
     if (wrapperRef.value) resizeObs.observe(wrapperRef.value);
@@ -3124,7 +3160,8 @@ onMounted(() => {
   }
 });
 watch(() => [props.width, props.height], () => {
-  const pw = resolveSize(props.width), ph = resolveSize(props.height);
+  const pw = resolveSize(props.width);
+  const ph = resolveSize(props.height);
   if (pw != null && ph != null) {
     resizeObs?.disconnect();
     resizeObs = null;
@@ -3136,7 +3173,10 @@ watch(() => [props.width, props.height], () => {
 });
 watch(() => props.theme, () => scheduleRender());
 watch(() => ({ ...cells }), () => nextTick(emitModelData), { deep: false });
-watch(() => ({ ...merges }), () => { nextTick(emitModelData); scheduleRender(); }, { deep: false });
+watch(() => ({ ...merges }), () => {
+  nextTick(emitModelData);
+  scheduleRender();
+}, { deep: false });
 watch(activeSheetIndex, () => nextTick(emitModelData));
 watch(() => modelData.value, (v) => {
   if (!v || v.length === 0) return;
@@ -3294,7 +3334,7 @@ onBeforeUnmount(() => {
         @compositionend="onEditCompositionEnd"
         @blur="onEditBlur"
         @paste="onEditPaste"
-      ></textarea>
+      />
       <!-- 垂直滚动条 -->
       <div
         v-if="maxScrollY > 0"
@@ -3383,98 +3423,98 @@ onBeforeUnmount(() => {
     <!-- 右键菜单 -->
     <Teleport to="body">
       <Transition name="menu-pop">
-      <div
-        v-if="ctxMenu"
-        class="context-menu"
-        :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }"
-        @click.stop
-      >
-        <template
-          v-for="(item, i) in ctxMenu.items"
-          :key="i"
+        <div
+          v-if="ctxMenu"
+          class="context-menu"
+          :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }"
+          @click.stop
         >
-          <div
-            class="context-menu__item"
-            :class="{ 'context-menu__item--disabled': item.disabled }"
-            @click="!item.disabled && item.action && (item.action(), ctxMenu = null)"
-            @mouseenter="onCtxItemEnter($event, item)"
+          <template
+            v-for="(item, i) in ctxMenu.items"
+            :key="i"
           >
-            <span class="context-menu__label">{{ item.label }}</span>
-            <span
-              v-if="item.children"
-              class="context-menu__arrow"
-            />
             <div
-              v-if="item.children"
-              class="context-submenu"
-              :class="{ 'context-submenu--left': ctxSubmenuLeft }"
+              class="context-menu__item"
+              :class="{ 'context-menu__item--disabled': item.disabled }"
+              @click="!item.disabled && item.action && (item.action(), ctxMenu = null)"
+              @mouseenter="onCtxItemEnter($event, item)"
             >
+              <span class="context-menu__label">{{ item.label }}</span>
+              <span
+                v-if="item.children"
+                class="context-menu__arrow"
+              />
               <div
-                v-for="(child, j) in item.children"
-                :key="j"
-                class="context-menu__item"
-                :class="{ 'context-menu__item--disabled': child.disabled }"
-                @click.stop="!child.disabled && child.action && (child.action(), ctxMenu = null)"
+                v-if="item.children"
+                class="context-submenu"
+                :class="{ 'context-submenu--left': ctxSubmenuLeft }"
               >
-                {{ child.label }}
+                <div
+                  v-for="(child, j) in item.children"
+                  :key="j"
+                  class="context-menu__item"
+                  :class="{ 'context-menu__item--disabled': child.disabled }"
+                  @click.stop="!child.disabled && child.action && (child.action(), ctxMenu = null)"
+                >
+                  {{ child.label }}
+                </div>
               </div>
             </div>
-          </div>
-        </template>
-      </div>
+          </template>
+        </div>
       </Transition>
     </Teleport>
 
     <!-- 行高/列宽浮动设置栏 -->
     <Teleport to="body">
       <Transition name="menu-pop">
-      <div
-        v-if="dimPanel"
-        class="dim-panel"
-        :style="{ left: dimPanel.x + 'px', top: dimPanel.y + 'px' }"
-        @mousedown.stop
-        @click.stop
-      >
-        <div class="dim-panel__title">
-          {{ dimPanel.type === 'row' ? t(locale, 'rowHeight') : t(locale, 'colWidth') }}
-        </div>
-        <div class="dim-panel__body">
-          <input
-            ref="dimInputRef"
-            class="dim-panel__input"
-            :class="{ 'dim-panel__input--error': dimPanel.error }"
-            type="number"
-            step="1"
-            min="1"
-            inputmode="numeric"
-            :value="dimPanel.value"
-            @input="onDimInput"
-            @keydown="onDimKeydown"
-            @blur="onDimBlur"
-          >
-          <span class="dim-panel__unit">px</span>
-        </div>
         <div
-          v-if="dimPanel.error"
-          class="dim-panel__error"
+          v-if="dimPanel"
+          class="dim-panel"
+          :style="{ left: dimPanel.x + 'px', top: dimPanel.y + 'px' }"
+          @mousedown.stop
+          @click.stop
         >
-          {{ dimPanel.error }}
-        </div>
-        <div class="dim-panel__footer">
-          <button
-            class="dim-panel__btn dim-panel__btn--primary"
-            @click="applyDimPanel"
+          <div class="dim-panel__title">
+            {{ dimPanel.type === 'row' ? t(locale, 'rowHeight') : t(locale, 'colWidth') }}
+          </div>
+          <div class="dim-panel__body">
+            <input
+              ref="dimInputRef"
+              class="dim-panel__input"
+              :class="{ 'dim-panel__input--error': dimPanel.error }"
+              type="number"
+              step="1"
+              min="1"
+              inputmode="numeric"
+              :value="dimPanel.value"
+              @input="onDimInput"
+              @keydown="onDimKeydown"
+              @blur="onDimBlur"
+            >
+            <span class="dim-panel__unit">px</span>
+          </div>
+          <div
+            v-if="dimPanel.error"
+            class="dim-panel__error"
           >
-            {{ t(locale, 'ok') }}
-          </button>
-          <button
-            class="dim-panel__btn"
-            @click="closeDimPanel"
-          >
-            {{ t(locale, 'cancel') }}
-          </button>
+            {{ dimPanel.error }}
+          </div>
+          <div class="dim-panel__footer">
+            <button
+              class="dim-panel__btn dim-panel__btn--primary"
+              @click="applyDimPanel"
+            >
+              {{ t(locale, 'ok') }}
+            </button>
+            <button
+              class="dim-panel__btn"
+              @click="closeDimPanel"
+            >
+              {{ t(locale, 'cancel') }}
+            </button>
+          </div>
         </div>
-      </div>
       </Transition>
     </Teleport>
   </div>
@@ -3539,4 +3579,3 @@ onBeforeUnmount(() => {
 .dim-panel__btn--primary { border-color: #0078d7; background: #0078d7; color: #fff; }
 .dim-panel__btn--primary:hover { background: #0069c0; }
 </style>
-

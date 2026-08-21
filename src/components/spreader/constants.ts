@@ -326,7 +326,6 @@ export const V_ALIGN_OPTIONS: AlignOption[] = [
 
 export const WRAP_ICON = '<svg viewBox="0 0 1024 1024" fill="currentColor"><path d="M896 179.2a38.4 38.4 0 0 0-76.8 0v665.6a38.4 38.4 0 0 0 76.8 0v-665.6zM204.8 281.6A38.4 38.4 0 0 0 204.8 358.4h179.2a38.4 38.4 0 0 0 0-76.8H204.8zM550.4 281.6a38.4 38.4 0 0 0 0 76.8h51.2c35.328 0 64 28.672 64 64v179.2c0 35.328-28.672 64-64 64H246.272l36.864-36.864a38.4 38.4 0 1 0-54.272-54.272l-102.4 102.4a38.4 38.4 0 0 0 0 54.272l102.4 102.4a38.4 38.4 0 0 0 54.272-54.272l-36.864-36.864h355.328a140.8 140.8 0 0 0 140.8-140.8v-179.2a140.8 140.8 0 0 0-140.8-140.8h-51.2z" /></svg>';
 
-
 // ============ 合并单元格选项 ============
 export type MergeType = 'mergeCenter' | 'mergeAcross' | 'mergeCells' | 'unmergeCells';
 
@@ -351,7 +350,6 @@ export const MERGE_OPTIONS: MergeOption[] = [
   { key: 'mergeCells', labelKey: 'mergeCells', icon: MERGE_CELLS_ICON },
   { key: 'unmergeCells', labelKey: 'unmergeCells', icon: UNMERGE_ICON },
 ];
-
 
 // ============ 主题色盘 ============
 export const lightTheme: ThemeColors = {

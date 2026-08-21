@@ -25,8 +25,7 @@ const props = withDefaults(defineProps<{
 });
 
 const emit = defineEmits<{
-  (e: 'update:modelValue', v: string | number): void;
-  (e: 'change', v: string | number): void;
+  (e: 'update:modelValue' | 'change', v: string | number): void;
   (e: 'update:modelOpen', v: boolean): void;
 }>();
 
@@ -53,7 +52,9 @@ function scrollBy(d: number) {
 
 function openMenu() {
   open.value = true;
-  if (props.modelOpen !== undefined) emit('update:modelOpen', true);
+  if (props.modelOpen !== undefined) {
+    emit('update:modelOpen', true);
+  }
   const el = props.triggerEl ?? rootRef.value;
   if (!el) return;
   const r = el.getBoundingClientRect();
@@ -81,11 +82,17 @@ function openMenu() {
 
 function close() {
   open.value = false;
-  if (props.modelOpen !== undefined) emit('update:modelOpen', false);
+  if (props.modelOpen !== undefined) {
+    emit('update:modelOpen', false);
+  }
 }
 
 function toggle() {
-  open.value ? close() : openMenu();
+  if (open.value) {
+    close();
+  } else {
+    openMenu();
+  }
 }
 
 function select(o: FontOption) {
@@ -111,15 +118,21 @@ function onWheel(e: WheelEvent) {
 // Vue 将 @wheel 默认注册为 passive，无法 preventDefault，需手动挂载非 passive 监听
 watch(open, (v) => {
   nextTick(() => {
-    if (v) listRef.value?.addEventListener('wheel', onWheel, { passive: false });
-    else listRef.value?.removeEventListener('wheel', onWheel);
+    if (v) {
+      listRef.value?.addEventListener('wheel', onWheel, { passive: false });
+    } else {
+      listRef.value?.removeEventListener('wheel', onWheel);
+    }
   });
 });
 
 watch(() => props.modelOpen, (v) => {
   if (v !== undefined && v !== open.value) {
-    if (v) openMenu();
-    else close();
+    if (v) {
+      openMenu();
+    } else {
+      close();
+    }
   }
 });
 
@@ -138,7 +151,6 @@ function onTm(e: TouchEvent) {
     tY.value = e.touches[0]!.clientY;
   }
 }
-
 function onTe() {
   tDrag.value = false;
 }
@@ -174,8 +186,17 @@ onBeforeUnmount(() => {
       :title="title"
       @click="toggle"
     >
-      <span v-if="current?.icon" class="sp-dropdown__icon" v-html="current.icon"></span>
-      <span v-else class="sp-dropdown__value">{{ current?.label ?? '' }}</span>
+      <!-- eslint-disable vue/no-v-html -->
+      <span
+        v-if="current?.icon"
+        class="sp-dropdown__icon"
+        v-html="current.icon"
+      />
+      <!-- eslint-enable vue/no-v-html -->
+      <span
+        v-else
+        class="sp-dropdown__value"
+      >{{ current?.label ?? '' }}</span>
       <svg
         class="sp-dropdown__caret"
         viewBox="0 0 1024 1024"
@@ -186,54 +207,66 @@ onBeforeUnmount(() => {
     </button>
     <Teleport to="body">
       <Transition name="menu-pop">
-      <div
-        v-if="open"
-        ref="menuRef"
-        class="sp-dropdown__menu"
-        :class="{ 'sp-dropdown__menu--up': pos.up }"
-        :style="{ left: pos.left !== undefined ? pos.left + 'px' : undefined, right: pos.right !== undefined ? pos.right + 'px' : undefined, top: pos.top + 'px', minWidth: effMenuWidth !== undefined ? (typeof effMenuWidth === 'number' ? effMenuWidth + 'px' : effMenuWidth) : undefined }"
-        @keydown="onKeydown"
-      >
-        <button
-          v-if="scrollable"
-          type="button"
-          class="sp-dropdown__nav"
-          :class="{ 'sp-dropdown__nav--disabled': !canUp }"
-          :disabled="!canUp"
-          @click="scrollBy(-1)"
-        >
-          <svg viewBox="0 0 1024 1024" fill="currentColor"><path d="M180.053333 662.613333a32 32 0 0 0 45.226667 0L512 375.893333l286.72 286.72a32 32 0 1 0 45.226667-45.226666l-309.333334-309.333334a32 32 0 0 0-45.226666 0l-309.333334 309.333334a32 32 0 0 0 0 45.226666z" /></svg>
-        </button>
         <div
-          ref="listRef"
-          class="sp-dropdown__list"
-          @touchstart="onTs"
-          @touchmove="onTm"
-          @touchend="onTe"
+          v-if="open"
+          ref="menuRef"
+          class="sp-dropdown__menu"
+          :class="{ 'sp-dropdown__menu--up': pos.up }"
+          :style="{ left: pos.left !== undefined ? pos.left + 'px' : undefined, right: pos.right !== undefined ? pos.right + 'px' : undefined, top: pos.top + 'px', minWidth: effMenuWidth !== undefined ? (typeof effMenuWidth === 'number' ? effMenuWidth + 'px' : effMenuWidth) : undefined }"
+          @keydown="onKeydown"
         >
           <button
-            v-for="o in list"
-            :key="String(o.value)"
+            v-if="scrollable"
             type="button"
-            class="sp-dropdown__item"
-            :class="{ 'sp-dropdown__item--active': String(o.value) === String(modelValue) }"
-            @click="select(o)"
+            class="sp-dropdown__nav"
+            :class="{ 'sp-dropdown__nav--disabled': !canUp }"
+            :disabled="!canUp"
+            @click="scrollBy(-1)"
           >
-            <span v-if="o.icon" class="sp-dropdown__item-icon" v-html="o.icon"></span>
-            <span class="sp-dropdown__item-label">{{ o.label }}</span>
+            <svg
+              viewBox="0 0 1024 1024"
+              fill="currentColor"
+            ><path d="M180.053333 662.613333a32 32 0 0 0 45.226667 0L512 375.893333l286.72 286.72a32 32 0 1 0 45.226667-45.226666l-309.333334-309.333334a32 32 0 0 0-45.226666 0l-309.333334 309.333334a32 32 0 0 0 0 45.226666z" /></svg>
+          </button>
+          <div
+            ref="listRef"
+            class="sp-dropdown__list"
+            @touchstart="onTs"
+            @touchmove="onTm"
+            @touchend="onTe"
+          >
+            <button
+              v-for="o in list"
+              :key="String(o.value)"
+              type="button"
+              class="sp-dropdown__item"
+              :class="{ 'sp-dropdown__item--active': String(o.value) === String(modelValue) }"
+              @click="select(o)"
+            >
+              <!-- eslint-disable vue/no-v-html -->
+              <span
+                v-if="o.icon"
+                class="sp-dropdown__item-icon"
+                v-html="o.icon"
+              />
+              <!-- eslint-enable vue/no-v-html -->
+              <span class="sp-dropdown__item-label">{{ o.label }}</span>
+            </button>
+          </div>
+          <button
+            v-if="scrollable"
+            type="button"
+            class="sp-dropdown__nav"
+            :class="{ 'sp-dropdown__nav--disabled': !canDown }"
+            :disabled="!canDown"
+            @click="scrollBy(1)"
+          >
+            <svg
+              viewBox="0 0 1024 1024"
+              fill="currentColor"
+            ><path d="M180.053333 361.386667a32 32 0 0 1 45.226667 0L512 648.106667l286.72-286.72a32 32 0 1 1 45.226667 45.226666l-309.333334 309.333334a32 32 0 0 1-45.226666 0L180.053333 406.613333a32 32 0 0 1 0-45.226666z" /></svg>
           </button>
         </div>
-        <button
-          v-if="scrollable"
-          type="button"
-          class="sp-dropdown__nav"
-          :class="{ 'sp-dropdown__nav--disabled': !canDown }"
-          :disabled="!canDown"
-          @click="scrollBy(1)"
-        >
-          <svg viewBox="0 0 1024 1024" fill="currentColor"><path d="M180.053333 361.386667a32 32 0 0 1 45.226667 0L512 648.106667l286.72-286.72a32 32 0 1 1 45.226667 45.226666l-309.333334 309.333334a32 32 0 0 1-45.226666 0L180.053333 406.613333a32 32 0 0 1 0-45.226666z" /></svg>
-        </button>
-      </div>
       </Transition>
     </Teleport>
   </div>

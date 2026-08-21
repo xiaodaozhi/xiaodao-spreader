@@ -2,7 +2,7 @@
 import { t } from './constants';
 import type { SheetState } from './types';
 
-const props = defineProps<{
+const _props = defineProps<{
   locale: string;
   sheets: SheetState[];
   activeSheetIndex: number;
@@ -11,14 +11,12 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  (e: 'tab-click', i: number): void;
-  (e: 'tab-dblclick', i: number): void;
+  (e: 'tab-click' | 'tab-dblclick', i: number): void;
   (e: 'tab-contextmenu', payload: { ev: MouseEvent; i: number }): void;
   (e: 'tab-rename-input', v: string): void;
   (e: 'tab-rename-keydown', ev: KeyboardEvent): void;
-  (e: 'tab-rename-commit'): void;
+  (e: 'tab-rename-commit' | 'add-sheet'): void;
   (e: 'tabbar-contextmenu', ev: MouseEvent): void;
-  (e: 'add-sheet'): void;
 }>();
 </script>
 

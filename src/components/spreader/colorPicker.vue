@@ -22,8 +22,7 @@ const props = withDefaults(defineProps<{
 });
 
 const emit = defineEmits<{
-  (e: 'update:modelValue', v: string): void;
-  (e: 'change', v: string): void;
+  (e: 'update:modelValue' | 'change', v: string): void;
   (e: 'update:modelOpen', v: boolean): void;
 }>();
 
@@ -160,7 +159,7 @@ const FILL_COLOR_GROUPS: ColorOption[][] = [
 ];
 
 const groups = computed(() =>
-  props.colorKey === 'fill' ? FILL_COLOR_GROUPS : COLOR_GROUPS
+  props.colorKey === 'fill' ? FILL_COLOR_GROUPS : COLOR_GROUPS,
 );
 
 function labelOf(key: string): string {
@@ -177,11 +176,19 @@ function isSelected(value: string): boolean {
 const open = ref(false);
 const rootRef = ref<HTMLDivElement | null>(null);
 const menuRef = ref<HTMLDivElement | null>(null);
-const pos = ref<{ left?: number; right?: number; top: number }>({ top: 0 });
+const pos = ref<{
+  left?: number;
+  right?: number;
+  top: number;
+}>({ top: 0 });
 
 watch(() => props.modelOpen, (v) => {
   if (v !== undefined && v !== open.value) {
-    if (v) openMenu(); else close();
+    if (v) {
+      openMenu();
+    } else {
+      close();
+    }
   }
 });
 
@@ -212,7 +219,15 @@ function openMenu() {
       }
       if (top + menuH > window.innerHeight - 4) top = r.top - menuH - 4;
       if (top < 4) top = 4;
-      pos.value = right !== undefined ? { right, top } : { left: posLeft!, top };
+      pos.value = right !== undefined
+        ? {
+            right,
+            top,
+          }
+        : {
+            left: posLeft!,
+            top,
+          };
     }
     document.addEventListener('mousedown', onClickOutside);
   });
@@ -238,35 +253,42 @@ defineExpose({ open, openMenu, close });
 </script>
 
 <template>
-  <div ref="rootRef" class="color-picker">
+  <div
+    ref="rootRef"
+    class="color-picker"
+  >
     <Teleport to="body">
       <Transition name="menu-pop">
-      <div
-        v-if="open"
-        ref="menuRef"
-        class="color-picker__menu"
-        :style="{ left: pos.left !== undefined ? pos.left + 'px' : undefined, right: pos.right !== undefined ? pos.right + 'px' : undefined, top: pos.top + 'px' }"
-        @mousedown.stop
-      >
         <div
-          v-for="(row, ri) in groups"
-          :key="ri"
-          class="color-picker__row"
+          v-if="open"
+          ref="menuRef"
+          class="color-picker__menu"
+          :style="{
+            left: pos.left !== undefined ? pos.left + 'px' : undefined,
+            right: pos.right !== undefined ? pos.right + 'px' : undefined,
+            top: pos.top + 'px',
+          }"
+          @mousedown.stop
         >
-          <button
-            v-for="c in row"
-            :key="c.value"
-            class="color-picker__swatch"
-            :class="{ 'color-picker__swatch--selected': isSelected(c.value) }"
-            :title="labelOf(c.key)"
-            :style="{
-              background: c.value || 'transparent',
-              border: !c.value ? '1px dashed #999' : '1px solid rgba(0,0,0,0.15)',
-            }"
-            @click="selectColor(c.value)"
-          />
+          <div
+            v-for="(row, ri) in groups"
+            :key="ri"
+            class="color-picker__row"
+          >
+            <button
+              v-for="c in row"
+              :key="c.value"
+              class="color-picker__swatch"
+              :class="{ 'color-picker__swatch--selected': isSelected(c.value) }"
+              :title="labelOf(c.key)"
+              :style="{
+                background: c.value || 'transparent',
+                border: !c.value ? '1px dashed #999' : '1px solid rgba(0,0,0,0.15)',
+              }"
+              @click="selectColor(c.value)"
+            />
+          </div>
         </div>
-      </div>
       </Transition>
     </Teleport>
   </div>
