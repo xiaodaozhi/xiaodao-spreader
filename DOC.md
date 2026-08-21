@@ -20,32 +20,50 @@ A Vue 3 spreadsheet component based on Canvas 2D.
 ## 2. File Structure
 
 ```
-xiaodao-spread/
+xiaodao-spreader/
 ├── index.html                          # Entry HTML, full-height layout
 ├── package.json
 ├── tsconfig.json                       # strict mode
+├── tsconfig.build.json                 # declaration emit config
 ├── vite.config.ts                      # @vitejs/plugin-vue
 └── src/
     ├── main.ts                         # createApp(App).mount('#app')
+    ├── index.ts                        # Library entry — re-exports from spreader/
     ├── App.vue                         # Root component, flex full-height container
     ├── vite-env.d.ts
     └── components/
         └── spreader/
-            ├── spreader.vue            # Main component (Canvas rendering + all interaction logic)
-            ├── constants.ts            # Layout constants, i18n text, theme color palette
-            ├── types.ts                # All type definitions
-            ├── formula.ts              # Formula engine (parsing, evaluation, dependency tracking)
-            ├── theme.ts                # Theme CSS variable construction
-            └── utils.ts                # Pure utility functions (column label conversion, hit testing, etc.)
+            ├── index.ts                # Unified barrel export — component + types
+            ├── components/
+            │   ├── spreader.vue        # Main component (Canvas rendering + all interaction logic)
+            │   ├── toolbar.vue         # Toolbar with overflow dropdown
+            │   ├── tabbar.vue          # Sheet tab bar
+            │   ├── dropdown.vue        # Generic dropdown component
+            │   └── pickers/
+            │       ├── colorPicker.vue
+            │       ├── borderPicker.vue
+            │       └── mergePicker.vue
+            ├── composables/
+            │   ├── core-state.ts      # Props, cells/merges/selection, font metrics, navigation
+            │   ├── undo-styles.ts      # Undo/redo, format painter, font/alignment/color
+            │   ├── borders-merge.ts    # Border sync, merge ops, clipboard, sum
+            │   ├── sheets-ops.ts      # Row/col ops, multi-sheet, v-model emit, theme, refs
+            │   └── interactions.ts    # Renderer, formula bar, tab bar, context menu, scrollbar, events
+            └── core/
+                ├── constants.ts       # Layout constants, i18n text, theme color palette
+                ├── types.ts           # All type definitions
+                ├── formula.ts         # Formula engine (parsing, evaluation, dependency tracking)
+                ├── theme.ts           # Theme CSS variable construction
+                └── utils.ts           # Pure utility functions (column label conversion, hit testing, etc.)
 ```
 
-**Dependency Direction**: `App.vue → spreader.vue → spreader/*.ts`
+**Dependency Direction**: `App.vue → spreader/index.ts → spreader.vue → composables/* + core/*`
 
 ---
 
 ## 3. Type System
 
-All type definitions are in `spreader/types.ts`.
+All type definitions are in `spreader/core/types.ts`.
 
 ```typescript
 // Cell coordinates (0-based)
@@ -255,7 +273,7 @@ All drawing uses logical pixels (CSS pixels), uniformly scaled by `ctx.setTransf
 
 ## 7. Formula Engine
 
-Located in `spreader/formula.ts`.
+Located in `spreader/core/formula.ts`.
 
 ### 7.1 Supported Formulas
 
@@ -372,7 +390,7 @@ Different context menus are displayed based on clicked area:
 
 ### 10.1 Color Palette
 
-`lightTheme` and `darkTheme` are defined in `constants.ts`, containing 50+ color fields covering all UI elements: background, text, borders, scrollbars, formula bar, tab bar, edit overlay, etc.
+`lightTheme` and `darkTheme` are defined in `spreader/core/constants.ts`, containing 50+ color fields covering all UI elements: background, text, borders, scrollbars, formula bar, tab bar, edit overlay, etc.
 
 The `ThemeColors` interface includes:
 - Grid: `bg`, `gridBg`, `gridLine`, `selectionBg`, `activeCellBorder`, `cellText`

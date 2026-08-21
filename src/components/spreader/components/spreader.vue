@@ -1,15 +1,15 @@
 <script setup lang="ts">
 import { ref, reactive, type Ref, type UnwrapRef } from 'vue';
-import { HEADER_HEIGHT, HEADER_WIDTH, SB_SIZE } from './core/constants';
-import Toolbar from './components/toolbar.vue';
-import Tabbar from './components/tabbar.vue';
-import type { SheetModelData, SheetState } from './core/types';
+import { HEADER_HEIGHT, HEADER_WIDTH, SB_SIZE } from '../core/constants';
+import Toolbar from './toolbar.vue';
+import Tabbar from './tabbar.vue';
+import type { SheetModelData, SheetState } from '../core/types';
 
-import { createCoreState, type CoreState } from './composables/core-state';
-import { createUndoStyles, bindMenuRefs, type UndoStylesState } from './composables/undo-styles';
-import { createBordersMerge, type BordersMergeState } from './composables/borders-merge';
-import { createSheetsOps, type SheetsOpsState } from './composables/sheets-ops';
-import { createInteractions, type InteractionsState } from './composables/interactions';
+import { createCoreState, type CoreState } from '../composables/core-state';
+import { createUndoStyles, bindMenuRefs, type UndoStylesState } from '../composables/undo-styles';
+import { createBordersMerge, type BordersMergeState } from '../composables/borders-merge';
+import { createSheetsOps, type SheetsOpsState } from '../composables/sheets-ops';
+import { createInteractions, type InteractionsState } from '../composables/interactions';
 
 // ============ Props ============
 const props = withDefaults(defineProps<{

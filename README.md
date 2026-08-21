@@ -200,35 +200,38 @@ import type {
 
 ```
 src/
-├── components/
-│   └── spreader.ts                 # Barrel export (unified entry point)
-│       └── spreader/
-│           ├── components/
-│           │   ├── spreadsheet.vue # Main component — template + style + composition
-│           │   ├── toolbar.vue     # Toolbar with overflow dropdown
-│           │   ├── tabbar.vue      # Sheet tab bar
-│           │   ├── dropdown.vue    # Generic dropdown component
-│           │   └── pickers/
-│           │       ├── colorPicker.vue
-│           │       ├── borderPicker.vue
-│           │       └── mergePicker.vue
-│           ├── composables/
-│           │   ├── core-state.ts    # Props, cells/merges/selection, font metrics, navigation
-│           │   ├── undo-styles.ts   # Undo/redo, format painter, font/alignment/color
-│           │   ├── borders-merge.ts # Border sync, merge ops, clipboard, sum
-│           │   ├── sheets-ops.ts   # Row/col ops, multi-sheet, v-model emit, theme, refs
-│           │   └── interactions.ts  # Renderer, formula bar, tab bar, context menu, scrollbar, events
-│           └── core/
-│               ├── constants.ts     # Layout constants, i18n, theme palettes
-│               ├── types.ts         # All type definitions
-│               ├── formula.ts      # Formula engine (parse, evaluate, deps, cache)
-│               ├── theme.ts         # Theme CSS variable construction
-│               └── utils.ts        # Pure utilities (col label, hit test, resolve size)
+├── index.ts                          # Library entry — re-exports from spreader/
+├── App.vue                           # Demo application
+└── components/
+    └── spreader/
+        ├── index.ts                  # Unified export — component + types (barrel)
+        ├── components/
+        │   ├── spreader.vue          # Entry component — template + style + composition
+        │   ├── toolbar.vue           # Toolbar with overflow dropdown
+        │   ├── tabbar.vue            # Sheet tab bar
+        │   ├── dropdown.vue          # Generic dropdown component
+        │   └── pickers/
+        │       ├── colorPicker.vue
+        │       ├── borderPicker.vue
+        │       └── mergePicker.vue
+        ├── composables/
+        │   ├── core-state.ts        # Props, cells/merges/selection, font metrics, navigation
+        │   ├── undo-styles.ts       # Undo/redo, format painter, font/alignment/color
+        │   ├── borders-merge.ts     # Border sync, merge ops, clipboard, sum
+        │   ├── sheets-ops.ts        # Row/col ops, multi-sheet, v-model emit, theme, refs
+        │   └── interactions.ts      # Renderer, formula bar, tab bar, context menu, scrollbar, events
+        └── core/
+            ├── constants.ts         # Layout constants, i18n, theme palettes
+            ├── types.ts             # All type definitions
+            ├── formula.ts          # Formula engine (parse, evaluate, deps, cache)
+            ├── theme.ts             # Theme CSS variable construction
+            └── utils.ts            # Pure utilities (col label, hit test, resolve size)
 ```
 
 ### Design Principles
 
 - **Composition API**: All business logic extracted into `composables/`, maintaining single-responsibility modules
+- **Barrel Export**: `spreader/index.ts` centralizes all component and type exports; `src/index.ts` re-exports everything, so consumers import uniformly from `xiaodao-spreader`
 - **Canvas 2D Rendering**: Only visible cells are drawn (virtual rendering), ensuring smooth performance on large sheets
 - **No Dirty Flags**: Manual `scheduleRender()` calls at interaction end-points; `requestAnimationFrame` automatically merges multiple calls within the same frame
 - **Shared State**: A central `CoreState` object is injected into each composable, enabling cross-module communication without tight coupling
@@ -380,7 +383,7 @@ pnpm build:demo
 |------|-------------|
 | `dist/xiaodao-spreader.es.js` | ES module (for bundlers) |
 | `dist/xiaodao-spreader.umd.js` | UMD bundle (for direct `<script>` usage) |
-| `dist/xiaodao-spreader.css` | Extracted stylesheet |
+| `dist/style.css` | Extracted stylesheet |
 | `dist/types/` | TypeScript declaration files |
 
 ### CI/CD

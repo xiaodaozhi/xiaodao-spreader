@@ -203,35 +203,38 @@ import type {
 
 ```
 src/
-├── components/
-│   └── spreader.ts                 # 统一出口（Barrel Export）
-│       └── spreader/
-│           ├── components/
-│           │   ├── spreadsheet.vue # 主组件 — 模板 + 样式 + 组合
-│           │   ├── toolbar.vue     # 工具栏（含溢出下拉）
-│           │   ├── tabbar.vue      # Sheet 标签栏
-│           │   ├── dropdown.vue    # 通用下拉组件
-│           │   └── pickers/
-│           │       ├── colorPicker.vue
-│           │       ├── borderPicker.vue
-│           │       └── mergePicker.vue
-│           ├── composables/
-│           │   ├── core-state.ts    # Props、cells/merges/selection、字体度量、导航
-│           │   ├── undo-styles.ts   # 撤销重做、格式刷、字体/对齐/颜色
-│           │   ├── borders-merge.ts # 边框同步、合并操作、剪贴板、求和
-│           │   ├── sheets-ops.ts   # 行列增删、多 Sheet、v-model 发射、主题、refs
-│           │   └── interactions.ts  # 渲染器、编辑栏、标签栏、右键菜单、滚动条、事件
-│           └── core/
-│               ├── constants.ts     # 布局常量、国际化、主题调色板
-│               ├── types.ts         # 全部类型定义
-│               ├── formula.ts      # 公式引擎（解析、计算、依赖、缓存）
-│               ├── theme.ts         # 主题 CSS 变量构建
-│               └── utils.ts        # 纯工具函数（列标签、命中测试、尺寸解析）
+├── index.ts                          # 库入口 — 从 spreader/ 统一 re-export
+├── App.vue                           # 演示应用
+└── components/
+    └── spreader/
+        ├── index.ts                  # 统一导出口 — 组件 + 类型（barrel）
+        ├── components/
+        │   ├── spreader.vue          # 入口组件 — 模板 + 样式 + 组合
+        │   ├── toolbar.vue           # 工具栏（含溢出下拉）
+        │   ├── tabbar.vue            # Sheet 标签栏
+        │   ├── dropdown.vue          # 通用下拉组件
+        │   └── pickers/
+        │       ├── colorPicker.vue
+        │       ├── borderPicker.vue
+        │       └── mergePicker.vue
+        ├── composables/
+        │   ├── core-state.ts        # Props、cells/merges/selection、字体度量、导航
+        │   ├── undo-styles.ts       # 撤销重做、格式刷、字体/对齐/颜色
+        │   ├── borders-merge.ts     # 边框同步、合并操作、剪贴板、求和
+        │   ├── sheets-ops.ts        # 行列增删、多 Sheet、v-model 发射、主题、refs
+        │   └── interactions.ts      # 渲染器、编辑栏、标签栏、右键菜单、滚动条、事件
+        └── core/
+            ├── constants.ts         # 布局常量、国际化、主题调色板
+            ├── types.ts             # 全部类型定义
+            ├── formula.ts          # 公式引擎（解析、计算、依赖、缓存）
+            ├── theme.ts             # 主题 CSS 变量构建
+            └── utils.ts            # 纯工具函数（列标签、命中测试、尺寸解析）
 ```
 
 ### 设计原则
 
 - **组合式 API**：所有业务逻辑抽取到 `composables/`，保持单一职责
+- **Barrel 导出**：`spreader/index.ts` 集中导出组件和全部类型，`src/index.ts` 再统一 re-export，外部统一从 `xiaodao-spreader` 引入
 - **Canvas 2D 渲染**：仅绘制可视区域（虚拟渲染），大表流畅
 - **无脏标记**：在交互结束点手动调用 `scheduleRender()`；`requestAnimationFrame` 自动合并同一帧的多次调用
 - **共享状态**：将 `CoreState` 注入每个 composable，实现跨模块通信而不产生紧耦合
@@ -383,7 +386,7 @@ pnpm build:demo
 |------|------|
 | `dist/xiaodao-spreader.es.js` | ES 模块（供打包器使用） |
 | `dist/xiaodao-spreader.umd.js` | UMD 包（供 `<script>` 直接引用） |
-| `dist/xiaodao-spreader.css` | 提取的样式表 |
+| `dist/style.css` | 提取的样式表 |
 | `dist/types/` | TypeScript 声明文件 |
 
 ### CI/CD
