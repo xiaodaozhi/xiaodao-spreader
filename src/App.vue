@@ -7,18 +7,18 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue'
-import Spreadsheet from './components/spreader/spreader.vue'
+import { ref, watch, onMounted } from 'vue';
+import Spreadsheet from './components/spreader';
 
 onMounted(() => {
   document.title = '小刀电子表格 | Xiaodao Spreader'
-})
+});
 
 interface SheetModelData {
-  name: string
-  cells: Record<string, { value: string; style?: Record<string, unknown> }>
-  colWidths?: Record<number, number>
-  rowHeights?: Record<number, number>
+  name: string;
+  cells: Record<string, { value: string; style?: Record<string, unknown> }>;
+  colWidths?: Record<number, number>;
+  rowHeights?: Record<number, number>;
 }
 
 const myData = ref<SheetModelData[]>([{
@@ -31,11 +31,11 @@ const myData = ref<SheetModelData[]>([{
     '1,1': { value: '25' }, '2,1': { value: '30' }, '3,1': { value: '28' }, '4,1': { value: '35' },
     '5,1': { value: '22' },
   },
-}])
+}]);
 
 watch(myData, (v) => {
   console.log('myData changed:', JSON.stringify(v))
-}, { deep: true })
+}, { deep: true });
 </script>
 
 <style scoped>

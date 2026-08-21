@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { t } from './constants';
-import type { SheetState } from './types';
+import { t } from '../core/constants';
+import type { SheetState } from '../core/types';
 
 const _props = defineProps<{
   locale: string;

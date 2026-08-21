@@ -1,30 +1,141 @@
-# xiaodao-spreader
+# Xiaodao Spreader
 
-A Vue 3 spreadsheet component based on Canvas 2D, providing an Excel-like editing experience.
+中文 | [English](./README.md)
+
+A high-performance, canvas-based spreadsheet component for Vue 3 — bringing an Excel-like editing experience to the web.
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Vue 3](https://img.shields.io/badge/Vue-3.4+-42b883.svg)](https://vuejs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.4+-3178C6.svg)](https://www.typescriptlang.org/)
+[![Vite](https://img.shields.io/badge/Vite-5.0+-646CFF.svg)](https://vitejs.dev/)
 
 ![Preview](./img/preview.png)
+
+---
+
+## Table of Contents
+
+- [Features](#features)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Basic Usage](#basic-usage)
+- [Props](#props)
+- [Data Model](#data-model)
+- [Architecture](#architecture)
+- [Keyboard Shortcuts](#keyboard-shortcuts)
+- [Formula Engine](#formula-engine)
+- [Theming](#theming)
+- [Development](#development)
+- [Building](#building)
+- [Roadmap](#roadmap)
+- [Contributing](#contributing)
+- [License](#license)
+- [中文版](./README.ZH.md)
+
+---
+
+## Features
+
+### Core Spreadsheet
+- **Canvas 2D Rendering** — High-DPI aware with DPR scaling, virtual viewport rendering for 200 × 26 sheets
+- **Multi-Sheet Workbook** — Tab bar with add, rename, duplicate, delete, reorder
+- **Formula Engine** — `=SUM()` range calculation with dependency tracking and circular-reference detection
+- **Merge Cells** — Merge & Center, Merge Across, Unmerge with border synchronization
+- **Rich Cell Formatting** — Font family, font size (5–72), bold, italic, underline, strikethrough, text color, fill color, horizontal & vertical alignment, wrap text
+- **Borders** — Top / bottom / left / right / all / none with 5 predefined styles and custom color
+- **Undo / Redo** — Full state snapshots for cells, column widths, and row heights (50 steps)
+- **Format Painter** — Copy & apply cell formatting across ranges
+
+### Interaction
+- **Smart Selection** — Click, drag, Shift+Click, row/column header select, corner-cell select-all
+- **Double-Click Editing** — Inline cell editor with `<textarea>` for multi-line input
+- **Formula Bar** — Dedicated input bar with cell label and live formula display
+- **Full Keyboard Navigation** — Arrow keys, Tab, Enter, Home, End, Ctrl+Home, Ctrl+End
+- **Context Menus** — Context-aware menus for cells, rows, columns, sheet tabs, with nested submenus
+- **Row / Column Operations** — Insert, delete, cut, copy, paste via right-click menu
+- **Column Width / Row Height** — Drag-to-resize with live preview and double-click auto-fit
+- **Touch Support** — Swipe scrolling, double-tap to edit
+- **Responsive** — ResizeObserver for dynamic container sizing
+
+### Visual
+- **Light / Dark Theme** — Full color palette with 50+ CSS custom properties
+- **Internationalization** — English & Chinese (zh-CN) out of the box
+- **Overflow Toolbar** — Responsive toolbar that automatically collapses overflow buttons into a dropdown menu
+- **Custom Scrollbars** — Native-styled scrollbars with arrow buttons and draggable thumbs
+
+---
+
+## Installation
+
+```bash
+# pnpm (recommended)
+pnpm add xiaodao-spreader
+
+# npm
+npm install xiaodao-spreader
+
+# yarn
+yarn add xiaodao-spreader
+```
+
+### Peer Dependencies
+
+- `vue` ^3.4.0
+
+---
 
 ## Quick Start
 
 ```bash
+# Clone the repository
+git clone https://github.com/xiaodaozhi/xiaodao-spreader.git
+cd xiaodao-spreader
+
+# Install dependencies
 pnpm install
+
+# Start dev server
 pnpm dev
 ```
+
+Navigate to `http://localhost:5173` to see the demo application.
+
+---
 
 ## Basic Usage
 
 ```vue
 <template>
-  <Spreadsheet v-model:data="myData" />
+  <Spreader
+    v-model:data="myData"
+    :row-count="100"
+    :col-count="12"
+    theme="light"
+    locale="zh-CN"
+  />
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
-import Spreadsheet from './components/spreader/spreader.vue'
+import { ref } from 'vue';
+import Spreader from 'xiaodao-spreader';
+import type { SheetModelData } from 'xiaodao-spreader';
 
-const myData = ref([])
+const myData = ref<SheetModelData[]>([
+  {
+    name: 'Sheet1',
+    cells: {
+      '0,0': { value: 'Name' },
+      '0,1': { value: 'Age' },
+      '1,0': { value: 'Alice', style: { fontSize: 14, fontWeight: 'bold' } },
+      '1,1': { value: '28' },
+    },
+    colWidths: { 0: 120, 1: 80 },
+  },
+]);
 </script>
 ```
+
+---
 
 ## Props
 
@@ -33,59 +144,313 @@ const myData = ref([])
 | `data` (v-model) | `SheetModelData[]` | `[]` | Multi-sheet data (two-way binding) |
 | `rowCount` | `number` | `200` | Total rows per sheet |
 | `colCount` | `number` | `26` | Total columns per sheet |
-| `width` | `number \| string` | — | Component width (pixel value, percentages not supported) |
-| `height` | `number \| string` | — | Component height (pixel value, percentages not supported) |
+| `width` | `number \| string` | — | Component width (pixels; omit or pass `string` for responsive) |
+| `height` | `number \| string` | — | Component height (pixels; omit or pass `string` for responsive) |
 | `theme` | `'light' \| 'dark'` | `'light'` | Theme mode |
-| `locale` | `string` | `'zh-CN'` | Language (`'zh-CN'` / `'en-US'`) |
+| `locale` | `string` | `'zh-CN'` | Language — `'zh-CN'` \| `'en-US'` |
 
-### SheetModelData Type
+---
+
+## Data Model
+
+### `SheetModelData`
+
+The external data format used for v-model two-way binding:
 
 ```typescript
 interface SheetModelData {
-  name: string
-  cells: Record<string, { value: string; style?: Record<string, unknown> }>
-  colWidths?: Record<number, number>   // Column index → width (px), only stores non-default values
-  rowHeights?: Record<number, number>  // Row index → height (px), only stores non-default values
+  name: string;
+  cells: Record<string, {
+    value: string;
+    style?: Record<string, unknown>;
+  }>;
+  merges?: Record<string, SelectionRange>;
+  colWidths?: Record<number, number>;
+  rowHeights?: Record<number, number>;
 }
 ```
 
-The key of `cells` is a `"col,row"` string format (e.g., `"0,0"` represents A1).
+- **`cells`**: Key is `"col,row"` (e.g., `"0,0"` for cell A1).
+- **`style`**: Arbitrary CSS-like style properties (`fontSize`, `fontWeight`, `color`, `background`, etc.).
+- **`merges`**: Merge cell definitions, keyed by merge anchor cell.
+- **`colWidths` / `rowHeights`**: Sparse maps — only stores non-default values.
 
-## Features
+### Type Exports
 
-- **Canvas Rendering**: High DPI support, virtual rendering only draws cells in the visible area
-- **Multiple Sheets**: Tab bar switching, create, rename, duplicate, delete, drag-to-reorder
-- **Formula Engine**: Supports `=SUM(A1:B5)` range summation with dependency tracking and caching
-- **Undo/Redo**: Ctrl+Z / Ctrl+Y, up to 50 steps
-- **Selection**: Click / drag / Shift+Click selection, row/column headers and corner cell for one-click select-all
-- **Editing**: Double-click / F2 / direct input to enter edit mode, formula bar supports formula input
-- **Keyboard Navigation**: Arrow keys / Tab / Enter / Home / End / Ctrl+Home / Ctrl+End
-- **Clipboard**: Ctrl+C/V/X copy, paste, cut (TSV format), formula references automatically offset
-- **Row/Column Operations**: Right-click menu to insert, delete, cut, copy, paste entire rows/columns
-- **Column Width/Row Height Dragging**: Drag header edges to resize
-- **Context Menu**: Independent context menus for cells, row/column headers, corner cell, and tab bar; nested submenu support (e.g., Calculate → Sum)
-- **Theme**: Light / Dark dual theme
-- **Internationalization**: Chinese / English right-click menus
-- **Touch**: Swipe scrolling + double-tap to enter edit mode
-- **Custom Scrollbar**: Physical scrollbar with arrow buttons and draggable thumb
-- **Responsive**: ResizeObserver monitors container size changes
+```typescript
+import type {
+  CellCoord,       // { col: number; row: number }
+  SelectionRange,  // { startCol; startRow; endCol; endRow }
+  CellData,        // { value: string; style: Record<string, unknown> | null }
+  Range,           // { start: number; end: number }
+  SpreadsheetOptions,
+  SpreadsheetData,
+  SheetModelData,  // ← main data interface
+  SheetState,      // internal runtime state
+  UndoSnapshot,
+  ContextMenuItem,
+  ThemeColors,
+  Point,
+} from 'xiaodao-spreader';
+```
+
+---
+
+## Architecture
+
+```
+src/
+├── components/
+│   └── spreader.ts                 # Barrel export (unified entry point)
+│       └── spreader/
+│           ├── components/
+│           │   ├── spreadsheet.vue # Main component — template + style + composition
+│           │   ├── toolbar.vue     # Toolbar with overflow dropdown
+│           │   ├── tabbar.vue      # Sheet tab bar
+│           │   ├── dropdown.vue    # Generic dropdown component
+│           │   └── pickers/
+│           │       ├── colorPicker.vue
+│           │       ├── borderPicker.vue
+│           │       └── mergePicker.vue
+│           ├── composables/
+│           │   ├── core-state.ts    # Props, cells/merges/selection, font metrics, navigation
+│           │   ├── undo-styles.ts   # Undo/redo, format painter, font/alignment/color
+│           │   ├── borders-merge.ts # Border sync, merge ops, clipboard, sum
+│           │   ├── sheets-ops.ts   # Row/col ops, multi-sheet, v-model emit, theme, refs
+│           │   └── interactions.ts  # Renderer, formula bar, tab bar, context menu, scrollbar, events
+│           └── core/
+│               ├── constants.ts     # Layout constants, i18n, theme palettes
+│               ├── types.ts         # All type definitions
+│               ├── formula.ts      # Formula engine (parse, evaluate, deps, cache)
+│               ├── theme.ts         # Theme CSS variable construction
+│               └── utils.ts        # Pure utilities (col label, hit test, resolve size)
+```
+
+### Design Principles
+
+- **Composition API**: All business logic extracted into `composables/`, maintaining single-responsibility modules
+- **Canvas 2D Rendering**: Only visible cells are drawn (virtual rendering), ensuring smooth performance on large sheets
+- **No Dirty Flags**: Manual `scheduleRender()` calls at interaction end-points; `requestAnimationFrame` automatically merges multiple calls within the same frame
+- **Shared State**: A central `CoreState` object is injected into each composable, enabling cross-module communication without tight coupling
+- **Reactive Wrap**: Composable return values are wrapped in `reactive()` for automatic ref/computed unwrapping in templates
+
+---
+
+## Keyboard Shortcuts
+
+### Navigation
+
+| Keys | Action |
+|------|--------|
+| `↑` `↓` `←` `→` | Move active cell |
+| `Tab` / `Shift+Tab` | Move right / left |
+| `Enter` / `Shift+Enter` | Move down / up |
+| `Home` / `End` | Jump to first / last column |
+| `Ctrl+Home` / `Ctrl+End` | Jump to A1 / bottom-right |
+| `PageUp` / `PageDown` | Scroll one page up / down |
+
+### Editing
+
+| Keys | Action |
+|------|--------|
+| `F2` / `双击` / `直接输入` | Enter edit mode |
+| `Enter` (in edit) | Commit and move down |
+| `Tab` (in edit) | Commit and move right |
+| `Escape` (in edit) | Cancel edit |
+| `Ctrl+Enter` | Line break in multi-line cells |
+| `Delete` / `Backspace` | Clear selection |
+
+### Clipboard & History
+
+| Keys | Action |
+|------|--------|
+| `Ctrl+C` / `Ctrl+X` / `Ctrl+V` | Copy / Cut / Paste |
+| `Ctrl+Z` / `Ctrl+Y` | Undo / Redo |
+| `Ctrl+A` | Select all |
+
+### Formatting
+
+| Keys | Action |
+|------|--------|
+| `Ctrl+B` | Bold |
+| `Ctrl+I` | Italic |
+| `Ctrl+U` | Underline |
+
+---
+
+## Formula Engine
+
+### Supported Formulas
+
+| Formula | Syntax | Description |
+|---------|--------|-------------|
+| `SUM` | `=SUM(A1:B5)` | Range summation |
+| Absolute ref | `$A$1` | Lock column and row |
+| Mixed ref | `$A1`, `A$1` | Lock column or row only |
+
+### Dependency Tracking
+
+The `FormulaDeps` class maintains a bidirectional dependency graph:
+
+- **Forward**: `formulaKey` → `[depKey, ...]` — which cells a formula references
+- **Reverse**: `depKey` → `Set<formulaKey>` — which formulas depend on a cell
+
+When a cell changes, dirty flags propagate through the reverse graph. Circular references (depth > 20) return `#ERROR`.
+
+### Reference Offsetting During Paste
+
+`shiftFormulaRefs()` automatically adjusts cell references in formulas when pasting, with `$` absolute reference locking.
+
+---
+
+## Theming
+
+### Built-in Themes
+
+```typescript
+import type { ThemeColors } from 'xiaodao-spreader';
+
+const lightTheme: ThemeColors = { /* 50+ color fields */ };
+const darkTheme: ThemeColors = { /* 50+ color fields */ };
+```
+
+### CSS Variable Injection
+
+Theme colors are injected via CSS custom properties (`--sp-*`):
+
+```css
+--sp-bg, --sp-gridBg, --sp-gridLine, --sp-selectionBg,
+--sp-headerBg, --sp-headerBorder, --sp-headerText,
+--sp-formulaBarBg, --sp-formulaBarInputBorder,
+--sp-wrapperBg, --sp-cellEditorBorder,
+/* ... and many more */
+```
+
+### Custom Theme
+
+Pass `theme="dark"` for dark mode, or create a wrapper component that overrides CSS variables for full customization:
+
+```vue
+<template>
+  <div style="--sp-bg: #1a1a2e; --sp-cellText: #e0e0e0;">
+    <Spreader v-model:data="myData" theme="dark" />
+  </div>
+</template>
+```
+
+### Internationalization
+
+Built-in languages: `'zh-CN'`, `'en-US'`. Pass via `locale` prop. Right-click menus and toolbar labels are automatically localized.
+
+---
+
+## Development
+
+```bash
+# Install dependencies
+pnpm install
+
+# Start dev server (with auto-reload)
+pnpm dev
+
+# Type check only
+pnpm type-check
+```
+
+The dev server runs on `http://localhost:5173` by default.
+
+---
+
+## Building
+
+```bash
+# Production build (type-check + vite build)
+pnpm build
+
+# Preview production build
+pnpm preview
+
+# Build for demo/testing purposes
+pnpm build:demo
+```
+
+### Build Output
+
+| File | Description |
+|------|-------------|
+| `dist/xiaodao-spreader.es.js` | ES module (for bundlers) |
+| `dist/xiaodao-spreader.umd.js` | UMD bundle (for direct `<script>` usage) |
+| `dist/xiaodao-spreader.css` | Extracted stylesheet |
+| `dist/types/` | TypeScript declaration files |
+
+### CI/CD
+
+The project includes a GitHub Actions workflow (`.github/workflows/publish.yml`) for automated publishing to npm.
+
+---
+
+## Roadmap
+
+### Near-term
+
+- [ ] More formulas: `AVERAGE`, `COUNT`, `IF`, `VLOOKUP`, `CONCATENATE`
+- [ ] Cell background color picker
+- [ ] Number format (currency, percentage, date, number of decimals)
+- [ ] Conditional formatting rules
+- [ ] Auto-fill drag handle
+- [ ] Find & Replace
+
+### Mid-term
+
+- [ ] Frozen panes (freeze rows/columns)
+- [ ] Data validation (dropdown lists, input constraints)
+- [ ] Column / row grouping and collapsing
+- [ ] Sort & filter
+- [ ] Cell comments / notes
+- [ ] Print layout
+
+### Long-term
+
+- [ ] OffscreenCanvas + Web Worker for multi-threaded rendering
+- [ ] Shared worker for cross-tab collaboration
+- [ ] Plugin system for custom cell renderers
+- [ ] Excel / CSV import & export
+- [ ] Chart engine (embedded mini-charts)
+
+---
 
 ## Tech Stack
 
-- **Framework**: Vue 3 (Composition API + `<script setup>`)
-- **Build**: Vite 5
-- **Language**: TypeScript (strict)
-- **Rendering**: Canvas 2D
-- **Package Manager**: pnpm
+| Layer | Technology | Version |
+|-------|-----------|---------|
+| Framework | Vue 3 (Composition API + `<script setup>`) | ^3.4 |
+| Build | Vite | ^5.0 |
+| Language | TypeScript (strict) | ~5.4 |
+| Rendering | Canvas 2D API | — |
+| Type Checker | vue-tsc | ^2.2 |
+| Package Manager | pnpm | — |
+| CSS | Scoped CSS + CSS Custom Properties | — |
 
-## Build
+---
 
-```bash
-pnpm build      # Type check + production build
-pnpm preview    # Preview build output
-pnpm type-check # Type check only
-```
+## Contributing
 
-## Design Document
+Contributions are welcome! Please feel free to:
 
-See [DOC.md](./DOC.md) for details on architecture, file structure, data model, rendering pipeline, interaction model, and extension points.
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'feat: add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+Before submitting, please ensure the type check passes (`pnpm type-check`) and the build succeeds (`pnpm build`).
+
+---
+
+## License
+
+This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
+
+---
+
+**Crafted with care by [xiaodaozhi](https://github.com/xiaodaozhi)**

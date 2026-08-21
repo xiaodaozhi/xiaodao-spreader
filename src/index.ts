@@ -1,7 +1,7 @@
-import Spreader from './components/spreader/spreader.vue'
+import Spreader from './components/spreader';
 
-export default Spreader
-export { Spreader }
+export default Spreader;
+export { Spreader };
 
 export type {
   CellCoord,
@@ -16,4 +16,4 @@ export type {
   ContextMenuItem,
   ThemeColors,
   Point,
-} from './components/spreader/types'
+} from './components/spreader';

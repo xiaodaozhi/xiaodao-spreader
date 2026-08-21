@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, nextTick, onBeforeUnmount } from 'vue';
-import { t } from './constants';
+import { t } from '../../core/constants';
 
 export type BorderType = 'none' | 'bottom' | 'top' | 'left' | 'right' | 'all' | 'outer' | 'thickOuter';
 

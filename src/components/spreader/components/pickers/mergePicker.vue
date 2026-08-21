@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, nextTick, onBeforeUnmount } from 'vue';
-import { t, MERGE_OPTIONS, type MergeType } from './constants';
+import { t, MERGE_OPTIONS, type MergeType } from '../../core/constants';
 
 const props = withDefaults(defineProps<{
   modelOpen?: boolean;

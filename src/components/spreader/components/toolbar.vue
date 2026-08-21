@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue';
-import { t } from './constants';
-import type { FontOption, MergeType } from './constants';
+import { t } from '../core/constants';
+import type { FontOption, MergeType } from '../core/constants';
 import SpDropdown from './dropdown.vue';
-import ColorPicker from './colorPicker.vue';
-import BorderPicker, { type BorderType } from './borderPicker.vue';
-import MergePicker from './mergePicker.vue';
+import ColorPicker from './pickers/colorPicker.vue';
+import BorderPicker, { type BorderType } from './pickers/borderPicker.vue';
+import MergePicker from './pickers/mergePicker.vue';
 
 // 田字型边框按钮图标：4 个外边 + 1 条竖中线 + 1 条横中线（与 borderPicker.vue 保持一致）
 interface BorderSeg { name: string; x1: number; y1: number; x2: number; y2: number }
@@ -62,6 +62,7 @@ const fontSizeArrowRef = ref<HTMLElement | null>(null);
 const overflowKeys = ref<Set<string>>(new Set());
 const overflowOpen = ref(false);
 const skipCloseAnim = ref(false);
+const overflowKeyVersion = ref(0);
 
 const GAP = 2;     // .toolbar 的列间距
 const PAD = 6;     // .toolbar 左右内边距
@@ -114,6 +115,7 @@ function recompute() {
 
   if (!sameSet(next, overflowKeys.value)) {
     overflowKeys.value = next;
+    overflowKeyVersion.value++;
     if (next.size === 0) overflowOpen.value = false;
   }
 }
@@ -889,6 +891,7 @@ const emit = defineEmits<{
       <div
         v-show="overflowOpen"
         ref="overflowMenuEl"
+        :key="overflowKeyVersion"
         class="overflow-menu"
         :class="{ 'no-anim': skipCloseAnim }"
         :style="menuStyle"

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onBeforeUnmount } from 'vue';
-import { t } from './constants';
+import { t } from '../../core/constants';
 
 interface ColorOption {
   key: string;

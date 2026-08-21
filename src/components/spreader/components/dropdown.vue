@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue';
-import type { FontOption } from './constants';
+import type { FontOption } from '../core/constants';
 
 const props = withDefaults(defineProps<{
   modelValue: string | number;
