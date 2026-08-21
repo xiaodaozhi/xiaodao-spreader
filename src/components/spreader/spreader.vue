@@ -1531,16 +1531,16 @@ function render() {
   rCtx.clip();
   const sel = selection.value;
   const ed = editingCell.value;
+  
+  // 第一步：绘制背景色、选中状态、文本内容
   for (let row = sR; row <= eR; row++) {
     for (let col = sC; col <= eC; col++) {
-      // 合并单元格：跳过被覆盖的非锚点单元格（由锚点统一绘制整个合并区域）
       const mergeInfo = findMerge(col, row);
       if (mergeInfo && !(col === mergeInfo.range.startCol && row === mergeInfo.range.startRow)) {
         continue;
       }
       const x = HW + cP[col]! - sx;
       const y = HH + rP[row]! - sy;
-      // 合并锚点使用合并后的总宽高
       let cw = cW[col]!;
       let rh = rH[row]!;
       if (mergeInfo) {
@@ -1548,24 +1548,30 @@ function render() {
         rh = rP[mergeInfo.range.endRow + 1]! - rP[row]!;
       }
       if (x + cw < HW || y + rh < HH || x > W || y > H) continue;
+      
+      // 选中状态背景
       if (isSelected(col, row)) {
         rCtx.fillStyle = cs.selectionBg;
         rCtx.fillRect(x, y, cw, rh);
       }
+      // 激活单元格边框
       if (activeCell.value.col === col && activeCell.value.row === row) {
         rCtx.strokeStyle = cs.activeCellBorder;
         rCtx.lineWidth = 2;
         rCtx.strokeRect(x + 1, y + 1, cw - 2, rh - 2);
       }
+      // 网格线
       rCtx.strokeStyle = cs.gridLine;
       rCtx.lineWidth = 0.5;
       rCtx.strokeRect(x + 0.25, y + 0.25, cw - 0.5, rh - 0.5);
+      // 单元格背景色
       const stBg = cells[cellKey(col, row)]?.style;
       const bgColor = typeof stBg?.backgroundColor === 'string' ? stBg.backgroundColor : '';
       if (bgColor) {
         rCtx.fillStyle = bgColor;
         rCtx.fillRect(x, y, cw, rh);
       }
+      // 文本内容
       if (!(ed && ed.col === col && ed.row === row)) {
         const v = getCellValue(col, row);
         if (v) {
@@ -1637,14 +1643,32 @@ function render() {
           rCtx.restore();
         }
       }
-      // 绘制单元格边框（每个单元格独立绘制四条边框，取相邻边框的最大宽度）
-      // 合并单元格的锚点始终绘制四条边框
+    }
+  }
+  
+  // 第二步：绘制边框和角落填充（在所有背景色和文本之后绘制）
+  for (let row = sR; row <= eR; row++) {
+    for (let col = sC; col <= eC; col++) {
+      const mergeInfo = findMerge(col, row);
+      if (mergeInfo && !(col === mergeInfo.range.startCol && row === mergeInfo.range.startRow)) {
+        continue;
+      }
+      const x = HW + cP[col]! - sx;
+      const y = HH + rP[row]! - sy;
+      let cw = cW[col]!;
+      let rh = rH[row]!;
+      if (mergeInfo) {
+        cw = cP[mergeInfo.range.endCol + 1]! - cP[col]!;
+        rh = rP[mergeInfo.range.endRow + 1]! - rP[row]!;
+      }
+      if (x + cw < HW || y + rh < HH || x > W || y > H) continue;
+      
+      // 绘制单元格边框
       const cst = cells[cellKey(col, row)]?.style;
       const ownT = (cst?.borderTopWidth as number) || 0;
       const ownL = (cst?.borderLeftWidth as number) || 0;
       const ownB = (cst?.borderBottomWidth as number) || 0;
       const ownR = (cst?.borderRightWidth as number) || 0;
-      // 每条边框取当前单元格和相邻单元格边框宽度的最大值
       const wT = Math.max(ownT, cellBorderWidth(col, row - 1, 'Bottom'));
       const wL = Math.max(ownL, cellBorderWidth(col - 1, row, 'Right'));
       const wB = Math.max(ownB, cellBorderWidth(col, row + 1, 'Top'));
@@ -1668,23 +1692,24 @@ function render() {
         if (wR > 0) {
           rCtx.fillRect(x + cw - wR, y, wR, rh);
         }
-        // 角落填充：基于实际边框宽度确保完全覆盖
-        // 左上角：上边框与左边框交汇
+        // 角落填充（红色用于调试显示）
+        rCtx.fillStyle = BORDER_COLOR;
+        // 左上角
         const tlSize = Math.max(wT, wL);
         if (tlSize > 0) {
           rCtx.fillRect(x, y, tlSize, tlSize);
         }
-        // 右上角：上边框与右边框交汇
+        // 右上角
         const trSize = Math.max(wT, wR);
         if (trSize > 0) {
           rCtx.fillRect(x + cw - trSize, y, trSize, trSize);
         }
-        // 左下角：左边框与下边框交汇
+        // 左下角
         const blSize = Math.max(wL, wB);
         if (blSize > 0) {
           rCtx.fillRect(x, y + rh - blSize, blSize, blSize);
         }
-        // 右下角：右边框与下边框交汇
+        // 右下角
         const brSize = Math.max(wR, wB);
         if (brSize > 0) {
           rCtx.fillRect(x + cw - brSize, y + rh - brSize, brSize, brSize);
