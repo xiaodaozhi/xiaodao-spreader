@@ -1,6 +1,6 @@
 {
   "name": "xiaodao-spreader",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "A Vue 3 component for spreading sheets",
   "type": "module",
   "license": "MIT",
