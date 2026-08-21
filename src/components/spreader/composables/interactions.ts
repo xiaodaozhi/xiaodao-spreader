@@ -169,6 +169,19 @@ export function createInteractions(
     }
     const eR = eR2;
 
+    // 合并单元格的内容只在锚点处绘制；若锚点被滚出可视区域而合并区域仍与可视区相交，
+    // 需要把循环起点回退到锚点位置，否则该合并区域会整体消失（Bug 修复）
+    let iterC = sC;
+    let iterR = sR;
+    for (const key in s.merges) {
+      const m = s.merges[key];
+      if (!m) continue;
+      // 仅处理与可视区域相交、且锚点位于可视起点之前的合并区域
+      if (m.startRow > eR || m.endRow < sR || m.startCol > eC || m.endCol < sC) continue;
+      if (m.startCol < iterC) iterC = m.startCol;
+      if (m.startRow < iterR) iterR = m.startRow;
+    }
+
     rCtx.fillStyle = cs.bg;
     rCtx.fillRect(0, 0, W, H);
     rCtx.fillStyle = cs.gridBg;
@@ -182,8 +195,8 @@ export function createInteractions(
     const ed = s.editingCell.value;
 
     // 第一步：绘制背景色、选中状态、文本内容
-    for (let row = sR; row <= eR; row++) {
-      for (let col = sC; col <= eC; col++) {
+    for (let row = iterR; row <= eR; row++) {
+      for (let col = iterC; col <= eC; col++) {
         const mergeInfo = s.findMerge(col, row);
         if (mergeInfo && !(col === mergeInfo.range.startCol && row === mergeInfo.range.startRow)) {
           continue;
@@ -291,8 +304,8 @@ export function createInteractions(
     }
 
     // 第二步：绘制边框
-    for (let row = sR; row <= eR; row++) {
-      for (let col = sC; col <= eC; col++) {
+    for (let row = iterR; row <= eR; row++) {
+      for (let col = iterC; col <= eC; col++) {
         const mergeInfo = s.findMerge(col, row);
         if (mergeInfo && !(col === mergeInfo.range.startCol && row === mergeInfo.range.startRow)) continue;
         const x = HW + cP[col]! - sx;
@@ -326,8 +339,8 @@ export function createInteractions(
     }
 
     // 第三步：绘制角方块
-    for (let row = sR; row <= eR; row++) {
-      for (let col = sC; col <= eC; col++) {
+    for (let row = iterR; row <= eR; row++) {
+      for (let col = iterC; col <= eC; col++) {
         const mergeInfo = s.findMerge(col, row);
         if (mergeInfo && !(col === mergeInfo.range.startCol && row === mergeInfo.range.startRow)) continue;
         const x = HW + cP[col]! - sx;
