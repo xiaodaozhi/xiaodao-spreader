@@ -1,4 +1,4 @@
-import Spreader from './components/spreader';
+import Spreader from './components/spreader/spreader.vue';
 
 export default Spreader;
 export { Spreader };
@@ -16,4 +16,4 @@ export type {
   ContextMenuItem,
   ThemeColors,
   Point,
-} from './components/spreader';
+} from './components/spreader/core/types';

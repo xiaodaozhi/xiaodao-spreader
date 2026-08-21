@@ -1,4 +1,4 @@
-import { ref, reactive, computed, type ComputedRef, type Ref } from 'vue';
+import { ref, reactive, computed, watchEffect, type ComputedRef, type Ref } from 'vue';
 import { HEADER_HEIGHT, HEADER_WIDTH, SB_SIZE, DEFAULT_COL_WIDTH, DEFAULT_ROW_HEIGHT, MAX_ROW_HEIGHT, DEFAULT_FONT_FAMILY, DEFAULT_FONT_SIZE } from '../core/constants';
 import { FormulaDeps, clearEvalCache, computeCellValue, parseFormulaRefs } from '../core/formula';
 import type { CellCoord, CellData, SelectionRange } from '../core/types';
@@ -102,14 +102,24 @@ export function createCoreState(
   },
   defaults: { rowCount: number; colCount: number; theme: 'light' | 'dark'; locale: string },
 ): CoreState {
-  const props = {
+  const props = reactive({
     rowCount: rawProps.rowCount ?? defaults.rowCount,
     colCount: rawProps.colCount ?? defaults.colCount,
     width: rawProps.width,
     height: rawProps.height,
     theme: rawProps.theme ?? defaults.theme,
     locale: rawProps.locale ?? defaults.locale,
-  };
+  });
+
+  // 同步外部 props 变化到内部 reactive props
+  watchEffect(() => {
+    props.rowCount = rawProps.rowCount ?? defaults.rowCount;
+    props.colCount = rawProps.colCount ?? defaults.colCount;
+    props.width = rawProps.width;
+    props.height = rawProps.height;
+    props.theme = rawProps.theme ?? defaults.theme;
+    props.locale = rawProps.locale ?? defaults.locale;
+  });
 
   const locale = computed(() => (props.locale === 'zh-CN' ? 'zh-CN' : 'en-US'));
   const colCount = props.colCount;
@@ -139,7 +149,10 @@ export function createCoreState(
     const key = `${style} ${weight} ${size}px ${family}`;
     const cached = fontMetricsCache.get(key);
     if (cached) return cached;
-    if (!fontMetricsCanvas) fontMetricsCanvas = document.createElement('canvas');
+    if (!fontMetricsCanvas) {
+      if (typeof document === 'undefined') return { ascent: size * 0.8, descent: size * 0.2 };
+      fontMetricsCanvas = document.createElement('canvas');
+    }
     const ctx = fontMetricsCanvas.getContext('2d');
     if (!ctx) return { ascent: size * 0.8, descent: size * 0.2 };
     ctx.font = key;

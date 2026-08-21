@@ -1,6 +1,6 @@
 {
   "name": "xiaodao-spreader",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "A Vue 3 component for spreading sheets",
   "type": "module",
   "license": "MIT",
@@ -23,7 +23,7 @@
       "require": "./dist/xiaodao-spreader.umd.js"
     }
   },
-  "sideEffects": false,
+  "sideEffects": ["*.vue", "*.css"],
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build && vue-tsc -p tsconfig.build.json",

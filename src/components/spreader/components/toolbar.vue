@@ -371,6 +371,7 @@ const emit = defineEmits<{
           :menu-width="isOverflow('font') ? 120 : undefined"
           :visible-count="8"
           :title="t(locale, 'fontFamily')"
+          align="right"
           @change="emit('font-family-change', $event)"
         />
       </div>
@@ -407,6 +408,7 @@ const emit = defineEmits<{
             :title="t(locale, 'fontSize')"
             :hide-trigger="true"
             :model-open="fontSizeMenuOpen"
+            align="right"
             :trigger-el="fontSizeArrowRef"
             @update:model-open="emit('update:font-size-menu-open', $event)"
             @change="emit('font-size-change', $event)"

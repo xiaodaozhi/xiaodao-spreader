@@ -1,15 +1,15 @@
 <script setup lang="ts">
-import { ref, reactive, withDefaults, defineProps, defineModel, type Ref, type UnwrapRef } from 'vue';
-import { HEADER_HEIGHT, HEADER_WIDTH, SB_SIZE } from '../core/constants';
-import Toolbar from './toolbar.vue';
-import Tabbar from './tabbar.vue';
-import type { SheetModelData, SheetState } from '../core/types';
+import { ref, reactive, type Ref, type UnwrapRef } from 'vue';
+import { HEADER_HEIGHT, HEADER_WIDTH, SB_SIZE } from './core/constants';
+import Toolbar from './components/toolbar.vue';
+import Tabbar from './components/tabbar.vue';
+import type { SheetModelData, SheetState } from './core/types';
 
-import { createCoreState, type CoreState } from '../composables/core-state';
-import { createUndoStyles, bindMenuRefs, type UndoStylesState } from '../composables/undo-styles';
-import { createBordersMerge, type BordersMergeState } from '../composables/borders-merge';
-import { createSheetsOps, type SheetsOpsState } from '../composables/sheets-ops';
-import { createInteractions, type InteractionsState } from '../composables/interactions';
+import { createCoreState, type CoreState } from './composables/core-state';
+import { createUndoStyles, bindMenuRefs, type UndoStylesState } from './composables/undo-styles';
+import { createBordersMerge, type BordersMergeState } from './composables/borders-merge';
+import { createSheetsOps, type SheetsOpsState } from './composables/sheets-ops';
+import { createInteractions, type InteractionsState } from './composables/interactions';
 
 // ============ Props ============
 const props = withDefaults(defineProps<{
@@ -96,7 +96,6 @@ const interactionsRaw = createInteractions(
 interactionsRaw.setupLifecycle();
 
 // ============ reactive 包装：模板自动解包 ref/computed ============
-// reactive() 在运行时会展开对象内部的 Ref/ComputedRef，使用 UnwrapRef 让类型系统也知道这一点
 const coreState = reactive(coreStateRaw) as unknown as UnwrapRef<CoreState>;
 const undoStyles = reactive(undoStylesRaw) as unknown as UnwrapRef<UndoStylesState>;
 const bordersMerge = reactive(bordersMergeRaw) as unknown as UnwrapRef<BordersMergeState>;
@@ -441,7 +440,7 @@ const setDimInputRef = (el: unknown) => {
 </template>
 
 <style scoped>
-.spreadsheet-outer { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.spreadsheet-outer { flex: 1; display: flex; flex-direction: column; overflow: hidden; height: 100%; min-height: 400px; width: 100%; }
 .formula-bar { display: flex; align-items: start; height: 36px; min-height: 36px; padding: 0; gap: 0; }
 .formula-bar__cell-label { width: 48px; min-width: 48px; height: 28px; line-height: 28px; margin-top: 4px; text-align: center; font-size: 12px; font-weight: 600; color: var(--sp-formula-bar-label-color); background: var(--sp-formula-bar-label-bg); border: 1px solid var(--sp-formula-bar-label-border); border-radius: 2px; user-select: none; }
 .formula-bar__input { flex: 1; height: 28px; margin-top: 4px; border: 1px solid var(--sp-formula-bar-input-border); border-radius: 2px; outline: none; padding: 0 6px; margin-left: 4px; font-size: 13px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; color: var(--sp-formula-bar-input-color); background: var(--sp-formula-bar-input-bg); }
