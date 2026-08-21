@@ -314,6 +314,8 @@ function clearCellsInRange(cS: number, cE: number, rS: number, rE: number) {
       formulaDeps.clear(k);
       delCell(k);
       formulaDeps.markDirty(k);
+      // 同步清除相邻单元格的对应边框
+      syncCellBorders(c, r);
     }
   }
 }
@@ -488,6 +490,8 @@ function applyPaintFormat() {
       const val = cells[k]?.value ?? '';
       if (val === '' && st === null) delCell(k);
       else cells[k] = { value: val, style: st };
+      // 同步相邻单元格的对应边框
+      syncCellBorders(c, r);
     }
   }
   paintFmt.value = null;
@@ -507,6 +511,8 @@ function clearFormat() {
       const val = cells[k]?.value ?? '';
       if (val === '') delCell(k);
       else cells[k] = { value: val, style: null };
+      // 同步清除相邻单元格的对应边框
+      syncCellBorders(c, r);
     }
   }
   scheduleRender();
@@ -889,6 +895,55 @@ function onBorderChange(bt: BorderType) {
   emitModelData();
 }
 
+/** 设置单个单元格某侧边框宽度（处理合并单元格，操作锚点样式）。
+ *  width=0 且 clearZero=true 时删除该侧边框属性。 */
+function setCellBorderSide(col: number, row: number, side: 'Top' | 'Bottom' | 'Left' | 'Right', width: number, clearZero: boolean) {
+  if (col < 0 || row < 0 || col >= colCount || row >= rowCount) return;
+  const m = findMerge(col, row);
+  if (m) {
+    // 只在合并区域的外边缘侧才同步
+    if (side === 'Top' && row !== m.range.startRow) return;
+    if (side === 'Bottom' && row !== m.range.endRow) return;
+    if (side === 'Left' && col !== m.range.startCol) return;
+    if (side === 'Right' && col !== m.range.endCol) return;
+  }
+  const k = m ? m.anchor : cellKey(col, row);
+  const val = cells[k]?.value ?? '';
+  const st = cells[k]?.style ? { ...cells[k]!.style } : {};
+  const prop = `border${side}Width`;
+  if (width === 0) {
+    if (clearZero) delete st[prop];
+  } else {
+    st[prop] = width;
+    st.borderColor = BORDER_COLOR;
+  }
+  const dirs = ['Top', 'Bottom', 'Left', 'Right'] as const;
+  const hasBorder = dirs.some(d => st[`border${d}Width`] !== undefined);
+  if (!hasBorder) delete st.borderColor;
+  const style = Object.keys(st).length ? st : null;
+  if (val === '' && style === null) delCell(k);
+  else cells[k] = { value: val, style };
+}
+
+/** 读取单元格当前四边边框宽度，同步到相邻单元格的对应边。 */
+function syncCellBorders(col: number, row: number) {
+  const m = findMerge(col, row);
+  const k = m ? m.anchor : cellKey(col, row);
+  const st = cells[k]?.style;
+  const wT = (st?.borderTopWidth as number) || 0;
+  const wB = (st?.borderBottomWidth as number) || 0;
+  const wL = (st?.borderLeftWidth as number) || 0;
+  const wR = (st?.borderRightWidth as number) || 0;
+  // 当前单元格的上边框 → 上方相邻单元格的下边框
+  setCellBorderSide(col, row - 1, 'Bottom', wT, true);
+  // 当前单元格的下边框 → 下方相邻单元格的上边框
+  setCellBorderSide(col, row + 1, 'Top', wB, true);
+  // 当前单元格的左边框 → 左侧相邻单元格的右边框
+  setCellBorderSide(col - 1, row, 'Right', wL, true);
+  // 当前单元格的右边框 → 右侧相邻单元格的左边框
+  setCellBorderSide(col + 1, row, 'Left', wR, true);
+}
+
 function applyBorderToCell(col: number, row: number, w: { top: number; bottom: number; left: number; right: number }, clearZero: boolean = true) {
   const k = cellKey(col, row);
   const val = cells[k]?.value ?? '';
@@ -913,6 +968,8 @@ function applyBorderToCell(col: number, row: number, w: { top: number; bottom: n
   const style = Object.keys(st).length ? st : null;
   if (val === '' && style === null) delCell(k);
   else cells[k] = { value: val, style };
+  // 同步相邻单元格的对应边框
+  syncCellBorders(col, row);
 }
 
 function applyCachedBorder() {
@@ -1063,10 +1120,50 @@ function onMergeChange(v: MergeType) {
 
 // ============ 剪贴板 ============
 let copySourceRange: SelectionRange | null = null;
+/** 内部复制时缓存的源单元格样式 [row][col] */
+let copySourceStyles: (Record<string, unknown> | null)[][] = [];
+
+/** 捕获选区内单元格样式到 copySourceStyles */
+function captureStyles(cS: number, cE: number, rS: number, rE: number) {
+  copySourceStyles = [];
+  for (let r = rS; r <= rE; r++) {
+    const row: (Record<string, unknown> | null)[] = [];
+    for (let c = cS; c <= cE; c++) {
+      const st = cells[cellKey(c, r)]?.style;
+      row.push(st ? { ...st } : null);
+    }
+    copySourceStyles.push(row);
+  }
+}
+
+/** 设置单元格值和样式（用于粘贴） */
+function setCellWithStyle(c: number, r: number, val: string, style: Record<string, unknown> | null) {
+  const k = cellKey(c, r);
+  clearEvalCache();
+  if (val === '' || val == null) {
+    formulaDeps.clear(k);
+    if (style) {
+      cells[k] = { value: '', style: { ...style } };
+    } else {
+      delCell(k);
+    }
+    formulaDeps.markDirty(k);
+    return;
+  }
+  cells[k] = { value: val, style: style ? { ...style } : null };
+  if (val.startsWith('=')) {
+    formulaDeps.set(k, parseFormulaRefs(val.slice(1), colCount, rowCount));
+  } else {
+    formulaDeps.clear(k);
+  }
+  formulaDeps.markDirty(k);
+}
+
 function copyToClipboard() {
   const s = selection.value;
   if (!s) return;
   copySourceRange = { ...s };
+  captureStyles(s.startCol, s.endCol, s.startRow, s.endRow);
   const ls: string[] = [];
   for (let r = s.startRow; r <= s.endRow; r++) {
     const row: string[] = [];
@@ -1079,6 +1176,8 @@ function copyRowCol() {
   const s = selection.value;
   if (!s) return;
   if (s.startCol === 0 && s.endCol === colCount - 1) {
+    copySourceRange = { ...s };
+    captureStyles(0, colCount - 1, s.startRow, s.endRow);
     const ls: string[] = [];
     for (let r = s.startRow; r <= s.endRow; r++) {
       const row: string[] = [];
@@ -1087,6 +1186,8 @@ function copyRowCol() {
     }
     writeClipboardText(ls.join('\n'));
   } else if (s.startRow === 0 && s.endRow === rowCount - 1) {
+    copySourceRange = { ...s };
+    captureStyles(s.startCol, s.endCol, 0, rowCount - 1);
     const ls: string[] = [];
     for (let r = 0; r < rowCount; r++) {
       const row: string[] = [];
@@ -1107,6 +1208,7 @@ async function pasteFromClipboard() {
   const lines = txt.split(/\r?\n/);
   const ac = activeCell.value;
   const src = copySourceRange;
+  const hasSrcStyles = src && copySourceStyles.length > 0;
   for (let r = 0; r < lines.length; r++) {
     const cols = lines[r]!.split('\t');
     for (let c = 0; c < cols.length; c++) {
@@ -1122,7 +1224,16 @@ async function pasteFromClipboard() {
             colCount, rowCount, colToLabel,
           );
         }
-        setCellValue(tc, tr, val);
+        if (hasSrcStyles && r < copySourceStyles.length && c < (copySourceStyles[r]?.length ?? 0)) {
+          // 内部复制：同时粘贴值和样式
+          const srcStyle = copySourceStyles[r]![c] ?? null;
+          setCellWithStyle(tc, tr, val, srcStyle);
+          // 同步相邻单元格边框
+          syncCellBorders(tc, tr);
+        } else {
+          // 外部粘贴：仅粘贴值
+          setCellValue(tc, tr, val);
+        }
       }
     }
   }
@@ -1200,6 +1311,13 @@ function deleteRows(rS: number, rE: number) {
     for (let c = 0; c < colCount; c++) delCell(cellKey(c, r));
     rowHeights.value[r] = undefined;
   }
+  // 同步删除边界处的新相邻单元格边框
+  if (rS > 0) {
+    for (let c = 0; c < colCount; c++) {
+      syncCellBorders(c, rS - 1);
+      syncCellBorders(c, rS);
+    }
+  }
 }
 function insertRows(rS: number, rE: number) {
   const n = rE - rS + 1;
@@ -1253,6 +1371,13 @@ function deleteCols(cS: number, cE: number) {
   for (let c = colCount - dc; c < colCount; c++) {
     for (let r = 0; r < rowCount; r++) delCell(cellKey(c, r));
     colWidths.value[c] = DEFAULT_COL_WIDTH;
+  }
+  // 同步删除边界处的新相邻单元格边框
+  if (cS > 0) {
+    for (let r = 0; r < rowCount; r++) {
+      syncCellBorders(cS - 1, r);
+      syncCellBorders(cS, r);
+    }
   }
 }
 
@@ -1646,7 +1771,7 @@ function render() {
     }
   }
   
-  // 第二步：绘制边框和角落填充（在所有背景色和文本之后绘制）
+  // 第二步：绘制边框（在所有背景色和文本之后绘制）
   for (let row = sR; row <= eR; row++) {
     for (let col = sC; col <= eC; col++) {
       const mergeInfo = findMerge(col, row);
@@ -1663,7 +1788,6 @@ function render() {
       }
       if (x + cw < HW || y + rh < HH || x > W || y > H) continue;
       
-      // 绘制单元格边框
       const cst = cells[cellKey(col, row)]?.style;
       const ownT = (cst?.borderTopWidth as number) || 0;
       const ownL = (cst?.borderLeftWidth as number) || 0;
@@ -1692,28 +1816,57 @@ function render() {
         if (wR > 0) {
           rCtx.fillRect(x + cw - wR, y, wR, rh);
         }
-        // 角落填充（红色用于调试显示）
-        rCtx.fillStyle = BORDER_COLOR;
-        // 左上角
-        const tlSize = Math.max(wT, wL);
-        if (tlSize > 0) {
-          rCtx.fillRect(x, y, tlSize, tlSize);
-        }
-        // 右上角
-        const trSize = Math.max(wT, wR);
-        if (trSize > 0) {
-          rCtx.fillRect(x + cw - trSize, y, trSize, trSize);
-        }
-        // 左下角
-        const blSize = Math.max(wL, wB);
-        if (blSize > 0) {
-          rCtx.fillRect(x, y + rh - blSize, blSize, blSize);
-        }
-        // 右下角
-        const brSize = Math.max(wR, wB);
-        if (brSize > 0) {
-          rCtx.fillRect(x + cw - brSize, y + rh - brSize, brSize, brSize);
-        }
+      }
+    }
+  }
+  
+  // 第三步：在对角单元格的对应角落绘制小方块以填充缺口
+  // 例如：单元格左上角有上边框+左边框 → 在左上方向的对角单元格(col-1,row-1)的右下角画小方块
+  for (let row = sR; row <= eR; row++) {
+    for (let col = sC; col <= eC; col++) {
+      const mergeInfo = findMerge(col, row);
+      if (mergeInfo && !(col === mergeInfo.range.startCol && row === mergeInfo.range.startRow)) {
+        continue;
+      }
+      const x = HW + cP[col]! - sx;
+      const y = HH + rP[row]! - sy;
+      let cw = cW[col]!;
+      let rh = rH[row]!;
+      if (mergeInfo) {
+        cw = cP[mergeInfo.range.endCol + 1]! - cP[col]!;
+        rh = rP[mergeInfo.range.endRow + 1]! - rP[row]!;
+      }
+      if (x + cw < HW || y + rh < HH || x > W || y > H) continue;
+      
+      const ownT = (cells[cellKey(col, row)]?.style?.borderTopWidth as number) || 0;
+      const ownL = (cells[cellKey(col, row)]?.style?.borderLeftWidth as number) || 0;
+      const ownB = (cells[cellKey(col, row)]?.style?.borderBottomWidth as number) || 0;
+      const ownR = (cells[cellKey(col, row)]?.style?.borderRightWidth as number) || 0;
+      const wT = Math.max(ownT, cellBorderWidth(col, row - 1, 'Bottom'));
+      const wL = Math.max(ownL, cellBorderWidth(col - 1, row, 'Right'));
+      const wB = Math.max(ownB, cellBorderWidth(col, row + 1, 'Top'));
+      const wR = Math.max(ownR, cellBorderWidth(col + 1, row, 'Left'));
+      
+      rCtx.fillStyle = BORDER_COLOR;
+      // 左上角：有上边框+左边框 → 在(col-1,row-1)的右下角画方块
+      // 宽度=左边框粗细，高度=上边框粗细
+      if (wT > 0 && wL > 0) {
+        rCtx.fillRect(x - wL, y - wT, wL, wT);
+      }
+      // 右上角：有上边框+右边框 → 在(col+1,row-1)的左下角画方块
+      // 宽度=右边框粗细，高度=上边框粗细
+      if (wT > 0 && wR > 0) {
+        rCtx.fillRect(x + cw, y - wT, wR, wT);
+      }
+      // 左下角：有下边框+左边框 → 在(col-1,row+1)的右上角画方块
+      // 宽度=左边框粗细，高度=下边框粗细
+      if (wB > 0 && wL > 0) {
+        rCtx.fillRect(x - wL, y + rh, wL, wB);
+      }
+      // 右下角：有下边框+右边框 → 在(col+1,row+1)的左上角画方块
+      // 宽度=右边框粗细，高度=下边框粗细
+      if (wB > 0 && wR > 0) {
+        rCtx.fillRect(x + cw, y + rh, wR, wB);
       }
     }
   }
