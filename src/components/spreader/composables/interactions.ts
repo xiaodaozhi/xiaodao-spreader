@@ -1023,6 +1023,8 @@ export function createInteractions(
   let tSX = 0, tSY = 0, tSSX = 0, tSSY = 0;
   let isTouch = false, tMoved = false;
   let tSC = 0, tSR = 0;
+  // 触摸起点所在区域：cell 单元格 / col 列表头 / row 行表头 / all 左上角全选按钮
+  let tZone: 'cell' | 'col' | 'row' | 'all' = 'cell';
   let ltT = 0, ltC = -1, ltR = -1;
 
   function onMouseDown(e: MouseEvent) {
@@ -1234,6 +1236,19 @@ export function createInteractions(
     const rect = cvs.getBoundingClientRect();
     const x = t.clientX - rect.left, y = t.clientY - rect.top;
     if (x >= HEADER_WIDTH && y >= HEADER_HEIGHT) {
+      // 单元格区域：记录起点，移动时平移滚动，抬手时选中单元格
+      e.preventDefault();
+      isTouch = true;
+      tMoved = false;
+      tZone = 'cell';
+      tSX = x;
+      tSY = y;
+      tSSX = s.scrollX.value;
+      tSSY = s.scrollY.value;
+      tSC = s.hitCol(x - HEADER_WIDTH + s.scrollX.value);
+      tSR = s.hitRow(y - HEADER_HEIGHT + s.scrollY.value);
+    } else if (x >= 0 && y >= 0 && (x < HEADER_WIDTH || y < HEADER_HEIGHT)) {
+      // 列表头 / 行表头 / 左上角全选按钮：同样支持平移滚动与点按选择
       e.preventDefault();
       isTouch = true;
       tMoved = false;
@@ -1241,8 +1256,19 @@ export function createInteractions(
       tSY = y;
       tSSX = s.scrollX.value;
       tSSY = s.scrollY.value;
-      tSC = s.hitCol(x - HEADER_WIDTH + s.scrollX.value);
-      tSR = s.hitRow(y - HEADER_HEIGHT + s.scrollY.value);
+      if (y < HEADER_HEIGHT && x >= HEADER_WIDTH) {
+        tZone = 'col';
+        tSC = s.hitCol(x - HEADER_WIDTH + s.scrollX.value);
+        tSR = -1;
+      } else if (x < HEADER_WIDTH && y >= HEADER_HEIGHT) {
+        tZone = 'row';
+        tSR = s.hitRow(y - HEADER_HEIGHT + s.scrollY.value);
+        tSC = -1;
+      } else {
+        tZone = 'all';
+        tSC = -1;
+        tSR = -1;
+      }
     }
   }
   function onTouchMove(e: TouchEvent) {
@@ -1262,7 +1288,8 @@ export function createInteractions(
   function onTouchEnd() {
     if (!isTouch) return;
     isTouch = false;
-    if (!tMoved && tSC >= 0 && tSR >= 0) {
+    if (tMoved) return;
+    if (tZone === 'cell' && tSC >= 0 && tSR >= 0) {
       const n = Date.now();
       if (tSC === ltC && tSR === ltR && n - ltT < 300) {
         s.selectCell(tSC, tSR);
@@ -1279,6 +1306,18 @@ export function createInteractions(
       ltC = tSC;
       ltR = tSR;
       so.focusEditInput();
+    } else if (tZone === 'col' && tSC >= 0) {
+      s.commitEdit();
+      s.selectRange(tSC, 0, tSC, s.rowCount - 1);
+      scheduleRender();
+    } else if (tZone === 'row' && tSR >= 0) {
+      s.commitEdit();
+      s.selectRange(0, tSR, s.colCount - 1, tSR);
+      scheduleRender();
+    } else if (tZone === 'all') {
+      s.commitEdit();
+      s.selectAll();
+      scheduleRender();
     }
   }
 

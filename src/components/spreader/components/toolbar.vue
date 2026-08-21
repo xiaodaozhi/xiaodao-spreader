@@ -147,7 +147,7 @@ function onWindowResize() {
   }
 }
 
-function onDocMousedown(e: MouseEvent) {
+function onDocPointerdown(e: PointerEvent) {
   if (!overflowOpen.value) return;
   const target = e.target as Node;
   if (overflowMenuEl.value?.contains(target)) return;
@@ -177,13 +177,15 @@ onMounted(() => {
     });
     ro.observe(rootEl.value);
   }
-  document.addEventListener('mousedown', onDocMousedown, true);
+  // 用 pointerdown 而非 mousedown：触屏时 canvas 的 touchstart.prevent 会抑制合成鼠标事件，
+  // mousedown 收不到；pointerdown 先于 touchstart 触发且不受其 preventDefault 影响，鼠标/触摸通吃
+  document.addEventListener('pointerdown', onDocPointerdown, true);
   window.addEventListener('resize', onWindowResize);
 });
 
 onBeforeUnmount(() => {
   ro?.disconnect();
-  document.removeEventListener('mousedown', onDocMousedown, true);
+  document.removeEventListener('pointerdown', onDocPointerdown, true);
   window.removeEventListener('resize', onWindowResize);
 });
 
