@@ -1637,31 +1637,57 @@ function render() {
           rCtx.restore();
         }
       }
-      // 绘制单元格边框（考虑相邻单元格共享边：取较宽一方）
-      // 上/左边框由每个单元格自己绘制（覆盖与上方/左方单元格的共享边）
-      // 下/右边框仅由最后一行/最后一列绘制，避免重复绘制共享边
-      // 合并单元格的锚点始终绘制四条边框（因为其他单元格不会为合并区域的外边缘绘制边框）
+      // 绘制单元格边框（每个单元格独立绘制四条边框，取相邻边框的最大宽度）
+      // 合并单元格的锚点始终绘制四条边框
       const cst = cells[cellKey(col, row)]?.style;
       const ownT = (cst?.borderTopWidth as number) || 0;
       const ownL = (cst?.borderLeftWidth as number) || 0;
       const ownB = (cst?.borderBottomWidth as number) || 0;
       const ownR = (cst?.borderRightWidth as number) || 0;
+      // 每条边框取当前单元格和相邻单元格边框宽度的最大值
       const wT = Math.max(ownT, cellBorderWidth(col, row - 1, 'Bottom'));
       const wL = Math.max(ownL, cellBorderWidth(col - 1, row, 'Right'));
-      if (wT > 0 || wL > 0 || ownB > 0 || ownR > 0) {
+      const wB = Math.max(ownB, cellBorderWidth(col, row + 1, 'Top'));
+      const wR = Math.max(ownR, cellBorderWidth(col + 1, row, 'Left'));
+      
+      if (wT > 0 || wL > 0 || wB > 0 || wR > 0) {
         rCtx.fillStyle = BORDER_COLOR;
-        const cp = 1 / rDpr;
+        // 上边框
         if (wT > 0) {
-          rCtx.fillRect(x - cp, y, cw + 2 * cp, wT);
+          rCtx.fillRect(x, y, cw, wT);
         }
-        if (ownB > 0 && (mergeInfo || row === eR)) {
-          rCtx.fillRect(x - cp, y + rh - ownB, cw + 2 * cp, ownB);
+        // 下边框
+        if (wB > 0) {
+          rCtx.fillRect(x, y + rh - wB, cw, wB);
         }
+        // 左边框
         if (wL > 0) {
-          rCtx.fillRect(x, y - cp, wL, rh + 2 * cp);
+          rCtx.fillRect(x, y, wL, rh);
         }
-        if (ownR > 0 && (mergeInfo || col === eC)) {
-          rCtx.fillRect(x + cw - ownR, y - cp, ownR, rh + 2 * cp);
+        // 右边框
+        if (wR > 0) {
+          rCtx.fillRect(x + cw - wR, y, wR, rh);
+        }
+        // 角落填充：基于实际边框宽度确保完全覆盖
+        // 左上角：上边框与左边框交汇
+        const tlSize = Math.max(wT, wL);
+        if (tlSize > 0) {
+          rCtx.fillRect(x, y, tlSize, tlSize);
+        }
+        // 右上角：上边框与右边框交汇
+        const trSize = Math.max(wT, wR);
+        if (trSize > 0) {
+          rCtx.fillRect(x + cw - trSize, y, trSize, trSize);
+        }
+        // 左下角：左边框与下边框交汇
+        const blSize = Math.max(wL, wB);
+        if (blSize > 0) {
+          rCtx.fillRect(x, y + rh - blSize, blSize, blSize);
+        }
+        // 右下角：右边框与下边框交汇
+        const brSize = Math.max(wR, wB);
+        if (brSize > 0) {
+          rCtx.fillRect(x + cw - brSize, y + rh - brSize, brSize, brSize);
         }
       }
     }
