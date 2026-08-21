@@ -74,12 +74,25 @@ function isOverflow(key: string): boolean {
   return overflowKeys.value.has(key);
 }
 
+function hasZeroWidth(): boolean {
+  for (const k of TOOL_KEYS) {
+    const w = naturalWidths.get(k);
+    if (w === undefined || w === 0) return true;
+  }
+  return false;
+}
+
 function measureNaturalWidths() {
   if (!rootEl.value) return;
   const els = rootEl.value.querySelectorAll<HTMLElement>('.tb-item');
   els.forEach((el) => {
     const key = el.dataset.key;
-    if (key) naturalWidths.set(key, el.offsetWidth);
+    if (!key) return;
+    const w = el.offsetWidth;
+    // 已溢出的项被 Teleport 到 display:none 的菜单里，offsetWidth 为 0，
+    // 不能用 0 覆盖之前测到的真实宽度，否则会误判
+    if (w > 0) naturalWidths.set(key, w);
+    else if (!naturalWidths.has(key)) naturalWidths.set(key, 0);
   });
 }
 
@@ -89,11 +102,27 @@ function sameSet(a: Set<string>, b: Set<string>): boolean {
   return true;
 }
 
+let recomputeRaf = 0;
+let recomputeTries = 0;
+function scheduleRecompute() {
+  if (recomputeRaf) cancelAnimationFrame(recomputeRaf);
+  // 兜底：布局长期不可用时最多重试若干次，避免无限 rAF
+  if (recomputeTries > 60) return;
+  recomputeTries++;
+  // 双 rAF：等浏览器完成布局后再测量，规避移动端初始化时宽度未就绪导致的误判
+  recomputeRaf = requestAnimationFrame(() => requestAnimationFrame(recompute));
+}
+
 function recompute() {
   if (!rootEl.value) return;
   const contentW = rootEl.value.clientWidth - PAD * 2;
-  if (contentW <= 0) return;
-  if (naturalWidths.size === 0) measureNaturalWidths();
+  // 布局尚未就绪（clientWidth 为 0）→ 下一帧重试，避免误把全部工具项判为溢出
+  if (contentW <= 0) {
+    scheduleRecompute();
+    return;
+  }
+  recomputeTries = 0;
+  if (naturalWidths.size === 0 || hasZeroWidth()) measureNaturalWidths();
 
   let total = 0;
   for (const k of TOOL_KEYS) total += (naturalWidths.get(k) ?? 0) + GAP;
@@ -164,16 +193,13 @@ function toggleOverflow() {
 }
 
 onMounted(() => {
-  nextTick(() => {
-    measureNaturalWidths();
-    recompute();
-  });
+  scheduleRecompute();
   if (rootEl.value) {
     ro = new ResizeObserver(() => {
       if (overflowOpen.value) {
         return;
       }
-      recompute();
+      scheduleRecompute();
     });
     ro.observe(rootEl.value);
   }
@@ -181,12 +207,17 @@ onMounted(() => {
   // mousedown 收不到；pointerdown 先于 touchstart 触发且不受其 preventDefault 影响，鼠标/触摸通吃
   document.addEventListener('pointerdown', onDocPointerdown, true);
   window.addEventListener('resize', onWindowResize);
+  window.addEventListener('load', scheduleRecompute);
+  window.addEventListener('orientationchange', scheduleRecompute);
 });
 
 onBeforeUnmount(() => {
+  if (recomputeRaf) cancelAnimationFrame(recomputeRaf);
   ro?.disconnect();
   document.removeEventListener('pointerdown', onDocPointerdown, true);
   window.removeEventListener('resize', onWindowResize);
+  window.removeEventListener('load', scheduleRecompute);
+  window.removeEventListener('orientationchange', scheduleRecompute);
 });
 
 const props = defineProps<{

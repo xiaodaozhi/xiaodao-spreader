@@ -18,6 +18,9 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [vue()],
     build: {
+      // 关闭自动清空输出目录：sandbox 的安全删除机制会拦截 rm/emptyDir 并卡死，
+      // 关闭后由产物文件名固定（lib 模式）保证不残留旧 chunk
+      emptyOutDir: false,
       lib: {
         entry: fileURLToPath(new URL('./src/index.ts', import.meta.url)),
         name: 'XiaoDaoSpreader',
