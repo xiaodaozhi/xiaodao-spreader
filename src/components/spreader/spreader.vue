@@ -1674,7 +1674,14 @@ function render() {
       }
       if (x + cw < HW || y + rh < HH || x > W || y > H) continue;
       
-      // 选中状态背景
+      // 单元格背景色
+      const stBg = cells[cellKey(col, row)]?.style;
+      const bgColor = typeof stBg?.backgroundColor === 'string' ? stBg.backgroundColor : '';
+      if (bgColor) {
+        rCtx.fillStyle = bgColor;
+        rCtx.fillRect(x, y, cw, rh);
+      }
+      // 选中状态背景（半透明，叠加在单元格背景色之上）
       if (isSelected(col, row)) {
         rCtx.fillStyle = cs.selectionBg;
         rCtx.fillRect(x, y, cw, rh);
@@ -1689,13 +1696,6 @@ function render() {
       rCtx.strokeStyle = cs.gridLine;
       rCtx.lineWidth = 0.5;
       rCtx.strokeRect(x + 0.25, y + 0.25, cw - 0.5, rh - 0.5);
-      // 单元格背景色
-      const stBg = cells[cellKey(col, row)]?.style;
-      const bgColor = typeof stBg?.backgroundColor === 'string' ? stBg.backgroundColor : '';
-      if (bgColor) {
-        rCtx.fillStyle = bgColor;
-        rCtx.fillRect(x, y, cw, rh);
-      }
       // 文本内容
       if (!(ed && ed.col === col && ed.row === row)) {
         const v = getCellValue(col, row);
