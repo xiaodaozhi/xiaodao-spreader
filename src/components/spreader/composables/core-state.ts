@@ -408,7 +408,12 @@ export function createCoreState(
     clearEvalCache();
     if (v === '' || v == null) {
       formulaDeps.clear(k);
-      delCell(k);
+      const st = cells[k]?.style ?? null;
+      if (st) {
+        cells[k] = { value: '', style: st };
+      } else {
+        delCell(k);
+      }
       formulaDeps.markDirty(k);
       return;
     }

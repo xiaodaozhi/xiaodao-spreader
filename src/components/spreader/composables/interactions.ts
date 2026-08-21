@@ -1543,6 +1543,11 @@ export function createInteractions(
               if (ri >= 0 && ri < s.rowCount && h >= 24) sh.rowHeights[ri] = h;
             }
           }
+          if (smd.merges) {
+            for (const [k, mr] of Object.entries(smd.merges)) {
+              sh.merges![k] = { ...mr };
+            }
+          }
           return sh;
         });
         if (so.sheets.value.length > 0) so.loadSheet(0);

@@ -235,6 +235,8 @@ export function createUndoStyles(
     let mixed = false;
     for (let c = sel.startCol; c <= sel.endCol && !mixed; c++) {
       for (let r = sel.startRow; r <= sel.endRow && !mixed; r++) {
+        const m = s.findMerge(c, r);
+        if (m && (c !== m.range.startCol || r !== m.range.startRow)) continue;
         const st = s.cells[s.cellKey(c, r)]?.style;
         const ff = typeof st?.fontFamily === 'string' ? st.fontFamily : '';
         if (first === undefined) first = ff;
@@ -251,6 +253,8 @@ export function createUndoStyles(
     let mixed = false;
     for (let c = sel.startCol; c <= sel.endCol && !mixed; c++) {
       for (let r = sel.startRow; r <= sel.endRow && !mixed; r++) {
+        const m = s.findMerge(c, r);
+        if (m && (c !== m.range.startCol || r !== m.range.startRow)) continue;
         const fsz = s.cellFontSize(c, r);
         if (first === undefined) first = fsz;
         else if (fsz !== first) mixed = true;
@@ -415,6 +419,8 @@ export function createUndoStyles(
     let mixed = false;
     for (let c = sel.startCol; c <= sel.endCol && !mixed; c++) {
       for (let r = sel.startRow; r <= sel.endRow && !mixed; r++) {
+        const m = s.findMerge(c, r);
+        if (m && (c !== m.range.startCol || r !== m.range.startRow)) continue;
         const st = s.cells[s.cellKey(c, r)]?.style;
         const v = Boolean(st?.[prop]);
         if (first === undefined) first = v;
@@ -490,6 +496,8 @@ export function createUndoStyles(
     let mixed = false;
     for (let c = sel.startCol; c <= sel.endCol && !mixed; c++) {
       for (let r = sel.startRow; r <= sel.endRow && !mixed; r++) {
+        const m = s.findMerge(c, r);
+        if (m && (c !== m.range.startCol || r !== m.range.startRow)) continue;
         const st = s.cells[s.cellKey(c, r)]?.style;
         const v = typeof st?.color === 'string' ? st.color : '';
         if (first === undefined) first = v;
@@ -506,6 +514,8 @@ export function createUndoStyles(
     let mixed = false;
     for (let c = sel.startCol; c <= sel.endCol && !mixed; c++) {
       for (let r = sel.startRow; r <= sel.endRow && !mixed; r++) {
+        const m = s.findMerge(c, r);
+        if (m && (c !== m.range.startCol || r !== m.range.startRow)) continue;
         const st = s.cells[s.cellKey(c, r)]?.style;
         const v = typeof st?.backgroundColor === 'string' ? st.backgroundColor : '';
         if (first === undefined) first = v;
