@@ -100,6 +100,26 @@ function _evalFormula(
     return NaN;
   }
 
+  if (upper.startsWith('AVERAGE(') && formula.endsWith(')')) {
+    const inner = formula.slice(8, -1).trim();
+    const range = parseRangeRef(inner, colCount, rowCount);
+    if (range) {
+      let sum = 0;
+      let count = 0;
+      for (let c = range.sc; c <= range.ec; c++) {
+        for (let r = range.sr; r <= range.er; r++) {
+          sum += getNumericValue(c, r, cells, colCount, rowCount);
+          count++;
+        }
+      }
+      if (count === 0 || isNaN(sum)) return NaN;
+      const avg = sum / count;
+      evalCache.set(key, avg);
+      return avg;
+    }
+    return NaN;
+  }
+
   return NaN;
 }
 

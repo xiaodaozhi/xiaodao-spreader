@@ -45,6 +45,8 @@ export interface BordersMergeState {
 
   // 求和
   sumSelected: () => void;
+  // 平均值
+  avgSelected: () => void;
 }
 
 export function createBordersMerge(
@@ -499,6 +501,35 @@ export function createBordersMerge(
     s.emitModelData?.();
   }
 
+  // ============ 平均值 ============
+  function avgSelected() {
+    const sel = s.selection.value;
+    if (!sel) return;
+    us.saveUndo();
+    const sc = sel.startCol, sr = sel.startRow, ec = sel.endCol, er = sel.endRow;
+    if (sr === er) {
+      if (ec + 1 < s.colCount) {
+        const rangeRef = `${colToLabel(sc)}${sr + 1}:${colToLabel(ec)}${sr + 1}`;
+        s.setCellValue(ec + 1, sr, `=AVERAGE(${rangeRef})`);
+      } else {
+        const rangeRef = `${colToLabel(sc)}${sr + 1}:${colToLabel(ec - 1)}${sr + 1}`;
+        s.setCellValue(ec, sr, `=AVERAGE(${rangeRef})`);
+      }
+    } else {
+      for (let c = sc; c <= ec; c++) {
+        if (er + 1 < s.rowCount) {
+          const rangeRef = `${colToLabel(c)}${sr + 1}:${colToLabel(c)}${er + 1}`;
+          s.setCellValue(c, er + 1, `=AVERAGE(${rangeRef})`);
+        } else {
+          const rangeRef = `${colToLabel(c)}${sr + 1}:${colToLabel(c)}${er}`;
+          s.setCellValue(c, er, `=AVERAGE(${rangeRef})`);
+        }
+      }
+    }
+    s.scheduleRender?.();
+    s.emitModelData?.();
+  }
+
   return {
     cachedBorder,
     borderMenuOpen,
@@ -532,5 +563,6 @@ export function createBordersMerge(
     clearSelected,
 
     sumSelected,
+    avgSelected,
   };
 }
