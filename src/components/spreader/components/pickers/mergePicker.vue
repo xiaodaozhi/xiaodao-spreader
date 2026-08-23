@@ -32,7 +32,7 @@ watch(() => props.modelOpen, (v) => {
   }
 });
 
-function onClickOutside(e: MouseEvent) {
+function onClickOutside(e: PointerEvent) {
   const el = rootRef.value;
   const mEl = menuRef.value;
   const t = e.target as Node;
@@ -67,7 +67,7 @@ function openMenu() {
       }
       pos.value = right !== undefined ? { right, top } : { left: posLeft!, top };
     }
-    document.addEventListener('mousedown', onClickOutside);
+    document.addEventListener('pointerdown', onClickOutside);
   });
 }
 
@@ -76,7 +76,7 @@ function close() {
   if (props.modelOpen !== undefined) {
     emit('update:modelOpen', false);
   }
-  document.removeEventListener('mousedown', onClickOutside);
+  document.removeEventListener('pointerdown', onClickOutside);
 }
 
 function selectMerge(v: MergeType) {
@@ -85,7 +85,7 @@ function selectMerge(v: MergeType) {
 }
 
 onBeforeUnmount(() => {
-  document.removeEventListener('mousedown', onClickOutside);
+  document.removeEventListener('pointerdown', onClickOutside);
 });
 
 defineExpose({ open, openMenu, close });

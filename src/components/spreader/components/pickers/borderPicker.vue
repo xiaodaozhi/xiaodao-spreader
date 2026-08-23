@@ -84,7 +84,7 @@ watch(() => props.modelOpen, (v) => {
   }
 });
 
-function onClickOutside(e: MouseEvent) {
+function onClickOutside(e: PointerEvent) {
   const el = rootRef.value;
   const mEl = menuRef.value;
   const t = e.target as Node;
@@ -113,14 +113,14 @@ function openMenu() {
       if (top < 4) top = 4;
       pos.value = right !== undefined ? { right, top } : { left: posLeft!, top };
     }
-    document.addEventListener('mousedown', onClickOutside);
+    document.addEventListener('pointerdown', onClickOutside);
   });
 }
 
 function close() {
   open.value = false;
   if (props.modelOpen !== undefined) emit('update:modelOpen', false);
-  document.removeEventListener('mousedown', onClickOutside);
+  document.removeEventListener('pointerdown', onClickOutside);
 }
 
 function selectBorder(v: BorderType) {
@@ -129,7 +129,7 @@ function selectBorder(v: BorderType) {
 }
 
 onBeforeUnmount(() => {
-  document.removeEventListener('mousedown', onClickOutside);
+  document.removeEventListener('pointerdown', onClickOutside);
 });
 
 defineExpose({ open, openMenu, close });

@@ -192,7 +192,7 @@ watch(() => props.modelOpen, (v) => {
   }
 });
 
-function onClickOutside(e: MouseEvent) {
+function onClickOutside(e: PointerEvent) {
   const el = rootRef.value;
   const mEl = menuRef.value;
   const t = e.target as Node;
@@ -229,14 +229,14 @@ function openMenu() {
             top,
           };
     }
-    document.addEventListener('mousedown', onClickOutside);
+    document.addEventListener('pointerdown', onClickOutside);
   });
 }
 
 function close() {
   open.value = false;
   if (props.modelOpen !== undefined) emit('update:modelOpen', false);
-  document.removeEventListener('mousedown', onClickOutside);
+  document.removeEventListener('pointerdown', onClickOutside);
 }
 
 function selectColor(v: string) {
@@ -246,7 +246,7 @@ function selectColor(v: string) {
 }
 
 onBeforeUnmount(() => {
-  document.removeEventListener('mousedown', onClickOutside);
+  document.removeEventListener('pointerdown', onClickOutside);
 });
 
 defineExpose({ open, openMenu, close });

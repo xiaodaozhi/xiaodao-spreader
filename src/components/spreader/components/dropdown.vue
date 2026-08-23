@@ -101,10 +101,12 @@ function select(o: FontOption) {
   close();
 }
 
-function onDocDown(e: MouseEvent) {
+function onDocDown(e: PointerEvent) {
   if (!open.value) return;
   const t = e.target as Node;
-  // 菜单通过 Teleport 渲染到 body，需同时排除菜单内部点击，否则 mousedown 阶段会提前关闭菜单导致 click 丢失
+  // 菜单通过 Teleport 渲染到 body，需同时排除菜单内部点击，否则 pointerdown 阶段会提前关闭菜单导致 click 丢失。
+  // 用 pointerdown 而非 mousedown：触屏时 canvas 的 touchstart.prevent 会抑制合成鼠标事件，mousedown 收不到，
+  // 导致下拉框在触摸点画布/滚动条时无法关闭；pointerdown 不受其 preventDefault 影响，鼠标/触摸通吃（与溢出菜单一致）
   if (rootRef.value?.contains(t) || menuRef.value?.contains(t)) return;
   close();
 }
@@ -160,13 +162,13 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 onMounted(() => {
-  document.addEventListener('mousedown', onDocDown);
+  document.addEventListener('pointerdown', onDocDown);
   window.addEventListener('resize', close);
   window.addEventListener('scroll', close, true);
 });
 
 onBeforeUnmount(() => {
-  document.removeEventListener('mousedown', onDocDown);
+  document.removeEventListener('pointerdown', onDocDown);
   window.removeEventListener('resize', close);
   window.removeEventListener('scroll', close, true);
 });
