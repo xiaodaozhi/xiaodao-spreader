@@ -62,6 +62,7 @@ export function createSheetsOps(
   us: UndoStylesState,
   rawModelData: Ref<SheetModelData[]>,
   _applySizeCallback?: () => void,
+  lastEmittedDataRef?: { value: string },
 ): SheetsOpsState {
   // ============ 行/列插入/删除 ============
   function deleteRows(rS: number, rE: number) {
@@ -313,6 +314,7 @@ export function createSheetsOps(
     if (js !== lastEmittedData) {
       lastEmittedData = js;
       modelData.value = out;
+      if (lastEmittedDataRef) lastEmittedDataRef.value = js;
     }
   }
   // 反向注入到 core-state

@@ -75,6 +75,8 @@ const sheetsOpsRaw = createSheetsOps(
   coreStateRaw,
   undoStylesRaw,
   modelData,
+  undefined,
+  lastEmittedDataRef,
 );
 
 // 将 sheetsCtx 的实际引用替换为 sheetsOps 的
@@ -100,6 +102,9 @@ const coreState = reactive(coreStateRaw) as unknown as UnwrapRef<CoreState>;
 const undoStyles = reactive(undoStylesRaw) as unknown as UnwrapRef<UndoStylesState>;
 const bordersMerge = reactive(bordersMergeRaw) as unknown as UnwrapRef<BordersMergeState>;
 const sheetsOps = reactive(sheetsOpsRaw) as unknown as UnwrapRef<SheetsOpsState>;
+// 直接用 sheetsOpsRaw 的顶层 ref 暴露给模板，避免 reactive 嵌套属性在 prop 传递时丢失响应式追踪
+const sheets = sheetsOpsRaw.sheets;
+const activeSheetIndex = sheetsOpsRaw.activeSheetIndex;
 const interactions = reactive(interactionsRaw) as unknown as UnwrapRef<InteractionsState>;
 
 // ============ 模板赋值辅助函数（用于 @update:xxx 事件）============
@@ -325,8 +330,8 @@ const setDimInputRef = (el: unknown) => {
     <!-- Sheet 标签栏 -->
     <Tabbar
       :locale="coreState.locale"
-      :sheets="sheetsOps.sheets"
-      :active-sheet-index="sheetsOps.activeSheetIndex"
+      :sheets="sheets"
+      :active-sheet-index="activeSheetIndex"
       :ren-tab="interactions.renTab"
       :ren-tab-val="interactions.renTabVal"
       @tab-click="interactions.onTabClick($event)"
