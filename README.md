@@ -1,6 +1,6 @@
 # Xiaodao Spreader
 
-中文 | [English](./README.md)
+[中文](./README.ZH.md) | English
 
 A high-performance, canvas-based spreadsheet component for Vue 3 — bringing an Excel-like editing experience to the web.
 
