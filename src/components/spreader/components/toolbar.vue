@@ -918,7 +918,7 @@ const emit = defineEmits<{
             ref="calcArrowRef"
             class="toolbar-btn toolbar-split__arrow"
             :title="t(locale, 'calculate')"
-            :disabled="!hasSelection || isSingleCell"
+            :disabled="!hasSelection"
             @click="emit('update:calc-menu-open', !calcMenuOpen)"
           >
             <svg
