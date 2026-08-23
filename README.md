@@ -39,7 +39,7 @@ A high-performance, canvas-based spreadsheet component for Vue 3 — bringing an
 ### Core Spreadsheet
 - **Canvas 2D Rendering** — High-DPI aware with DPR scaling, virtual viewport rendering for 200 × 26 sheets
 - **Multi-Sheet Workbook** — Tab bar with add, rename, duplicate, delete, reorder
-- **Formula Engine** — `=SUM()` range calculation with dependency tracking and circular-reference detection
+- **Formula Engine** — `=SUM()`, `=AVERAGE()` range calculation with dependency tracking and circular-reference detection; toolbar and context menu provide one-click sum/average
 - **Merge Cells** — Merge & Center, Merge Across, Unmerge with border synchronization
 - **Rich Cell Formatting** — Font family, font size (5–72), bold, italic, underline, strikethrough, text color, fill color, horizontal & vertical alignment, wrap text
 - **Borders** — Top / bottom / left / right / all / none with 5 predefined styles and custom color
@@ -288,6 +288,7 @@ src/
 | Formula | Syntax | Description |
 |---------|--------|-------------|
 | `SUM` | `=SUM(A1:B5)` | Range summation |
+| `AVERAGE` | `=AVERAGE(A1:B5)` | Range average |
 | Absolute ref | `$A$1` | Lock column and row |
 | Mixed ref | `$A1`, `A$1` | Lock column or row only |
 
@@ -396,7 +397,7 @@ The project includes a GitHub Actions workflow (`.github/workflows/publish.yml`)
 
 ### Near-term
 
-- [ ] More formulas: `AVERAGE`, `COUNT`, `IF`, `VLOOKUP`, `CONCATENATE`
+- [ ] More formulas: `COUNT`, `IF`, `VLOOKUP`, `CONCATENATE`
 - [ ] Cell background color picker
 - [ ] Number format (currency, percentage, date, number of decimals)
 - [ ] Conditional formatting rules
