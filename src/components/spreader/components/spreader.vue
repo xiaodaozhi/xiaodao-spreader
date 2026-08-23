@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, type Ref, type UnwrapRef } from 'vue';
+import { ref, reactive, computed, type Ref, type UnwrapRef } from 'vue';
 import { HEADER_HEIGHT, HEADER_WIDTH, SB_SIZE } from '../core/constants';
 import Toolbar from './toolbar.vue';
 import Tabbar from './tabbar.vue';
@@ -107,6 +107,12 @@ const sheets = sheetsOpsRaw.sheets;
 const activeSheetIndex = sheetsOpsRaw.activeSheetIndex;
 const interactions = reactive(interactionsRaw) as unknown as UnwrapRef<InteractionsState>;
 
+// 当前选区是否为单个单元格（计算下拉框的求和/平均值在单格时禁用，与右键菜单一致）
+const isSingleCell = computed(() => {
+  const sel = coreState.selection;
+  return !!sel && sel.startCol === sel.endCol && sel.startRow === sel.endRow;
+});
+
 // ============ 模板赋值辅助函数（用于 @update:xxx 事件）============
 function setFontSizeMenuOpen(v: boolean) {
   undoStylesRaw.fontSizeMenuOpen.value = v;
@@ -178,6 +184,8 @@ const setDimInputRef = (el: unknown) => {
       :sel-v-align="undoStyles.selVAlign"
       :sel-wrap="undoStyles.selWrap"
       :merge-menu-open="bordersMerge.mergeMenuOpen"
+      :calc-menu-open="bordersMerge.calcMenuOpen"
+      :is-single-cell="isSingleCell"
       :theme-vars="sheetsOps.toolbarThemeVars"
       @undo="undoStyles.undo()"
       @redo="undoStyles.redo()"
@@ -211,6 +219,9 @@ const setDimInputRef = (el: unknown) => {
       @update:merge-menu-open="bordersMerge.onMergeMenuToggle($event)"
       @merge-change="bordersMerge.onMergeChange($event)"
       @apply-merge="bordersMerge.onApplyMerge"
+      @update:calc-menu-open="bordersMerge.onCalcMenuToggle($event)"
+      @calc-sum="bordersMerge.onCalcSum"
+      @calc-avg="bordersMerge.onCalcAvg"
     />
 
     <!-- 编辑栏 -->

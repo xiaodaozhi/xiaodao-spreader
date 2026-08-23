@@ -47,6 +47,12 @@ export interface BordersMergeState {
   sumSelected: () => void;
   // 平均值
   avgSelected: () => void;
+
+  // 计算下拉框
+  calcMenuOpen: Ref<boolean>;
+  onCalcMenuToggle: (v: boolean) => void;
+  onCalcSum: () => void;
+  onCalcAvg: () => void;
 }
 
 export function createBordersMerge(
@@ -530,6 +536,27 @@ export function createBordersMerge(
     s.emitModelData?.();
   }
 
+  // ============ 计算下拉框 ============
+  const calcMenuOpen = ref(false);
+  function onCalcMenuToggle(v: boolean) {
+    calcMenuOpen.value = v;
+    if (v) {
+      us.textColorMenuOpen.value = false;
+      us.fillColorMenuOpen.value = false;
+      borderMenuOpen.value = false;
+      us.fontSizeMenuOpen.value = false;
+      mergeMenuOpen.value = false;
+    }
+  }
+  function onCalcSum() {
+    sumSelected();
+    calcMenuOpen.value = false;
+  }
+  function onCalcAvg() {
+    avgSelected();
+    calcMenuOpen.value = false;
+  }
+
   return {
     cachedBorder,
     borderMenuOpen,
@@ -564,5 +591,10 @@ export function createBordersMerge(
 
     sumSelected,
     avgSelected,
+
+    calcMenuOpen,
+    onCalcMenuToggle,
+    onCalcSum,
+    onCalcAvg,
   };
 }

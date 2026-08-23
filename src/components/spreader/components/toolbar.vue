@@ -6,6 +6,7 @@ import SpDropdown from './dropdown.vue';
 import ColorPicker from './pickers/colorPicker.vue';
 import BorderPicker, { type BorderType } from './pickers/borderPicker.vue';
 import MergePicker from './pickers/mergePicker.vue';
+import CalcPicker, { type CalcType } from './pickers/calcPicker.vue';
 
 // 田字型边框按钮图标：4 个外边 + 1 条竖中线 + 1 条横中线（与 borderPicker.vue 保持一致）
 interface BorderSeg { name: string; x1: number; y1: number; x2: number; y2: number }
@@ -48,7 +49,7 @@ function segRole(bt: BorderType, name: string): 'solid' | 'dashed' | 'thick' {
 const TOOL_KEYS = [
   'undo', 'redo', 'paint', 'clear', 'sep1', 'font', 'fontSize', 'sep2',
   'bold', 'italic', 'underline', 'strike', 'sep3', 'textColor', 'fillColor', 'border',
-  'sep4', 'hAlign', 'vAlign', 'wrap', 'merge',
+  'sep4', 'hAlign', 'vAlign', 'wrap', 'merge', 'calc',
 ] as const;
 
 const rootEl = ref<HTMLElement | null>(null);
@@ -58,6 +59,7 @@ const textColorArrowRef = ref<HTMLElement | null>(null);
 const fillColorArrowRef = ref<HTMLElement | null>(null);
 const borderArrowRef = ref<HTMLElement | null>(null);
 const mergeArrowRef = ref<HTMLElement | null>(null);
+const calcArrowRef = ref<HTMLElement | null>(null);
 const fontSizeArrowRef = ref<HTMLElement | null>(null);
 const overflowKeys = ref<Set<string>>(new Set());
 const overflowOpen = ref(false);
@@ -250,6 +252,8 @@ const props = defineProps<{
   hAlignOptions: FontOption[];
   vAlignOptions: FontOption[];
   mergeMenuOpen: boolean;
+  calcMenuOpen: boolean;
+  isSingleCell: boolean;
   themeVars?: Record<string, string>;
 }>();
 
@@ -258,9 +262,10 @@ const emit = defineEmits<{
   (e: 'font-family-change' | 'font-size-change' | 'h-align-change' | 'v-align-change', v: string | number): void;
   (e: 'font-size-input' | 'text-color-change' | 'fill-color-change', v: string): void;
   (e: 'font-size-keydown', ev: KeyboardEvent): void;
-  (e: 'update:font-size-menu-open' | 'update:text-color-menu-open' | 'update:fill-color-menu-open' | 'update:border-menu-open' | 'update:merge-menu-open', v: boolean): void;
+  (e: 'update:font-size-menu-open' | 'update:text-color-menu-open' | 'update:fill-color-menu-open' | 'update:border-menu-open' | 'update:merge-menu-open' | 'update:calc-menu-open', v: boolean): void;
   (e: 'border-change', v: BorderType): void;
   (e: 'merge-change', v: MergeType): void;
+  (e: 'calc-sum' | 'calc-avg'): void;
 }>();
 </script>
 
@@ -883,6 +888,51 @@ const emit = defineEmits<{
             :trigger-el="mergeArrowRef"
             @update:model-open="emit('update:merge-menu-open', $event)"
             @change="emit('merge-change', $event)"
+          />
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- 计算（求和 / 平均值） -->
+    <Teleport
+      :disabled="!isOverflow('calc')"
+      :to="overflowMenuEl ?? undefined"
+    >
+      <div
+        class="tb-item"
+        data-key="calc"
+      >
+        <div class="toolbar-split">
+          <button
+            class="toolbar-btn toolbar-split__main"
+            :title="t(locale, 'sum')"
+            :disabled="!hasSelection || isSingleCell"
+            @click="emit('calc-sum')"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="currentColor"
+            ><path d="M19 3H5l7 9-7 9h14v-2H8l5.5-7L8 5h11z" /></svg>
+          </button>
+          <button
+            ref="calcArrowRef"
+            class="toolbar-btn toolbar-split__arrow"
+            :title="t(locale, 'calculate')"
+            :disabled="!hasSelection || isSingleCell"
+            @click="emit('update:calc-menu-open', !calcMenuOpen)"
+          >
+            <svg
+              viewBox="0 0 1024 1024"
+              fill="currentColor"
+            ><path d="M180.053 361.387a32 32 0 0 1 45.227 0L512 648.107l286.72-286.72a32 32 0 1 1 45.227 45.227l-309.334 309.333a32 32 0 0 1-45.226 0L180.053 406.613a32 32 0 0 1 0-45.226z" /></svg>
+          </button>
+          <CalcPicker
+            :model-open="calcMenuOpen"
+            :locale="locale"
+            :trigger-el="calcArrowRef"
+            :disabled="isSingleCell"
+            @update:model-open="emit('update:calc-menu-open', $event)"
+            @change="emit($event === 'sum' ? 'calc-sum' : 'calc-avg')"
           />
         </div>
       </div>
