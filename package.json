@@ -1,6 +1,6 @@
 {
   "name": "xiaodao-spreader",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "description": "A Vue 3 component for spreading sheets",
   "type": "module",
   "license": "MIT",
@@ -30,6 +30,7 @@
     "build:demo": "vite build --mode demo",
     "preview": "vite preview",
     "type-check": "vue-tsc --noEmit",
+    "test": "tsc -p tsconfig.test.json && node -e \"require('fs').writeFileSync('dist-test/package.json','{\\\"type\\\":\\\"commonjs\\\"}')\" && node --test dist-test/test/find-replace-core.test.js",
     "prepublishOnly": "npm run build"
   },
   "peerDependencies": {

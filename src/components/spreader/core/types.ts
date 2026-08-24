@@ -16,6 +16,17 @@ export interface CellData {
   style: Record<string, unknown> | null;
 }
 
+// ============ 查找和替换 ============
+/** 搜索范围：当前工作表 / 整个工作簿 / 当前选区 */
+export type FindScope = 'sheet' | 'workbook' | 'selection';
+
+/** 单次匹配结果：记录所在 Sheet 索引与单元格坐标 */
+export interface FindResult {
+  sheetIndex: number;
+  col: number;
+  row: number;
+}
+
 export interface Range {
   start: number;
   end: number;
@@ -121,6 +132,10 @@ export interface ThemeColors {
   toolbarBtnHoverBg: string;
   toolbarBtnDisabledColor: string;
   toolbarBtnActiveColor: string;
+
+  // 查找高亮
+  findMatchBg: string;
+  findActiveBg: string;
 }
 
 export interface Point {

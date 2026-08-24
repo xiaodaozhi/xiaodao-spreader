@@ -100,6 +100,8 @@ export interface CoreState {
   syncCellBorders?: (col: number, row: number) => void;
   viewSize?: { w: number; h: number };
   clampScroll?: (sx: number | null, sy: number | null) => void;
+  /** 查找高亮钩子：返回某单元格当前的高亮类型（由 find-replace 模块注入） */
+  findHighlight?: (col: number, row: number) => 'active' | 'match' | null;
 }
 
 // ============ 工厂函数 ============
@@ -667,6 +669,9 @@ export function createCoreState(
 
     // viewSize 引用
     viewSize: viewSizeProxy,
+
+    // 查找高亮：默认无高亮（find-replace 模块会覆盖注入）
+    findHighlight: (_col: number, _row: number) => null,
   };
 
   // 设置内部函数对 state 的反向引用

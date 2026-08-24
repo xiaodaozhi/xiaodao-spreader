@@ -50,7 +50,7 @@ function segRole(bt: BorderType, name: string): 'solid' | 'dashed' | 'thick' {
 const TOOL_KEYS = [
   'undo', 'redo', 'paint', 'clear', 'sep1', 'font', 'fontSize', 'sep2',
   'bold', 'italic', 'underline', 'strike', 'sep3', 'textColor', 'fillColor', 'border',
-  'sep4', 'hAlign', 'vAlign', 'wrap', 'merge', 'sep6', 'numFmt', 'sep7', 'calc',
+  'sep4', 'hAlign', 'vAlign', 'wrap', 'merge', 'sep6', 'numFmt', 'sep7', 'calc', 'find',
 ] as const;
 
 const rootEl = ref<HTMLElement | null>(null);
@@ -278,6 +278,7 @@ const emit = defineEmits<{
   (e: 'font-family-change' | 'font-size-change' | 'h-align-change' | 'v-align-change', v: string | number): void;
   (e: 'font-size-input' | 'text-color-change' | 'fill-color-change' | 'number-format-change', v: string): void;
   (e: 'font-size-keydown', ev: KeyboardEvent): void;
+  (e: 'find'): void;
   (e: 'update:font-size-menu-open' | 'update:text-color-menu-open' | 'update:fill-color-menu-open' | 'update:border-menu-open' | 'update:merge-menu-open' | 'update:calc-menu-open', v: boolean): void;
   (e: 'border-change', v: BorderType): void;
   (e: 'merge-change', v: MergeType): void;
@@ -1005,6 +1006,31 @@ const nfFallbackLabel = computed(() =>
             @change="emit(`calc-${$event}`)"
           />
         </div>
+      </div>
+    </Teleport>
+
+    <!-- 查找和替换 -->
+    <Teleport
+      :disabled="teleportDisabled('find')"
+      :to="overflowMenuTarget"
+    >
+      <div
+        class="tb-item"
+        data-key="find"
+      >
+        <button
+          class="toolbar-btn"
+          :title="t(locale, 'find')"
+          @click="emit('find')"
+        >
+          <svg
+            class="toolbar-btn__icon"
+            viewBox="0 0 1024 1024"
+            fill="currentColor"
+          >
+            <path d="M448 128a320 320 0 0 1 251.2 516.8l171.2 171.2a32 32 0 0 1-45.2 45.2L654 689.9A320 320 0 1 1 448 128zm0 64a256 256 0 1 0 0 512 256 256 0 0 0 0-512z" />
+          </svg>
+        </button>
       </div>
     </Teleport>
 

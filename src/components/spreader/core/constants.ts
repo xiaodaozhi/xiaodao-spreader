@@ -173,6 +173,25 @@ export const i18n: Record<string, Record<string, string>> = {
     nfCustomCode: '自定义格式代码',
     nfPreview: '预览',
     nfPreviewSample: '示例',
+    // 查找和替换
+    find: '查找',
+    findReplace: '查找和替换',
+    findPlaceholder: '查找内容',
+    replacePlaceholder: '替换为',
+    findPrev: '上一个',
+    findNext: '下一个',
+    replace: '替换',
+    replaceAll: '全部替换',
+    findScope: '范围',
+    scopeSheet: '当前工作表',
+    scopeWorkbook: '整个工作簿',
+    scopeSelection: '当前选区',
+    matchCase: '区分大小写',
+    matchEntireCell: '完整匹配',
+    findNoResult: '未找到',
+    findNeedSelection: '请先选择范围',
+    findReplacedAll: '已替换 {n} 处',
+    findClose: '关闭',
   },
   'en-US': {
     insert: 'Insert',
@@ -327,6 +346,25 @@ export const i18n: Record<string, Record<string, string>> = {
     nfCustomCode: 'Custom format code',
     nfPreview: 'Preview',
     nfPreviewSample: 'Sample',
+    // Find & Replace
+    find: 'Find',
+    findReplace: 'Find & Replace',
+    findPlaceholder: 'Find what',
+    replacePlaceholder: 'Replace with',
+    findPrev: 'Previous',
+    findNext: 'Next',
+    replace: 'Replace',
+    replaceAll: 'Replace All',
+    findScope: 'Scope',
+    scopeSheet: 'Current sheet',
+    scopeWorkbook: 'Entire workbook',
+    scopeSelection: 'Current selection',
+    matchCase: 'Match case',
+    matchEntireCell: 'Match entire cell',
+    findNoResult: 'No results',
+    findNeedSelection: 'Select a range first',
+    findReplacedAll: 'Replaced {n} occurrence(s)',
+    findClose: 'Close',
   },
 };
 
@@ -493,6 +531,8 @@ export const lightTheme: ThemeColors = {
   toolbarBtnHoverBg: '#e6e6e6',
   toolbarBtnDisabledColor: '#b0b0b0',
   toolbarBtnActiveColor: '#0078d7',
+  findMatchBg: 'rgba(255, 213, 79, 0.45)',
+  findActiveBg: 'rgba(255, 179, 0, 0.75)',
 };
 
 export const darkTheme: ThemeColors = {
@@ -550,4 +590,6 @@ export const darkTheme: ThemeColors = {
   toolbarBtnHoverBg: '#3a3a3a',
   toolbarBtnDisabledColor: '#666',
   toolbarBtnActiveColor: '#4ea1ff',
+  findMatchBg: 'rgba(255, 213, 79, 0.35)',
+  findActiveBg: 'rgba(255, 179, 0, 0.6)',
 };

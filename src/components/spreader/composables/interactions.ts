@@ -216,10 +216,17 @@ export function createInteractions(
         }
         if (x + cw < HW || y + rh < HH || x > W || y > H) continue;
 
+        // 查找高亮：整体填充（在背景色之后、选区/文本之前绘制）
+        const hl = s.findHighlight ? s.findHighlight(col, row) : null;
+
         const stBg = s.cells[s.cellKey(col, row)]?.style;
         const bgColor = typeof stBg?.backgroundColor === 'string' ? stBg.backgroundColor : '';
         if (bgColor) {
           rCtx.fillStyle = bgColor;
+          rCtx.fillRect(x, y, cw, rh);
+        }
+        if (hl) {
+          rCtx.fillStyle = hl === 'active' ? cs.findActiveBg : cs.findMatchBg;
           rCtx.fillRect(x, y, cw, rh);
         }
         if (s.isSelected(col, row)) {
@@ -234,6 +241,12 @@ export function createInteractions(
         }
         if (s.activeCell.value.col === col && s.activeCell.value.row === row) {
           rCtx.strokeStyle = cs.activeCellBorder;
+          rCtx.lineWidth = 2;
+          rCtx.strokeRect(x + 1, y + 1, cw - 2, rh - 2);
+        }
+        if (hl === 'active') {
+          // 当前匹配项：额外描边强化视觉效果（覆盖在选区之上）
+          rCtx.strokeStyle = cs.findActiveBg;
           rCtx.lineWidth = 2;
           rCtx.strokeRect(x + 1, y + 1, cw - 2, rh - 2);
         }

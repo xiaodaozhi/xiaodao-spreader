@@ -445,7 +445,7 @@ The `ThemeColors` interface includes:
 - **Auto-Fill**: Drag handle at bottom-right of active cell
 
 ### 13.3 Interaction Layer
-- **Find/Replace**
+- **Find/Replace** — *now implemented, see [Section 16](#16-查找与替换-find--replace)*
 - **Data Sort/Filter**
 - **Charts**
 
@@ -514,3 +514,41 @@ The `ThemeColors` interface includes:
 6. **TypeScript Strict**: All function parameters and return values have type annotations. `vue-tsc --noEmit` runs automatically before build.
 
 7. **Cross-Platform Compatibility**: Ctrl key uses `e.ctrlKey || e.metaKey` for Mac compatibility. Clipboard API uses async API + sync fallback.
+
+---
+
+## 16. 查找与替换 (Find & Replace)
+
+位于 `composables/find-replace.ts`（状态与交互）与 `core/find-replace-core.ts`（纯算法，零 Vue 依赖，可单测）。UI 由 `find-replace-bar.vue` 提供，工具栏新增查找按钮，快捷键 `Ctrl/Cmd+F`（含 `Ctrl/Cmd+H`）打开。
+
+### 16.1 设计原则
+
+- **基于原始 `Cell.value`**：始终读取单元格的 `value`（字符串），**不**基于 Canvas 格式化显示文本，因此与数字格式、公式等显示层无关。
+- **算法与 UI 分离**：匹配/替换的纯函数（`cellMatches` / `replaceFirst` / `replaceAllOccurrences` / `scanSheetCells`）不依赖 Vue，便于单元测试。
+- **复用既有能力**：查找定位复用现有 Selection（`selectCell` / `activeCell` / `ensureVisible`）与多 Sheet（`switchSheet`），撤销/重做复用 `undo-styles` 的 snapshot 机制。
+
+### 16.2 搜索范围
+
+| 范围 | 实现 |
+|------|------|
+| 当前工作表（默认） | 仅扫描 `s.cells`（当前激活 Sheet） |
+| 整个工作簿 | 遍历 `so.sheets.value` 所有 Sheet 的 `cells`，记录 `sheetIndex`；定位时跨表自动 `switchSheet` 并滚动 |
+| 当前选区 | 将 `s.selection` 矩形作为 `range` 传入 `scanSheetCells`；定位时仅移动 `activeCell`，不破坏原选区矩形 |
+
+### 16.3 匹配与替换规则
+
+- **匹配**：默认不区分大小写、非完整匹配（子串包含）；支持「区分大小写」与「匹配整个单元格」。
+- **替换**：替换仅改 `Cell.value`，且 `String()` 强制保持字符串类型，保留 `style` / `numberFormat` / 边框 / 合并。单元格内多匹配时，单次替换仅改首个、全部替换改所有。
+- **$ 安全**：不区分大小写的全部替换用正则回调 `() => replace` 形式，避免 `replace` 字符串中的 `$&` / `$1` 被当作分组引用。
+
+### 16.4 Undo / Redo 接入
+
+- 单次「替换」仅在内容变化时调用一次 `us.saveUndo()`。
+- 「全部替换」在循环外仅调用一次 `us.saveUndo()`（整次操作一个撤销点），并用 `results` 快照遍历，避免重算过程中 `results` 变化导致漏改。
+- 撤销 / 重做后，通过 watch `undoStack` / `redoStack` 长度触发结果重算，搜索状态与匹配高亮同步刷新。
+
+### 16.5 高亮与定位
+
+- 通过 `s.findHighlight(col, row)` 钩子注入渲染：普通匹配返回 `'match'`、当前项返回 `'active'`。`interactions.ts` 在 render 背景阶段用 `findMatchBg` / `findActiveBg` 填充，活动格额外描边强化。
+- 查找上下循环：取模实现首尾相接，`Enter` = 下一个、`Shift+Enter` = 上一个、`Esc` 关闭（均在查找栏内处理）。编辑态下 `onKeydown` 已 `return`，全局 `Ctrl/Cmd+F/H` 不与单元格编辑快捷键冲突。
+- 性能：基于数据模型扫描、零 DOM；重算用 `requestAnimationFrame` 防抖，仅在关键词 / 范围 / 规则 / 单元格数据 / 替换变更时重搜。

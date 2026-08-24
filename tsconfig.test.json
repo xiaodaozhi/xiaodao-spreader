@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "lib": ["ES2020"],
+    "types": ["node"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "noEmit": false,
+    "outDir": "./dist-test",
+    "rootDir": ".",
+    "resolveJsonModule": true
+  },
+  "include": [
+    "src/components/spreader/core/find-replace-core.ts",
+    "test/**/*.ts"
+  ]
+}

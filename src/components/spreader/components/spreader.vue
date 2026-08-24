@@ -3,6 +3,7 @@ import { ref, reactive, computed, type Ref, type UnwrapRef } from 'vue';
 import { HEADER_HEIGHT, HEADER_WIDTH, SB_SIZE } from '../core/constants';
 import Toolbar from './toolbar.vue';
 import Tabbar from './tabbar.vue';
+import FindReplaceBar from './find-replace-bar.vue';
 import NumberFormatDialog from './pickers/numberFormatDialog.vue';
 import type { SheetModelData, SheetState } from '../core/types';
 
@@ -11,6 +12,7 @@ import { createUndoStyles, bindMenuRefs, type UndoStylesState } from '../composa
 import { createBordersMerge, type BordersMergeState } from '../composables/borders-merge';
 import { createSheetsOps, type SheetsOpsState } from '../composables/sheets-ops';
 import { createInteractions, type InteractionsState } from '../composables/interactions';
+import { createFindReplace, type FindReplaceState } from '../composables/find-replace';
 import { NF_MIXED } from '../core/number-format';
 
 // ============ Props ============
@@ -99,6 +101,15 @@ const interactionsRaw = createInteractions(
 // 生命周期 / watch 装配
 interactionsRaw.setupLifecycle();
 
+// ============ 查找和替换 ============
+const findReplaceRaw = createFindReplace(
+  coreStateRaw,
+  undoStylesRaw,
+  sheetsOpsRaw,
+  lastEmittedDataRef,
+);
+findReplaceRaw.setupLifecycle();
+
 // ============ reactive 包装：模板自动解包 ref/computed ============
 const coreState = reactive(coreStateRaw) as unknown as UnwrapRef<CoreState>;
 const undoStyles = reactive(undoStylesRaw) as unknown as UnwrapRef<UndoStylesState>;
@@ -108,6 +119,7 @@ const sheetsOps = reactive(sheetsOpsRaw) as unknown as UnwrapRef<SheetsOpsState>
 const sheets = sheetsOpsRaw.sheets;
 const activeSheetIndex = sheetsOpsRaw.activeSheetIndex;
 const interactions = reactive(interactionsRaw) as unknown as UnwrapRef<InteractionsState>;
+const findReplace = reactive(findReplaceRaw) as unknown as UnwrapRef<FindReplaceState>;
 
 // 当前选区是否为单个单元格（计算下拉框的求和/平均值在单格时禁用，与右键菜单一致）
 const isSingleCell = computed(() => {
@@ -244,6 +256,33 @@ const setDimInputRef = (el: unknown) => {
       @calc-sum="bordersMerge.onCalcSum"
       @calc-avg="bordersMerge.onCalcAvg"
       @calc-count="bordersMerge.onCalcCount"
+      @find="findReplaceRaw.openFind()"
+    />
+
+    <!-- 查找和替换栏 -->
+    <FindReplaceBar
+      :open="findReplace.open"
+      :find-text="findReplace.findText"
+      :replace-text="findReplace.replaceText"
+      :scope="findReplace.scope"
+      :match-case="findReplace.matchCase"
+      :match-entire-cell="findReplace.matchEntireCell"
+      :current-index="findReplace.currentIndex"
+      :total="findReplace.results.length"
+      :message="findReplace.message"
+      :focus-token="findReplace.focusToken"
+      :locale="coreState.locale"
+      :theme-vars="sheetsOps.toolbarThemeVars"
+      @update:find-text="findReplaceRaw.findText.value = $event"
+      @update:replace-text="findReplaceRaw.replaceText.value = $event"
+      @update:scope="findReplaceRaw.scope.value = $event"
+      @update:match-case="findReplaceRaw.matchCase.value = $event"
+      @update:match-entire-cell="findReplaceRaw.matchEntireCell.value = $event"
+      @prev="findReplaceRaw.findPrev()"
+      @next="findReplaceRaw.findNext()"
+      @replace="findReplaceRaw.replace()"
+      @replace-all="findReplaceRaw.replaceAll()"
+      @close="findReplaceRaw.close()"
     />
 
     <!-- 数字格式配置对话框 -->

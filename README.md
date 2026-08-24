@@ -47,6 +47,7 @@ A high-performance, canvas-based spreadsheet component for Vue 3 — bringing an
 - **Undo / Redo** — Full state snapshots for cells, column widths, and row heights (50 steps)
 - **Format Painter** — Copy & apply cell formatting across ranges
 - **Number Format** — Excel-style number formatting (General / Text / Number / Currency / Accounting / Percent / Scientific / Date / Time / DateTime / Duration) with a custom format dialog; display-only, never mutates the stored cell value
+- **Find & Replace** — Open via the toolbar find button or `Ctrl/Cmd+F` (also `Ctrl/Cmd+H`); three scopes — current sheet / entire workbook / current selection; match case and match entire cell; highlights all matches and locates the active one with wrap-around navigation; single and replace-all both integrate with undo/redo, mutating only the raw `value` (always kept a string), never format / border / merge
 
 ### Interaction
 - **Smart Selection** — Click, drag, Shift+Click, row/column header select, corner-cell select-all
@@ -443,7 +444,7 @@ The project includes a GitHub Actions workflow (`.github/workflows/publish.yml`)
 - [x] Number format (currency, percentage, date, number of decimals) — *see [Number Format](#number-format)*
 - [ ] Conditional formatting rules
 - [ ] Auto-fill drag handle
-- [ ] Find & Replace
+- [x] Find & Replace — *see [Find & Replace](#find--replace)*
 
 ### Mid-term
 
