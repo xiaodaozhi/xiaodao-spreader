@@ -42,7 +42,8 @@ xiaodao-spreader/
             │   └── pickers/
             │       ├── colorPicker.vue
             │       ├── borderPicker.vue
-            │       └── mergePicker.vue
+            │       ├── mergePicker.vue
+            │       └── numberFormatDialog.vue
             ├── composables/
             │   ├── core-state.ts      # Props, cells/merges/selection, font metrics, navigation
             │   ├── undo-styles.ts      # Undo/redo, format painter, font/alignment/color
@@ -53,6 +54,7 @@ xiaodao-spreader/
                 ├── constants.ts       # Layout constants, i18n text, theme color palette
                 ├── types.ts           # All type definitions
                 ├── formula.ts         # Formula engine (parsing, evaluation, dependency tracking)
+                ├── number-format.ts    # Number format engine (Excel-style display formatting)
                 ├── theme.ts           # Theme CSS variable construction
                 └── utils.ts           # Pure utility functions (column label conversion, hit testing, etc.)
 ```
@@ -427,7 +429,7 @@ The `ThemeColors` interface includes:
 
 ### 13.1 Data Layer
 - **More Formulas**: AVERAGE, COUNT, IF, VLOOKUP, etc.
-- **Cell Styles**: `CellData.style` field is already reserved (background color, font, alignment, number format)
+- **Cell Styles**: `CellData.style` field is already reserved (background color, font, alignment, number format) — *number format is now implemented, see Section 15*
 - **Merged Cells**: Extend data model to store merge information
 
 ### 13.2 Rendering Layer
@@ -443,6 +445,50 @@ The `ThemeColors` interface includes:
 ### 13.4 Performance Optimization
 - **OffscreenCanvas + Web Worker**: Offload rendering to worker thread
 - **Dirty Rectangle Redraw**: Currently full redraw, can optimize to redraw only changed areas
+
+---
+
+## 15. 数字格式引擎 (Number Format)
+
+位于 `spreader/core/number-format.ts`，是一套 Excel / Univer 风格的「显示格式化」引擎。
+
+### 15.1 设计原则
+
+- **只负责显示，绝不修改 `Cell.value`**：`Cell.value` 始终保持原始字符串；格式仅影响 Canvas 渲染时的显示文本。
+- **解析结果按格式代码缓存**：`parseNumberFormat()` 内部用 `Map` 缓存，避免 Canvas 每帧重复解析（性能）。
+- **纯函数、不依赖 Vue**：便于测试与复用。
+
+### 15.2 存储
+
+格式代码按单元格存入 `cell.style.numberFormat`（字符串）。存储层约定：
+
+- 不存储该属性 / 空串 = 常规（General）。
+- 文本（Text）= `'@'`。
+- 常规下若原始值能解析为有限数字，按「数值」语义自动决定显示（极大/极小用科学计数法），并默认右对齐。
+
+### 15.3 分类与格式代码
+
+支持 General / Text / Number / Currency / Accounting / Financial / Percent / Scientific / Date / Time / DateTime / Duration / Custom。常用代码见 README「数字格式」章节的对照表。
+
+关键行为：
+
+- **百分比 `%`**：缩放 100 倍（`scale = 100`）。
+- **会计 / 财务**：通过 `;` 分隔的正值/负值/零值区段实现，财务支持 `[Red]` 条件颜色。
+- **日期 / 时间**：单元格值视为 Excel 1900 日期系统的序列号（1 = 1900-01-01，UTC 构造避免时区偏移）。非法序列号（date 超出 [0, 2958465]、duration < 0）返回 `__NF_INVALID__`，渲染端替换为连续 `#` 填充。
+- **持续时间 `[h]:mm:ss`**：总小时数可超过 24。
+
+### 15.4 渲染与对齐
+
+- `formatNumber(value, format, locale)` 是顶层入口，返回显示字符串（绝不修改 value）。
+- `shouldAlignRightByDefault(value, format)`：数值类格式及常规下的有限数字默认右对齐；Text 与常规非数字保持左对齐——与 Excel 一致。
+- `isFormatOverflowsToHashes(format)` / `isInvalidDisplayValue(value, format)`：供渲染端判断是否需要用 `#` 填充。
+- **i18n**：货币符号（`¥` / `$`）、月份与星期名称随 `locale` 变化。
+
+### 15.5 界面
+
+- 工具栏「数字格式」下拉框（`buildNumberFormatPresets`）提供预设：常规、文本、数值、百分比、科学计数、会计、财务、货币、货币取整、日期、时间、日期时间、持续时间，外加「格式…」自定义项（`NF_CUSTOM`）。
+- 「格式…」打开 `numberFormatDialog.vue`，可输入自定义格式代码、设置小数位数与千位分隔符。
+- 选区格式不一致时，`selNumberFormat` 返回 `NF_MIXED`（特殊标记 `0x01`），下拉框显示「混合」。
 
 ---
 

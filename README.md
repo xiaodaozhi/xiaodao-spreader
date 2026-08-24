@@ -24,6 +24,7 @@ A high-performance, canvas-based spreadsheet component for Vue 3 — bringing an
 - [Architecture](#architecture)
 - [Keyboard Shortcuts](#keyboard-shortcuts)
 - [Formula Engine](#formula-engine)
+- [Number Format](#number-format)
 - [Theming](#theming)
 - [Development](#development)
 - [Building](#building)
@@ -45,6 +46,7 @@ A high-performance, canvas-based spreadsheet component for Vue 3 — bringing an
 - **Borders** — Top / bottom / left / right / all / none with 5 predefined styles and custom color
 - **Undo / Redo** — Full state snapshots for cells, column widths, and row heights (50 steps)
 - **Format Painter** — Copy & apply cell formatting across ranges
+- **Number Format** — Excel-style number formatting (General / Text / Number / Currency / Accounting / Percent / Scientific / Date / Time / DateTime / Duration) with a custom format dialog; display-only, never mutates the stored cell value
 
 ### Interaction
 - **Smart Selection** — Click, drag, Shift+Click, row/column header select, corner-cell select-all
@@ -213,7 +215,8 @@ src/
         │   └── pickers/
         │       ├── colorPicker.vue
         │       ├── borderPicker.vue
-        │       └── mergePicker.vue
+        │       ├── mergePicker.vue
+        │       └── numberFormatDialog.vue
         ├── composables/
         │   ├── core-state.ts        # Props, cells/merges/selection, font metrics, navigation
         │   ├── undo-styles.ts       # Undo/redo, format painter, font/alignment/color
@@ -224,6 +227,7 @@ src/
             ├── constants.ts         # Layout constants, i18n, theme palettes
             ├── types.ts             # All type definitions
             ├── formula.ts          # Formula engine (parse, evaluate, deps, cache)
+            ├── number-format.ts    # Number format engine (Excel-style display formatting)
             ├── theme.ts             # Theme CSS variable construction
             └── utils.ts            # Pure utilities (col label, hit test, resolve size)
 ```
@@ -304,6 +308,39 @@ When a cell changes, dirty flags propagate through the reverse graph. Circular r
 ### Reference Offsetting During Paste
 
 `shiftFormulaRefs()` automatically adjusts cell references in formulas when pasting, with `$` absolute reference locking.
+
+---
+
+## Number Format
+
+An Excel-style number formatting engine (`spreader/core/number-format.ts`) that controls **how a cell value is displayed** — it never mutates the stored `value` (which always remains a raw string).
+
+### Categories
+
+| Category | Example display | Format code |
+|----------|-----------------|-------------|
+| General | Auto (numbers, sci-notation for very large/small) | `` (empty) |
+| Text | Verbatim | `@` |
+| Number | `1,234.56` | `#,##0.00` |
+| Percent | `12.34%` | `0.00%` |
+| Scientific | `1.23E+03` | `0.00E+00` |
+| Currency | `¥1,234.56` / `$1,234.56` | `¥#,##0.00` |
+| Currency (rounded) | `¥1,235` | `¥#,##0` |
+| Accounting | `(¥1,234.56)` for negatives | `¥#,##0.00;(¥#,##0.00);¥"-"` |
+| Financial | `[Red](#,##0.00)` for negatives | `#,##0.00;[Red](#,##0.00)` |
+| Date | `2026年8月24日` / `8/24/2026` | `yyyy"年"m"月"d"日"` |
+| Time | `13:45:30` | `h:mm:ss` |
+| Date & Time | `2026年8月24日 13:45:30` | `yyyy"年"m"月"d"日" h:mm:ss` |
+| Duration | `26:30:00` | `[h]:mm:ss` |
+| Custom | User-defined Excel-style code | — |
+
+### How it works
+
+- **Storage**: the format code is stored per-cell in `cell.style.numberFormat` (a string). Omitting the property (or empty string) means General.
+- **UI**: the toolbar number-format dropdown applies presets to the current selection; the **「Format…」(格式…)** item opens `numberFormatDialog.vue` for a custom code, decimals, and thousands separator.
+- **Display**: `formatNumber(value, format, locale)` parses the code (cached), applies thousands separators / decimals / percent scaling / date-serial conversion, and returns the display string. Invalid date/duration serials render as `###`.
+- **Alignment**: numeric formats default to right-aligned; Text and General-with-non-numeric keep left alignment — matching Excel semantics.
+- **i18n**: currency symbol (`¥` / `$`), month and weekday names follow the `locale` prop.
 
 ---
 
@@ -399,7 +436,7 @@ The project includes a GitHub Actions workflow (`.github/workflows/publish.yml`)
 
 - [ ] More formulas: `COUNT`, `IF`, `VLOOKUP`, `CONCATENATE`
 - [ ] Cell background color picker
-- [ ] Number format (currency, percentage, date, number of decimals)
+- [x] Number format (currency, percentage, date, number of decimals) — *see [Number Format](#number-format)*
 - [ ] Conditional formatting rules
 - [ ] Auto-fill drag handle
 - [ ] Find & Replace
