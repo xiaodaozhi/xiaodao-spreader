@@ -6,7 +6,7 @@ import SpDropdown from './dropdown.vue';
 import ColorPicker from './pickers/colorPicker.vue';
 import BorderPicker, { type BorderType } from './pickers/borderPicker.vue';
 import MergePicker from './pickers/mergePicker.vue';
-import CalcPicker, { type CalcType } from './pickers/calcPicker.vue';
+import CalcPicker from './pickers/calcPicker.vue';
 
 // 田字型边框按钮图标：4 个外边 + 1 条竖中线 + 1 条横中线（与 borderPicker.vue 保持一致）
 interface BorderSeg { name: string; x1: number; y1: number; x2: number; y2: number }
@@ -258,14 +258,13 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  (e: 'undo' | 'redo' | 'paint-format' | 'clear-format' | 'font-size-blur' | 'font-size-toggle' | 'font-size-step-up' | 'font-size-step-down' | 'bold-toggle' | 'italic-toggle' | 'underline-toggle' | 'strikethrough-toggle' | 'apply-text-color' | 'apply-fill-color' | 'apply-border' | 'wrap-toggle' | 'apply-merge'): void;
+  (e: 'undo' | 'redo' | 'paint-format' | 'clear-format' | 'font-size-blur' | 'font-size-toggle' | 'font-size-step-up' | 'font-size-step-down' | 'bold-toggle' | 'italic-toggle' | 'underline-toggle' | 'strikethrough-toggle' | 'apply-text-color' | 'apply-fill-color' | 'apply-border' | 'wrap-toggle' | 'apply-merge' | 'calc-sum' | 'calc-avg'): void;
   (e: 'font-family-change' | 'font-size-change' | 'h-align-change' | 'v-align-change', v: string | number): void;
   (e: 'font-size-input' | 'text-color-change' | 'fill-color-change', v: string): void;
   (e: 'font-size-keydown', ev: KeyboardEvent): void;
   (e: 'update:font-size-menu-open' | 'update:text-color-menu-open' | 'update:fill-color-menu-open' | 'update:border-menu-open' | 'update:merge-menu-open' | 'update:calc-menu-open', v: boolean): void;
   (e: 'border-change', v: BorderType): void;
   (e: 'merge-change', v: MergeType): void;
-  (e: 'calc-sum' | 'calc-avg'): void;
 }>();
 </script>
 
