@@ -207,6 +207,13 @@ function toggleOverflow() {
   overflowOpen.value = !overflowOpen.value;
 }
 
+// 点击溢出菜单中的「查找」项：触发查找后自动关闭溢出菜单
+// （其它菜单项多因状态变更触发 recompute 间接关闭，查找仅打开子面板不改动布局，需显式关闭）
+function onFindClick() {
+  overflowOpen.value = false;
+  emit('find');
+}
+
 onMounted(() => {
   scheduleRecompute();
   if (rootEl.value) {
@@ -1021,7 +1028,7 @@ const nfFallbackLabel = computed(() =>
         <button
           class="toolbar-btn"
           :title="t(locale, 'find')"
-          @click="emit('find')"
+          @click="onFindClick"
         >
           <svg
             class="toolbar-btn__icon"
