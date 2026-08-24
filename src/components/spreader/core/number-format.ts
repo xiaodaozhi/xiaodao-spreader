@@ -13,10 +13,28 @@ import { t } from './constants';
 export const NF_CUSTOM = '__nf_custom__';
 // 选区格式不一致时的特殊标记
 export const NF_MIXED = '\u0001';
-// 常规（General）对应的空格式代码
+// 常规（General）对应的格式代码：空串。没有 numberFormat 属性 = 常规。
+// 存储层：不存储/删除属性即常规，与空串语义一致。
+// 显示层：formatNumber 的 General 分支做"自动格式化"（见 formatGeneral）。
 export const NF_GENERAL = '';
 // 文本（Text）对应的格式代码
 export const NF_TEXT = '@';
+/**
+ * formatNumber 的特殊返回值：表示"当前格式+数值组合在 Excel 语义下非法"，
+ * 例如 date 格式 序列号<0/≥2958466、duration 格式 序列号<0。
+ * 渲染端必须把该字符串按列宽替换为连续 '#' 填充（不显示此标识符本身）。
+ */
+export const NF_INVALID_VALUE = '__NF_INVALID__';
+/** Excel 1900 日期系统最大合法序列号（对应 9999-12-31）。超过或为负 → 整格 ###。 */
+export const EXCEL_DATE_MAX_SERIAL = 2958465;
+/** Excel 1900 日期系统最小合法序列号（0 = 1900-01-00，作为下界兜底，实际 UI 一般从 1 开始）。 */
+export const EXCEL_DATE_MIN_SERIAL = 0;
+
+/** 判断格式代码是否为 General（含空串、undefined、'General'、'GENERAL' 等） */
+export function isGeneralFormat(format: string | undefined | null): boolean {
+  if (format == null || format === '') return true;
+  return format.toUpperCase() === 'GENERAL';
+}
 
 export type NFKind = 'general' | 'text' | 'number' | 'date' | 'duration';
 
@@ -94,22 +112,6 @@ function unquote(s: string): string {
   return s.replace(/"([^"]*)"/g, '$1');
 }
 
-/** 千分位分组 */
-function groupThousands(intStr: string): string {
-  if (intStr.length <= 3) return intStr;
-  const neg = intStr.startsWith('-');
-  const body = neg ? intStr.slice(1) : intStr;
-  const parts: string[] = [];
-  let i = body.length;
-  while (i > 3) {
-    parts.unshift(body.slice(i - 3, i));
-    i -= 3;
-  }
-  parts.unshift(body.slice(0, i));
-  const grouped = parts.join(',');
-  return neg ? '-' + grouped : grouped;
-}
-
 // ============ 数值区段解析 ============
 function parseNumSection(raw: string): NFSection {
   let s = raw;
@@ -121,30 +123,48 @@ function parseNumSection(raw: string): NFSection {
   }
   s = stripAlignHints(s);
 
-  const isSci = /E[+-]/.test(s);
+  const isSci = /E[+-]/i.test(s);
   const isPct = s.includes('%');
 
   const firstIdx = s.search(/[0#?]/);
+
+  // 无数字占位符：整段为字面量（如会计专用的 $ "-" 或 "N/A"）
+  if (firstIdx === -1) {
+    return {
+      hasDigits: false, decimals: 0, minDecimals: 0, minIntDigits: 0,
+      thousands: false, scale: isPct ? 100 : 1, scientific: false,
+      prefix: s, suffix: '', color,
+    };
+  }
+
+  // % 不作为数字占位符，落入 suffix（放大 100 倍由 scale 负责）
   let lastIdx = -1;
   for (let i = s.length - 1; i >= 0; i--) {
     const ch = s[i]!;
-    if (ch === '0' || ch === '#' || ch === '?' || ch === 'E' || ch === '%') {
+    if (ch === '0' || ch === '#' || ch === '?' || ch === 'E') {
       lastIdx = i;
       break;
     }
   }
+  if (lastIdx < 0) lastIdx = firstIdx;
 
   const prefix = firstIdx > 0 ? s.slice(0, firstIdx) : '';
-  const suffix = lastIdx >= 0 && lastIdx < s.length - 1 ? s.slice(lastIdx + 1) : '';
-  const core = firstIdx >= 0 && lastIdx >= 0 ? s.slice(firstIdx, lastIdx + 1) : '';
+  const suffix = lastIdx < s.length - 1 ? s.slice(lastIdx + 1) : '';
+  const core = s.slice(firstIdx, lastIdx + 1);
 
   const hasDigits = /[0#?]/.test(core);
 
   const thousands = core.includes(',');
   const coreNoComma = core.replace(/,/g, '');
-  const dotIdx = coreNoComma.indexOf('.');
-  const intPart = dotIdx >= 0 ? coreNoComma.slice(0, dotIdx) : coreNoComma;
-  const fracPart = dotIdx >= 0 ? coreNoComma.slice(dotIdx + 1) : '';
+  // 科学计数法：小数位仅取尾数（E 之前），避免把指数占位符计入
+  let mantissa = coreNoComma;
+  if (isSci) {
+    const eIdx = mantissa.search(/E/i);
+    if (eIdx >= 0) mantissa = mantissa.slice(0, eIdx);
+  }
+  const dotIdx = mantissa.indexOf('.');
+  const intPart = dotIdx >= 0 ? mantissa.slice(0, dotIdx) : mantissa;
+  const fracPart = dotIdx >= 0 ? mantissa.slice(dotIdx + 1) : '';
 
   const decimals = (fracPart.match(/[0#?]/g) || []).length;
   const minDecimals = (fracPart.match(/0/g) || []).length;
@@ -269,6 +289,13 @@ export function clearNumberFormatCache(): void {
 }
 
 // ============ 数值格式化 ============
+/**
+ * 按 0/#/? 占位符格式化非科学计数的数字。
+ * —— 使用 Intl.NumberFormat 代替手写 String(abs).split('.')：
+ *    Number.toString 对 abs ≥ 1e+21 / < 1e-6 会强制输出科学计数字符串（如 1.1111111111111111e+24），
+ *    直接 split('.') 会得到错误的 intPart 和带 'e' 的 fracPart，显示成"小写 e + 16 位小数"的垃圾字符串。
+ *    Intl.NumberFormat 的 format() 始终按"完整十进制"输出（大数不转科学计数），正好匹配 Excel 的 #,##0.00 / 0 / #,##0 等格式。
+ */
 function formatFixed(
   n: number,
   decimals: number,
@@ -280,24 +307,29 @@ function formatFixed(
   const rounded = Math.round((n + Number.EPSILON) * factor) / factor;
   const neg = rounded < 0;
   const abs = Math.abs(rounded);
-  let [intPart, fracPart = ''] = String(abs).split('.');
-  intPart = intPart || '0';
 
-  if (intPart.length < minIntDigits) {
-    intPart = '0'.repeat(minIntDigits - intPart.length) + intPart;
+  // 1) 先用 Intl.NumberFormat 得到完整整数形式 + 精确小数位 + 千分位 + minIntDigits（这里 maximumFractionDigits = decimals 刚好对应 0/#/? 的"允许最多小数位"）
+  const nf = new Intl.NumberFormat('en-US', {
+    useGrouping: thousands,
+    minimumIntegerDigits: minIntDigits,
+    minimumFractionDigits: decimals,       // 先按"最多小数位"全部补 0 到 decimals 位
+    maximumFractionDigits: decimals,
+  });
+  let s = nf.format(abs);
+  // 2) 若 minDecimals < decimals（存在 # 占位允许去尾 0），去掉多余尾随 0，保留至少 minDecimals 位
+  if (minDecimals < decimals && decimals > 0) {
+    // 分离整数部分与小数部分（Intl.NumberFormat en-US 的小数分隔符一定是 '.'）
+    const dotIdx = s.indexOf('.');
+    if (dotIdx >= 0) {
+      const intP = s.substring(0, dotIdx);
+      let fracP = s.substring(dotIdx + 1);
+      fracP = fracP.replace(/0+$/, '');
+      if (fracP.length < minDecimals) fracP = fracP + '0'.repeat(minDecimals - fracP.length);
+      s = fracP ? `${intP}.${fracP}` : intP;
+    }
   }
-  if (thousands) intPart = groupThousands(intPart);
-
-  // 补齐到最大小数位
-  if (fracPart.length < decimals) fracPart = fracPart + '0'.repeat(decimals - fracPart.length);
-  // 若允许省略尾随 0（存在 #），则去掉多余 0，但保留 minDecimals
-  if (minDecimals < decimals) {
-    fracPart = fracPart.replace(/0+$/, '');
-    if (fracPart.length < minDecimals) fracPart = fracPart + '0'.repeat(minDecimals - fracPart.length);
-  }
-
   const sign = neg ? '-' : '';
-  return fracPart ? `${sign}${intPart}.${fracPart}` : `${sign}${intPart}`;
+  return `${sign}${s}`;
 }
 
 function formatScientific(n: number, decimals: number): string {
@@ -454,6 +486,32 @@ function formatDuration(serial: number, tokens: NFToken[]): string {
   return out;
 }
 
+// ============ General 自动格式化 ============
+/**
+ * General 格式：不主动规定显示格式，由 Formatter 根据内容自动决定。
+ * - 纯数字：按自然形式显示（超大/超小用科学计数法，便于阅读）
+ * - 非数字：原样显示
+ * 这是"自动格式化"入口，科学计数法严格按 Excel 风格：
+ *  - 大写 E
+ *  - 有效数字位数限制在 9 位以内（避免 .toExponential() 原始输出 16 位小数，失去科学计数可读性）
+ *  - 指数部分为负数时显示为 E-##、正数时显示为 E+##（带正号 + 最少 2 位，前导 0）
+ */
+function formatGeneral(value: string): string {
+  if (value === '') return value;
+  const num = Number(value);
+  if (!isNaN(num) && value.trim() !== '') {
+    const abs = Math.abs(num);
+    // 超大/超小数字 → 科学计数法（阈值对齐 Excel General：绝对值 ≥ 1e15 或 < 1e-9）
+    if (abs !== 0 && (abs >= 1e15 || abs < 1e-9)) {
+      return formatScientific(num, 9);
+    }
+    // 数字的自然形式：保留原始字符串（用户输入什么就显示什么）
+    return value;
+  }
+  // 非数字：原样显示
+  return value;
+}
+
 // ============ 顶层入口 ============
 /**
  * 将单元格原始字符串值按格式代码格式化为显示文本。
@@ -464,14 +522,20 @@ export function formatNumber(
   format: string | undefined | null,
   locale: string,
 ): string {
-  if (format == null || format === '' || format.toUpperCase() === 'GENERAL') return value;
-  if (format === NF_TEXT) return value;
+  if (isGeneralFormat(format)) return formatGeneral(value);
+  if (format == null || format === NF_TEXT) return value;
 
   const parsed = parseNumberFormat(format);
 
   if (parsed.kind === 'date' || parsed.kind === 'duration') {
     const serial = Number(value);
-    if (!isFinite(serial)) return value; // 无法解析 → 回退原始字符串
+    if (!isFinite(serial)) return value; // 非数值 → 回退原始字符串
+    // 非法值：date 超出 [0, 2958465]；duration < 0（持续时间不能负，除非自定义了负号文本区段，当前实现不支持负 duration）
+    if (parsed.kind === 'date') {
+      if (serial < EXCEL_DATE_MIN_SERIAL || serial > EXCEL_DATE_MAX_SERIAL) return NF_INVALID_VALUE;
+    } else if (serial < 0) {
+      return NF_INVALID_VALUE;
+    }
     return parsed.kind === 'duration'
       ? formatDuration(serial, parsed.tokens)
       : formatDateTokens(serialToDate(serial), parsed.tokens, locale, serial);
@@ -485,13 +549,82 @@ export function formatNumber(
 
 // ============ 预设 / 对话框辅助 ============
 export type NFDialogCategory
-  = | 'general' | 'number' | 'currency' | 'accounting'
-    | 'financial' | 'percent' | 'scientific' | 'date' | 'time' | 'text';
+  = | 'general' | 'number' | 'currency' | 'currencyRounded' | 'accounting'
+    | 'financial' | 'percent' | 'scientific' | 'date' | 'time' | 'dateTime'
+    | 'duration' | 'text' | 'custom';
 
 export const NF_DIALOG_CATEGORIES: NFDialogCategory[] = [
-  'general', 'number', 'currency', 'accounting',
-  'financial', 'percent', 'scientific', 'date', 'time', 'text',
+  'general', 'number', 'currency', 'currencyRounded', 'accounting',
+  'financial', 'percent', 'scientific', 'date', 'time', 'dateTime',
+  'duration', 'text', 'custom',
 ];
+
+/**
+ * 判断单元格在「未指定水平对齐」时，是否应该按「数值」默认右对齐显示。
+ * 规则（与 Excel 对齐语义保持一致，仅用于显示，不写入存储）：
+ *   1. 格式代码为 '@'（文本）→ 否，保持左对齐
+ *   2. 常规格式（含空串 / undefined / 'General'）：对原始 value 做 Number() 解析，
+ *      能解析为有限数字且非空字符串 → 视为数值 → 右对齐
+ *   3. 显式设置为数值类格式（number/currency/currencyRounded/accounting/financial/
+ *      percent/scientific 以及 custom 中分类属于数值 kind 并含数字占位符）→ 右对齐
+ *   4. 日期、时间、日期时间、持续时间 → 不算数值（按 Excel 默认左对齐或居中，这里保持左对齐默认）
+ *   5. 其他 custom 中无法判断的 → 回退左对齐
+ */
+export function shouldAlignRightByDefault(
+  value: string,
+  format: string | undefined | null,
+): boolean {
+  if (format === NF_TEXT || format === '@') return false;
+  if (isGeneralFormat(format)) {
+    if (value == null || value === '' || value.trim() === '') return false;
+    const n = Number(value);
+    return !Number.isNaN(n) && Number.isFinite(n);
+  }
+  const parsed = parseNumberFormat(format!);
+  if (parsed.kind === 'number' && hasDigitPlaceholder(parsed)) return true;
+  return false;
+}
+
+/** 在 parsed.sections 中是否含有至少一个数字占位符（0/#/?） */
+function hasDigitPlaceholder(parsed: NFParsed): boolean {
+  return parsed.sections.some((sec) => sec.hasDigits);
+}
+
+/**
+ * 当前格式在列宽不足时，是否按 Excel 规则替换为连续 '#' 填充：
+ * - General / 文本 '@' / 未设置 → 不会（General 自动科学计数或允许裁切；文本就是原样裁切）
+ * - date / duration 类格式 → 是
+ * - number 类格式且含有数字占位符 → 是
+ * - 纯文本区段的自定义 number（如"前缀"无 0/#/?）→ 按纯文本，不需要 #
+ */
+export function isFormatOverflowsToHashes(format: string | undefined | null): boolean {
+  if (format == null) return false;
+  if (isGeneralFormat(format)) return false;
+  if (format === NF_TEXT || format === '@') return false;
+  const p = parseNumberFormat(format);
+  if (p.kind === 'date' || p.kind === 'duration') return true;
+  if (p.kind === 'number' && hasDigitPlaceholder(p)) return true;
+  return false;
+}
+
+/**
+ * 对给定 (value, format) 快速判断是否是 Excel 语义下的"非法值"（需要渲染为 # 填充）。
+ * 主要用于渲染端直接复用，避免再次 parseNumberFormat。
+ */
+export function isInvalidDisplayValue(
+  value: string,
+  format: string | undefined | null,
+): boolean {
+  if (format == null) return false;
+  if (isGeneralFormat(format)) return false;
+  if (format === NF_TEXT || format === '@') return false;
+  const p = parseNumberFormat(format);
+  const serial = Number(value);
+  if (!Number.isFinite(serial)) return false;
+  if (p.kind === 'date') return serial < EXCEL_DATE_MIN_SERIAL || serial > EXCEL_DATE_MAX_SERIAL;
+  if (p.kind === 'duration') return serial < 0;
+  return false;
+}
 
 /** 根据分类 + 小数位数 + 千位分隔符生成格式代码 */
 export function buildNumberFormatCode(
@@ -507,11 +640,13 @@ export function buildNumberFormatCode(
 
   switch (category) {
     case 'general': return '';
-    case 'text': return '@';
+    case 'text': return NF_TEXT;
+    case 'custom': return ''; // custom 直接由用户写入 customCode，不从控件生成
     case 'number': return base;
     case 'percent': return base + '%';
     case 'scientific': return '0.' + '0'.repeat(decimals) + 'E+00';
     case 'currency': return sym + base;
+    case 'currencyRounded': return sym + (thousands ? '#,##0' : '0'); // 强制取整
     case 'accounting':
       return `${sym}${base};(${sym}${base});${sym}"-"`;
     case 'financial':
@@ -520,6 +655,12 @@ export function buildNumberFormatCode(
       return locale === 'zh-CN' ? 'yyyy"年"m"月"d"日"' : 'm/d/yyyy';
     case 'time':
       return 'h:mm:ss';
+    case 'dateTime':
+      return locale === 'zh-CN'
+        ? 'yyyy"年"m"月"d"日" h:mm:ss'
+        : 'm/d/yyyy h:mm:ss';
+    case 'duration':
+      return '[h]:mm:ss';
     default:
       return '';
   }

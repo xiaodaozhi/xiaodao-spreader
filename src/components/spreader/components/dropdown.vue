@@ -13,6 +13,8 @@ const props = withDefaults(defineProps<{
   hideTrigger?: boolean;
   align?: 'left' | 'right';
   triggerEl?: HTMLElement | null;
+  /** 当前值未命中任何选项时触发器显示的占位文本（如选区格式不一致时的「混合」） */
+  fallbackLabel?: string;
 }>(), {
   width: 'auto',
   menuWidth: undefined,
@@ -22,6 +24,7 @@ const props = withDefaults(defineProps<{
   hideTrigger: false,
   align: 'left',
   triggerEl: null,
+  fallbackLabel: '',
 });
 
 const emit = defineEmits<{
@@ -198,7 +201,7 @@ onBeforeUnmount(() => {
       <span
         v-else
         class="sp-dropdown__value"
-      >{{ current?.label ?? '' }}</span>
+      >{{ current?.label ?? fallbackLabel }}</span>
       <svg
         class="sp-dropdown__caret"
         viewBox="0 0 1024 1024"

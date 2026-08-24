@@ -1,7 +1,16 @@
 import { ref, reactive, computed, watchEffect, type ComputedRef, type Ref } from 'vue';
 import { HEADER_HEIGHT, HEADER_WIDTH, SB_SIZE, DEFAULT_COL_WIDTH, DEFAULT_ROW_HEIGHT, MAX_ROW_HEIGHT, DEFAULT_FONT_FAMILY, DEFAULT_FONT_SIZE } from '../core/constants';
 import { FormulaDeps, clearEvalCache, computeCellValue, parseFormulaRefs } from '../core/formula';
+import { formatNumber } from '../core/number-format';
 import type { CellCoord, CellData, SelectionRange } from '../core/types';
+
+/** 选区触发方式，影响「合并单元格是否扩大选区」。
+ *  - 'cell'：单元格点击/拖动（默认）→ 保持现有 expandSelectionForMerges 行为
+ *  - 'row' ：行头点击/拖动 → Excel 风格「穿透」合并，选区矩形保持用户点击的行范围
+ *  - 'col' ：列头点击/拖动 → 同上，选区矩形保持用户点击的列范围
+ *  - 'all' ：左上角全选按钮 → expandSelectionForMerges 行为
+ */
+export type SelectionMode = 'cell' | 'row' | 'col' | 'all';
 
 // ============ 共享 State 接口 ============
 export interface CoreState {
@@ -50,9 +59,12 @@ export interface CoreState {
 
   // 选区操作
   selectCell: (c: number, r: number) => void;
-  selectRange: (sC: number, sR: number, eC: number, eR: number) => void;
+  selectRange: (sC: number, sR: number, eC: number, eR: number, mode?: SelectionMode) => void;
   selectAll: () => void;
   isSelected: (c: number, r: number) => boolean;
+  /** 渲染高亮专用：整行/整列选择模式下「穿透」合并单元格，仅判断 (c,r) 自身是否在选区矩形内 */
+  isCellSelected: (c: number, r: number) => boolean;
+  selectionMode: Ref<SelectionMode>;
   cellKey: (c: number, r: number) => string;
   delCell: (k: string) => void;
 
@@ -130,6 +142,7 @@ export function createCoreState(
   const merges = reactive<Record<string, SelectionRange>>({});
   const formulaDeps = new FormulaDeps();
   const selection = ref<SelectionRange | null>(null);
+  const selectionMode = ref<SelectionMode>('cell');
   const activeCell = ref<CellCoord>({ col: 0, row: 0 });
   const editingCell = ref<CellCoord | null>(null);
   const editValue = ref('');
@@ -150,20 +163,41 @@ export function createCoreState(
     const cached = fontMetricsCache.get(key);
     if (cached) return cached;
     if (!fontMetricsCanvas) {
-      if (typeof document === 'undefined') return { ascent: size * 0.8, descent: size * 0.2 };
+      if (typeof document === 'undefined') return { ascent: size * 0.88, descent: size * 0.28 };
       fontMetricsCanvas = document.createElement('canvas');
     }
     const ctx = fontMetricsCanvas.getContext('2d');
-    if (!ctx) return { ascent: size * 0.8, descent: size * 0.2 };
+    if (!ctx) return { ascent: size * 0.88, descent: size * 0.28 };
     ctx.font = key;
-    const m = ctx.measureText('M');
-    const rawAsc = m.actualBoundingBoxAscent;
-    const rawDesc = m.actualBoundingBoxDescent;
-    const ascent = rawAsc || size * 0.8;
-    const descent = rawDesc || size * 0.2;
-    const a = Math.max(ascent, size * 0.5);
-    const d = Math.max(descent, size * 0.15);
-    const result = { ascent: a, descent: d };
+
+    // 1) 优先使用 TextMetrics.fontBoundingBoxAscent / Descent —— 这是字体级别的、
+    //    与具体文本内容无关的「字体全包围盒」度量，能统一覆盖拉丁、CJK、
+    //    组合重音、下标字母等所有字形，避免纯英文 vs 含中文 ascent 不一致。
+    const probe = ctx.measureText(' ');
+    const fbAsc = (probe as unknown as { fontBoundingBoxAscent?: number }).fontBoundingBoxAscent;
+    const fbDesc = (probe as unknown as { fontBoundingBoxDescent?: number }).fontBoundingBoxDescent;
+    if (typeof fbAsc === 'number' && typeof fbDesc === 'number' && fbAsc > 0 && fbDesc > 0) {
+      const result = { ascent: fbAsc, descent: fbDesc };
+      fontMetricsCache.set(key, result);
+      return result;
+    }
+
+    // 2) 浏览器不支持 fontBoundingBox 时：使用多字符取最大联合包围盒，
+    //    涵盖大写拉丁 (M)、CJK 表意字 (中)、下伸小写 (y)、重音大写 (Ä)、
+    //    全宽数字 (０)，逼近真实字体最大升/降部。
+    const probes = ['M', '中', 'y', '\u00c4', '\uff10'];
+    let bestAsc = 0;
+    let bestDesc = 0;
+    for (const p of probes) {
+      const m = ctx.measureText(p);
+      const a = (m.actualBoundingBoxAscent || 0);
+      const d = (m.actualBoundingBoxDescent || 0);
+      if (a > bestAsc) bestAsc = a;
+      if (d > bestDesc) bestDesc = d;
+    }
+    const ascent = Math.max(bestAsc, size * 0.88);
+    const descent = Math.max(bestDesc, size * 0.28);
+    const result = { ascent, descent };
     fontMetricsCache.set(key, result);
     return result;
   }
@@ -236,33 +270,33 @@ export function createCoreState(
     const h = rowHeights.value[r];
     if (h !== undefined && h !== null && h > 0) return h;
     let maxFs = DEFAULT_FONT_SIZE;
-    let maxAsc = maxFs * 0.8;
-    let maxDesc = maxFs * 0.2;
-    let maxLines = 1;
+    let maxAsc: number;
+    let maxDesc: number;
+    let maxLines: number = 1;
     const ctx = fontMetricsCanvas ? fontMetricsCanvas.getContext('2d') : null;
+    // 先用默认字号的统一度量做初值，避免该行全部无内容时度量为 0
+    const defMetrics = measureFontMetrics(DEFAULT_FONT_FAMILY, DEFAULT_FONT_SIZE, 'normal', 'normal');
+    maxAsc = defMetrics.ascent;
+    maxDesc = defMetrics.descent;
     for (let c = 0; c < colCount; c++) {
       const fs = cellFontSize(c, r);
       const st = cells[cellKeyFn(c, r)]?.style;
       const ffa = typeof st?.fontFamily === 'string' && st.fontFamily ? st.fontFamily : DEFAULT_FONT_FAMILY;
       const fw = st?.fontWeight === 'bold' ? 'bold' : 'normal';
       const fstyle = st?.fontStyle === 'italic' ? 'italic' : 'normal';
-      const v = getCellValue(c, r);
-      if (v && ctx) {
-        ctx.font = `${fstyle} ${fw} ${fs}px ${ffa}`;
-        const firstLine = v.split('\n')[0] || v;
-        const m = ctx.measureText(firstLine);
-        const rawAsc = m.actualBoundingBoxAscent;
-        const rawDesc = m.actualBoundingBoxDescent;
-        const a = rawAsc || fs * 0.8;
-        const d = rawDesc || fs * 0.2;
-        const cellAsc = Math.max(a, fs * 0.5);
-        const cellDesc = Math.max(d, fs * 0.15);
-        if (cellAsc > maxAsc) maxAsc = cellAsc;
-        if (cellDesc > maxDesc) maxDesc = cellDesc;
-        if (fs > maxFs) maxFs = fs;
+      // 使用统一字体度量（内容无关），保证纯英文和含中文单元格使用同一 ascent/descent
+      const metrics = measureFontMetrics(ffa, fs, fw, fstyle);
+      if (metrics.ascent > maxAsc) maxAsc = metrics.ascent;
+      if (metrics.descent > maxDesc) maxDesc = metrics.descent;
+      if (fs > maxFs) maxFs = fs;
+      const nf = typeof st?.numberFormat === 'string' ? st.numberFormat : '';
+      const rawV = getCellValue(c, r);
+      const v = formatNumber(rawV, nf, locale.value);
+      if (v) {
         const stWrap = st?.wrap === 'wrap';
         let cellLines: number;
-        if (stWrap) {
+        if (stWrap && ctx) {
+          ctx.font = `${fstyle} ${fw} ${fs}px ${ffa}`;
           const mergeInfo = findMergeFn(c, r);
           let wrapWidth: number;
           if (mergeInfo && c === mergeInfo.range.startCol && r === mergeInfo.range.startRow) {
@@ -277,14 +311,11 @@ export function createCoreState(
           cellLines = v.split('\n').length;
           if (cellLines > maxLines) maxLines = cellLines;
         }
-      } else if (fs > maxFs) {
-        maxFs = fs;
-        const metrics = measureFontMetrics(ffa, fs, fw, fstyle);
-        if (metrics.ascent > maxAsc) maxAsc = metrics.ascent;
-        if (metrics.descent > maxDesc) maxDesc = metrics.descent;
       }
     }
-    const lineH = maxFs;
+    // 自动行高公式：BASE_CELL_VPAD*2 + n*(ascent + descent)
+    // 必须与 Canvas 渲染使用的 lineH 保持一致，避免文字被截断或空白过大
+    const lineH = maxAsc + maxDesc;
     const calculated = BASE_CELL_VPAD * 2 + maxLines * lineH;
     const finalHeight = Math.min(MAX_ROW_HEIGHT, Math.max(DEFAULT_ROW_HEIGHT, Math.round(calculated)));
     return finalHeight;
@@ -315,6 +346,7 @@ export function createCoreState(
   }
 
   function selectCell(c: number, r: number) {
+    selectionMode.value = 'cell';
     const m = findMergeFn(c, r);
     if (m) {
       activeCell.value = { col: m.range.startCol, row: m.range.startRow };
@@ -325,19 +357,44 @@ export function createCoreState(
     }
   }
 
-  function selectRange(sC: number, sR: number, eC: number, eR: number) {
+  function selectRange(sC: number, sR: number, eC: number, eR: number, mode: SelectionMode = 'cell') {
     const m = findMergeFn(sC, sR);
+    // activeCell 仍然锚定到合并格起点（进入焦点等行为保持不变）
     activeCell.value = m ? { col: m.range.startCol, row: m.range.startRow } : { col: sC, row: sR };
-    selection.value = expandSelectionForMergesFn(sC, sR, eC, eR);
+    selectionMode.value = mode;
+    if (mode === 'row' || mode === 'col') {
+      // 整行 / 整列选择：Excel 风格「穿透合并单元格」，
+      // 选区矩形严格保持用户点击的行列范围，不因为交叉的合并格而扩大。
+      const minC = Math.min(sC, eC);
+      const maxC = Math.max(sC, eC);
+      const minR = Math.min(sR, eR);
+      const maxR = Math.max(sR, eR);
+      selection.value = { startCol: minC, startRow: minR, endCol: maxC, endRow: maxR };
+    } else {
+      selection.value = expandSelectionForMergesFn(sC, sR, eC, eR);
+    }
   }
 
   function selectAll() {
-    selectRange(0, 0, colCount - 1, rowCount - 1);
+    selectRange(0, 0, colCount - 1, rowCount - 1, 'all');
   }
 
   function isSelected(c: number, r: number) {
     const s = selection.value;
-    return s ? c >= s.startCol && c <= s.endCol && r >= s.startRow && r <= s.endRow : false;
+    if (!s) return false;
+    // 'cell' / 'all' 模式：选区矩形已经 expand 过合并格，普通矩形判断即可。
+    // （合并格 expand 后其整个范围都在选区内，因此对 anchor 与其他格子都自然返回 true）
+    if (selectionMode.value === 'cell' || selectionMode.value === 'all') {
+      return c >= s.startCol && c <= s.endCol && r >= s.startRow && r <= s.endRow;
+    }
+    // 'row' / 'col' 模式：选区矩形没有被 expand，判断「穿透」合并格 ——
+    // 单元格自身坐标落在矩形内即视为选中，不再要求整个合并格覆盖到矩形。
+    return c >= s.startCol && c <= s.endCol && r >= s.startRow && r <= s.endRow;
+  }
+
+  /** 渲染高亮专用：与 isSelected 语义一致，方便未来区分 anchor-cell 整格填充等特殊场景。 */
+  function isCellSelected(c: number, r: number) {
+    return isSelected(c, r);
   }
 
   // ============ 合并单元格：辅助函数 ============
@@ -460,7 +517,11 @@ export function createCoreState(
   function startEdit(initialValue?: string) {
     if (!editingCell.value) {
       editingCell.value = { ...activeCell.value };
-      editValue.value = initialValue ?? getCellRaw(activeCell.value.col, activeCell.value.row);
+      if (initialValue !== undefined) {
+        editValue.value = initialValue;
+      } else if (!editValue.value) {
+        editValue.value = getCellRaw(activeCell.value.col, activeCell.value.row);
+      }
     }
   }
 
@@ -579,6 +640,8 @@ export function createCoreState(
     selectRange,
     selectAll,
     isSelected,
+    isCellSelected,
+    selectionMode,
     cellKey,
     delCell,
 

@@ -101,10 +101,10 @@ const nameBase = {
 } as const;
 
 // ---- 数据生成 ----
-const classNames = ['高一(1)班', '高一(2)班', '高一(3)班', '高一(4)班', '高一(5)班'];
-const leaderRoles = ['班长', '副班长', '学习委员', '纪律委员', '体育委员', '文艺委员', '生活委员', '宣传委员'];
-const surnames = ['王', '李', '张', '刘', '陈', '杨', '黄', '赵', '吴', '周', '徐', '孙', '马', '朱', '胡', '郭', '何', '高', '林', '罗', '郑', '梁', '谢', '宋', '唐', '许', '韩', '冯', '邓', '曹', '彭', '曾', '肖', '田', '董', '袁', '潘', '于', '蒋', '蔡'];
-const givenNames = ['伟', '芳', '娜', '敏', '静', '丽', '强', '磊', '军', '洋', '勇', '艳', '杰', '娟', '涛', '明', '超', '霞', '平', '刚', '桂', '英', '华', '慧', '建', '飞', '鹏', '宇', '俊', '婷', '梅', '琳', '斌', '倩', '晓', '宁', '峰', '兰', '欣', '怡'];
+const classNames = ['落霞峰', '翠竹峰', '青云峰', '紫霄峰', '玄阴峰'];
+const leaderRoles = ['峰主', '大师兄', '二师兄', '执事', '传功长老', '护法', '丹堂掌事', '巡山弟子'];
+const surnames = ['云', '风', '雷', '电', '霜', '雪', '月', '日', '星', '辰', '天', '玄', '灵', '清', '虚', '空', '玉', '紫', '青', '白', '赤', '碧', '幽', '冥', '阳', '阴', '乾', '坤', '离', '坎', '震', '巽', '艮', '兑', '鸿', '蒙', '荒', '混沌', '太', '上'];
+const givenNames = ['尘', '渊', '鹤', '虚', '玄', '清', '默', '衍', '淳', '珩', '珝', '瑶', '璃', '璞', '瑾', '瑜', '玥', '琛', '渺', '然', '止', '观', '心', '觉', '悟', '禅', '寂', '灭', '缘', '劫', '渡', '劫', '尘', '客', '来', '归', '去', '闲', '远', '之'];
 
 function pick<T>(arr: T[], i: number): T {
   return arr[i % arr.length]!;
@@ -117,42 +117,42 @@ function scoreFor(seed: number): number {
 
 function buildSheet(classIdx: number) {
   const className = classNames[classIdx]!;
-  const studentCount = 32;
-  const avgRow = studentCount + 2; // row 34
+  const discipleCount = 32;
+  const avgRow = discipleCount + 2; // row 34
   const lastRow = avgRow;
   const cells: Record<string, { value: string; style?: Record<string, unknown> }> = {};
 
   // Row 0: 标题行（合并 A1:H1）
-  cells['0,0'] = { value: `${className} 学生名单`, style: { ...titleBase, ...borderFor(0, 0, lastRow), borderRightWidth: THICK } };
+  cells['0,0'] = { value: `${className} 弟子名录`, style: { ...titleBase, ...borderFor(0, 0, lastRow), borderRightWidth: THICK } };
 
   // Row 1: 表头
-  const headers = ['学号', '姓名', '年龄', '性别', '成绩', '身份', '联系电话', '备注'];
+  const headers = ['编号', '法号', '修龄', '性别', '修为', '职位', '传音符', '备注'];
   for (let c = 0; c < 8; c++) {
     cells[`${c},1`] = { value: headers[c]!, style: { ...headerBase, ...borderFor(c, 1, lastRow) } };
   }
 
   // Rows 2 ~ 33: 学生数据
-  for (let i = 0; i < studentCount; i++) {
+  for (let i = 0; i < discipleCount; i++) {
     const row = i + 2;
     const seed = classIdx * 100 + i;
 
-    // 学号 (col 0)
-    const sno = `2026${String(classIdx + 1).padStart(2, '0')}${String(i + 1).padStart(3, '0')}`;
+    // 编号 (col 0)
+    const sno = `LX${String(classIdx + 1).padStart(2, '0')}${String(i + 1).padStart(3, '0')}`;
     cells[`0,${row}`] = { value: sno, style: { ...centerBase, ...borderFor(0, row, lastRow) } };
 
-    // 姓名 (col 1)
+    // 法号 (col 1)
     const name = `${pick(surnames, seed)}${pick(givenNames, seed * 3 + 7)}${pick(givenNames, seed * 5 + 13)}`;
     cells[`1,${row}`] = { value: name, style: { ...nameBase, ...borderFor(1, row, lastRow) } };
 
-    // 年龄 (col 2)
-    const age = 15 + (seed % 3);
+    // 修龄 (col 2)
+    const age = 50 + (seed % 50);
     cells[`2,${row}`] = { value: String(age), style: { ...centerBase, ...borderFor(2, row, lastRow) } };
 
     // 性别 (col 3)
     const gender = seed % 2 === 0 ? '男' : '女';
     cells[`3,${row}`] = { value: gender, style: { ...centerBase, ...borderFor(3, row, lastRow) } };
 
-    // 成绩 (col 4)
+    // 修为 (col 4)
     const score = scoreFor(seed);
     let sBase: Record<string, unknown>;
     if (score >= 85) sBase = { ...excellentBase };
@@ -160,15 +160,15 @@ function buildSheet(classIdx: number) {
     else sBase = { ...scoreBase };
     cells[`4,${row}`] = { value: String(score), style: { ...sBase, ...borderFor(4, row, lastRow) } };
 
-    // 身份 (col 5)
+    // 职位 (col 5)
     if (i < leaderRoles.length) {
       cells[`5,${row}`] = { value: leaderRoles[i]!, style: { ...leaderBase, ...borderFor(5, row, lastRow) } };
     } else {
-      cells[`5,${row}`] = { value: '学生', style: { ...normalBase, ...borderFor(5, row, lastRow) } };
+      cells[`5,${row}`] = { value: '记名弟子', style: { ...normalBase, ...borderFor(5, row, lastRow) } };
     }
 
-    // 联系电话 (col 6)
-    const phone = `1${3 + (seed % 6)}0-${String(1000 + seed * 7).slice(-4)}-${String(10000 + seed * 13).slice(-4)}`;
+    // 传音符 (col 6)
+    const phone = `符${3 + (seed % 6)}${String(1000 + seed * 7).slice(-4)}-${String(10000 + seed * 13).slice(-4)}`;
     cells[`6,${row}`] = { value: phone, style: { ...centerBase, ...borderFor(6, row, lastRow) } };
 
     // 备注 (col 7)
@@ -192,15 +192,15 @@ function buildSheet(classIdx: number) {
 
   // Row 34: 平均分行
   cells[`0,${avgRow}`] = { value: '', style: { ...avgBase, ...borderFor(0, avgRow, lastRow) } };
-  cells[`1,${avgRow}`] = { value: '平均分', style: { ...avgBase, ...borderFor(1, avgRow, lastRow) } };
+  cells[`1,${avgRow}`] = { value: '均修为', style: { ...avgBase, ...borderFor(1, avgRow, lastRow) } };
   cells[`2,${avgRow}`] = { value: '', style: { ...avgBase, ...borderFor(2, avgRow, lastRow) } };
   cells[`3,${avgRow}`] = { value: '', style: { ...avgBase, ...borderFor(3, avgRow, lastRow) } };
 
   let total = 0;
-  for (let i = 0; i < studentCount; i++) {
+  for (let i = 0; i < discipleCount; i++) {
     total += scoreFor(classIdx * 100 + i);
   }
-  const avg = (total / studentCount).toFixed(1);
+  const avg = (total / discipleCount).toFixed(1);
   cells[`4,${avgRow}`] = { value: avg, style: { ...avgBase, color: '#e65100', ...borderFor(4, avgRow, lastRow) } };
   cells[`5,${avgRow}`] = { value: '', style: { ...avgBase, ...borderFor(5, avgRow, lastRow) } };
   cells[`6,${avgRow}`] = { value: '', style: { ...avgBase, ...borderFor(6, avgRow, lastRow) } };

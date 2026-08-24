@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue';
 import { t } from '../core/constants';
 import type { FontOption, MergeType } from '../core/constants';
+import { NF_MIXED, type NFOption } from '../core/number-format';
 import SpDropdown from './dropdown.vue';
 import ColorPicker from './pickers/colorPicker.vue';
 import BorderPicker, { type BorderType } from './pickers/borderPicker.vue';
@@ -49,7 +50,7 @@ function segRole(bt: BorderType, name: string): 'solid' | 'dashed' | 'thick' {
 const TOOL_KEYS = [
   'undo', 'redo', 'paint', 'clear', 'sep1', 'font', 'fontSize', 'sep2',
   'bold', 'italic', 'underline', 'strike', 'sep3', 'textColor', 'fillColor', 'border',
-  'sep4', 'hAlign', 'vAlign', 'wrap', 'merge', 'calc',
+  'sep4', 'hAlign', 'vAlign', 'wrap', 'merge', 'sep6', 'numFmt', 'sep7', 'calc',
 ] as const;
 
 const rootEl = ref<HTMLElement | null>(null);
@@ -74,6 +75,18 @@ const naturalWidths = new Map<string, number>();
 const hasOverflow = computed(() => overflowKeys.value.size > 0);
 function isOverflow(key: string): boolean {
   return overflowKeys.value.has(key);
+}
+
+/** 安全的溢出菜单目标：只有当 overflowMenuEl 存在且已渲染时才返回，否则返回 undefined。
+ *  配合 :disabled 避免 Vue 警告 "Invalid Teleport target: undefined"。 */
+const overflowMenuTarget = computed<HTMLElement | undefined>(() => {
+  const el = overflowMenuEl.value;
+  return el instanceof HTMLElement ? el : undefined;
+});
+/** 只有当 overflowMenuEl 已就绪时才允许 Teleport，避免 Vue 在 ref 为 null 时仍然检查 to 属性 */
+function teleportDisabled(key: string): boolean {
+  if (!overflowMenuTarget.value) return true;
+  return !isOverflow(key);
 }
 
 function hasZeroWidth(): boolean {
@@ -255,17 +268,25 @@ const props = defineProps<{
   calcMenuOpen: boolean;
   isSingleCell: boolean;
   themeVars?: Record<string, string>;
+  // 数字格式
+  selNumberFormat: string;
+  nfOptions: NFOption[];
 }>();
 
 const emit = defineEmits<{
   (e: 'undo' | 'redo' | 'paint-format' | 'clear-format' | 'font-size-blur' | 'font-size-toggle' | 'font-size-step-up' | 'font-size-step-down' | 'bold-toggle' | 'italic-toggle' | 'underline-toggle' | 'strikethrough-toggle' | 'apply-text-color' | 'apply-fill-color' | 'apply-border' | 'wrap-toggle' | 'apply-merge' | 'calc-sum' | 'calc-avg'): void;
   (e: 'font-family-change' | 'font-size-change' | 'h-align-change' | 'v-align-change', v: string | number): void;
-  (e: 'font-size-input' | 'text-color-change' | 'fill-color-change', v: string): void;
+  (e: 'font-size-input' | 'text-color-change' | 'fill-color-change' | 'number-format-change', v: string): void;
   (e: 'font-size-keydown', ev: KeyboardEvent): void;
   (e: 'update:font-size-menu-open' | 'update:text-color-menu-open' | 'update:fill-color-menu-open' | 'update:border-menu-open' | 'update:merge-menu-open' | 'update:calc-menu-open', v: boolean): void;
   (e: 'border-change', v: BorderType): void;
   (e: 'merge-change', v: MergeType): void;
 }>();
+
+// 数字格式：选区格式不一致时触发器显示「混合」
+const nfFallbackLabel = computed(() =>
+  props.selNumberFormat === NF_MIXED ? t(props.locale, 'nfMixed') : '',
+);
 </script>
 
 <template>
@@ -274,8 +295,8 @@ const emit = defineEmits<{
     class="toolbar"
   >
     <Teleport
-      :disabled="!isOverflow('undo')"
-      :to="overflowMenuEl ?? undefined"
+      :disabled="teleportDisabled('undo')"
+      :to="overflowMenuTarget"
     >
       <div
         class="tb-item"
@@ -300,8 +321,8 @@ const emit = defineEmits<{
     </Teleport>
 
     <Teleport
-      :disabled="!isOverflow('redo')"
-      :to="overflowMenuEl ?? undefined"
+      :disabled="teleportDisabled('redo')"
+      :to="overflowMenuTarget"
     >
       <div
         class="tb-item"
@@ -329,8 +350,8 @@ const emit = defineEmits<{
     </Teleport>
 
     <Teleport
-      :disabled="!isOverflow('paint')"
-      :to="overflowMenuEl ?? undefined"
+      :disabled="teleportDisabled('paint')"
+      :to="overflowMenuTarget"
     >
       <div
         class="tb-item"
@@ -355,8 +376,8 @@ const emit = defineEmits<{
     </Teleport>
 
     <Teleport
-      :disabled="!isOverflow('clear')"
-      :to="overflowMenuEl ?? undefined"
+      :disabled="teleportDisabled('clear')"
+      :to="overflowMenuTarget"
     >
       <div
         class="tb-item"
@@ -381,8 +402,8 @@ const emit = defineEmits<{
     </Teleport>
 
     <Teleport
-      :disabled="!isOverflow('sep1')"
-      :to="overflowMenuEl ?? undefined"
+      :disabled="teleportDisabled('sep1')"
+      :to="overflowMenuTarget"
     >
       <div
         class="tb-item"
@@ -393,8 +414,8 @@ const emit = defineEmits<{
     </Teleport>
 
     <Teleport
-      :disabled="!isOverflow('font')"
-      :to="overflowMenuEl ?? undefined"
+      :disabled="teleportDisabled('font')"
+      :to="overflowMenuTarget"
     >
       <div
         class="tb-item"
@@ -415,8 +436,8 @@ const emit = defineEmits<{
     </Teleport>
 
     <Teleport
-      :disabled="!isOverflow('fontSize')"
-      :to="overflowMenuEl ?? undefined"
+      :disabled="teleportDisabled('fontSize')"
+      :to="overflowMenuTarget"
     >
       <div
         class="tb-item"
@@ -494,8 +515,8 @@ const emit = defineEmits<{
     </Teleport>
 
     <Teleport
-      :disabled="!isOverflow('sep2')"
-      :to="overflowMenuEl ?? undefined"
+      :disabled="teleportDisabled('sep2')"
+      :to="overflowMenuTarget"
     >
       <div
         class="tb-item"
@@ -506,8 +527,8 @@ const emit = defineEmits<{
     </Teleport>
 
     <Teleport
-      :disabled="!isOverflow('bold')"
-      :to="overflowMenuEl ?? undefined"
+      :disabled="teleportDisabled('bold')"
+      :to="overflowMenuTarget"
     >
       <div
         class="tb-item"
@@ -529,8 +550,8 @@ const emit = defineEmits<{
     </Teleport>
 
     <Teleport
-      :disabled="!isOverflow('italic')"
-      :to="overflowMenuEl ?? undefined"
+      :disabled="teleportDisabled('italic')"
+      :to="overflowMenuTarget"
     >
       <div
         class="tb-item"
@@ -552,8 +573,8 @@ const emit = defineEmits<{
     </Teleport>
 
     <Teleport
-      :disabled="!isOverflow('underline')"
-      :to="overflowMenuEl ?? undefined"
+      :disabled="teleportDisabled('underline')"
+      :to="overflowMenuTarget"
     >
       <div
         class="tb-item"
@@ -575,8 +596,8 @@ const emit = defineEmits<{
     </Teleport>
 
     <Teleport
-      :disabled="!isOverflow('strike')"
-      :to="overflowMenuEl ?? undefined"
+      :disabled="teleportDisabled('strike')"
+      :to="overflowMenuTarget"
     >
       <div
         class="tb-item"
@@ -598,8 +619,8 @@ const emit = defineEmits<{
     </Teleport>
 
     <Teleport
-      :disabled="!isOverflow('sep3')"
-      :to="overflowMenuEl ?? undefined"
+      :disabled="teleportDisabled('sep3')"
+      :to="overflowMenuTarget"
     >
       <div
         class="tb-item"
@@ -611,8 +632,8 @@ const emit = defineEmits<{
 
     <!-- 文字颜色 -->
     <Teleport
-      :disabled="!isOverflow('textColor')"
-      :to="overflowMenuEl ?? undefined"
+      :disabled="teleportDisabled('textColor')"
+      :to="overflowMenuTarget"
     >
       <div
         class="tb-item"
@@ -665,8 +686,8 @@ const emit = defineEmits<{
 
     <!-- 填充颜色 -->
     <Teleport
-      :disabled="!isOverflow('fillColor')"
-      :to="overflowMenuEl ?? undefined"
+      :disabled="teleportDisabled('fillColor')"
+      :to="overflowMenuTarget"
     >
       <div
         class="tb-item"
@@ -717,8 +738,8 @@ const emit = defineEmits<{
 
     <!-- 边框 -->
     <Teleport
-      :disabled="!isOverflow('border')"
-      :to="overflowMenuEl ?? undefined"
+      :disabled="teleportDisabled('border')"
+      :to="overflowMenuTarget"
     >
       <div
         class="tb-item"
@@ -774,8 +795,8 @@ const emit = defineEmits<{
     </Teleport>
 
     <Teleport
-      :disabled="!isOverflow('sep4')"
-      :to="overflowMenuEl ?? undefined"
+      :disabled="teleportDisabled('sep4')"
+      :to="overflowMenuTarget"
     >
       <div
         class="tb-item"
@@ -787,8 +808,8 @@ const emit = defineEmits<{
 
     <!-- 水平对齐 -->
     <Teleport
-      :disabled="!isOverflow('hAlign')"
-      :to="overflowMenuEl ?? undefined"
+      :disabled="teleportDisabled('hAlign')"
+      :to="overflowMenuTarget"
     >
       <div
         class="tb-item"
@@ -810,8 +831,8 @@ const emit = defineEmits<{
 
     <!-- 垂直对齐 -->
     <Teleport
-      :disabled="!isOverflow('vAlign')"
-      :to="overflowMenuEl ?? undefined"
+      :disabled="teleportDisabled('vAlign')"
+      :to="overflowMenuTarget"
     >
       <div
         class="tb-item"
@@ -850,8 +871,8 @@ const emit = defineEmits<{
 
     <!-- 合并单元格 -->
     <Teleport
-      :disabled="!isOverflow('merge')"
-      :to="overflowMenuEl ?? undefined"
+      :disabled="teleportDisabled('merge')"
+      :to="overflowMenuTarget"
     >
       <div
         class="tb-item"
@@ -892,10 +913,60 @@ const emit = defineEmits<{
       </div>
     </Teleport>
 
+    <!-- sep6: merge 后分隔符 -->
+    <Teleport
+      :disabled="teleportDisabled('sep6')"
+      :to="overflowMenuTarget"
+    >
+      <div
+        class="tb-item"
+        data-key="sep6"
+      >
+        <div class="toolbar-sep" />
+      </div>
+    </Teleport>
+
+    <!-- 数字格式 -->
+    <Teleport
+      :disabled="teleportDisabled('numFmt')"
+      :to="overflowMenuTarget"
+    >
+      <div
+        class="tb-item"
+        data-key="numFmt"
+      >
+        <SpDropdown
+          class="toolbar-number-format"
+          :model-value="selNumberFormat"
+          :options="nfOptions"
+          :width="isOverflow('numFmt') ? '100%' : 92"
+          :menu-width="isOverflow('numFmt') ? 150 : 150"
+          :visible-count="8"
+          :title="t(locale, 'numberFormat')"
+          :fallback-label="nfFallbackLabel"
+          align="right"
+          @change="emit('number-format-change', String($event))"
+        />
+      </div>
+    </Teleport>
+
+    <!-- sep7: numFmt 后分隔符 -->
+    <Teleport
+      :disabled="teleportDisabled('sep7')"
+      :to="overflowMenuTarget"
+    >
+      <div
+        class="tb-item"
+        data-key="sep7"
+      >
+        <div class="toolbar-sep" />
+      </div>
+    </Teleport>
+
     <!-- 计算（求和 / 平均值） -->
     <Teleport
-      :disabled="!isOverflow('calc')"
-      :to="overflowMenuEl ?? undefined"
+      :disabled="teleportDisabled('calc')"
+      :to="overflowMenuTarget"
     >
       <div
         class="tb-item"
@@ -989,6 +1060,7 @@ const emit = defineEmits<{
 .tb-item { display: flex; align-items: center; flex: 0 0 auto; }
 .toolbar-sep { width: 1px; height: 18px; margin: 0 4px; background: var(--sp-toolbar-border); }
 .toolbar-font { flex: 0 0 auto; }
+.toolbar-number-format { flex: 0 0 auto; }
 .toolbar-align { flex: 0 0 auto; }
 .toolbar-font-size { display: inline-flex; align-items: center; gap: 0; height: 26px; position: relative; }
 .toolbar-font-size__input { width: 36px; height: 26px; border: 1px solid transparent; border-right: none; border-radius: 3px 0 0 3px; background: transparent; color: var(--sp-toolbar-btn-color); font-size: 12px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; text-align: left; padding: 0 5px; outline: none; box-sizing: border-box; appearance: none; -moz-appearance: textfield; }
@@ -1030,6 +1102,7 @@ const emit = defineEmits<{
 .overflow-menu .toolbar-split__main { flex: 1 1 auto; justify-content: flex-start; padding-left: 6px; }
 .overflow-menu .toolbar-font-size { width: 100%; justify-content: flex-start; }
 .overflow-menu .toolbar-font { width: 100%; }
+.overflow-menu .toolbar-number-format { width: 100%; }
 .overflow-menu .toolbar-align { width: 100%; }
 .overflow-menu .toolbar-btn:not(.toolbar-btn--step):not(.toolbar-split__arrow) { width: 100%; justify-content: flex-start; padding-left: 6px; }
 .overflow-menu .toolbar-color { width: 100%; }
@@ -1048,6 +1121,7 @@ const emit = defineEmits<{
 .overflow-menu .toolbar-split__main { flex: 1 1 auto; justify-content: flex-start; padding-left: 6px; }
 .overflow-menu .toolbar-font-size { width: 100%; justify-content: flex-start; }
 .overflow-menu .toolbar-font { width: 100%; }
+.overflow-menu .toolbar-number-format { width: 100%; }
 .overflow-menu .toolbar-align { width: 100%; }
 .overflow-menu .toolbar-btn:not(.toolbar-btn--step):not(.toolbar-split__arrow) { width: 100%; justify-content: flex-start; padding-left: 6px; }
 .overflow-menu .toolbar-color { width: 100%; }

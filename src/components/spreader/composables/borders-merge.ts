@@ -115,10 +115,28 @@ export function createBordersMerge(
     if (col < 0 || row < 0 || col >= s.colCount || row >= s.rowCount) return;
     const m = s.findMerge(col, row);
     if (m) {
-      if (side === 'Top' && row !== m.range.startRow) return;
-      if (side === 'Bottom' && row !== m.range.endRow) return;
-      if (side === 'Left' && col !== m.range.startCol) return;
-      if (side === 'Right' && col !== m.range.endCol) return;
+      // ====================================================【双 BUG 修复 · 写入端】====================================================
+      // 合并格的 4 条边框宽度存储在 anchor.style.border{Top/Bottom/Left/Right}Width 上，是**整条 span 的全局属性**。
+      // 这里的 guard 通过"每条边只允许唯一合法角点写入"（见下 4 条）从源头防止 BUG 1：
+      //   - BUG 1 场景：B2 设置 Top 时 syncCellBorders 会调用 setCellBorderSide(1, 0, 'Bottom', w, true) 试图写入 B1.Bottom，
+      //     但 B1 属于 A1:C1 合并，其 Bottom 的合法写入点是 (startCol=0, endRow=0)=(0,0)，实际 (1,0) col 不符 → return，
+      //     anchor.borderBottomWidth 保持不变 → 合并全局属性不被局部邻居污染 ✅
+      //
+      // 注：仅靠这个 guard 还不够，因为如果之后在渲染端用「合并整段 bottom 一个 fillRect + max(所有邻居列 Top) 取全局最大」来画，
+      //     依然会造成「视觉上整条合并底因为 B2.Top=2 而全部变 2 粗」= BUG 1 等价复发。
+      //     因此与 interactions.ts 第二步的【逐列/行分段绘制】配合形成完整修复方案：
+      //       ① 写入端严格禁止局部格子写入全局边宽（本 guard）
+      //       ② 渲染端合并格每一条横/竖边都按列/行分段 Math.max + 分段 fillRect，只让真正对齐邻居的那一列/行获得加宽（渲染端）
+      // =================================================================================================================================
+      // 各边合法写入角点定义：
+      //   Top    → 合并格左上角 (startCol, startRow)  → 整条合并顶部只从"左上角顶边写入点"控制
+      //   Bottom → 合并格左下角 (startCol, endRow)    → 整条合并底部只从"左下角底边写入点"控制（整列 span 的底部统一）
+      //   Left   → 合并格左上角 (startCol, startRow)  → 整条合并左边只从"左上角左边写入点"控制
+      //   Right  → 合并格右上角 (endCol, startRow)    → 整条合并右边只从"右上角右边写入点"控制
+      if (side === 'Top'    && (col !== m.range.startCol || row !== m.range.startRow)) return;
+      if (side === 'Bottom' && (col !== m.range.startCol || row !== m.range.endRow))   return;
+      if (side === 'Left'   && (col !== m.range.startCol || row !== m.range.startRow)) return;
+      if (side === 'Right'  && (col !== m.range.endCol   || row !== m.range.startRow)) return;
     }
     const k = m ? m.anchor : s.cellKey(col, row);
     const val = s.cells[k]?.value ?? '';
@@ -146,16 +164,47 @@ export function createBordersMerge(
     const wB = (st?.borderBottomWidth as number) || 0;
     const wL = (st?.borderLeftWidth as number) || 0;
     const wR = (st?.borderRightWidth as number) || 0;
-    setCellBorderSide(col, row - 1, 'Bottom', wT, true);
-    setCellBorderSide(col, row + 1, 'Top', wB, true);
-    setCellBorderSide(col - 1, row, 'Right', wL, true);
-    setCellBorderSide(col + 1, row, 'Left', wR, true);
+    if (m) {
+      // ==============================【双 BUG 修复 · 同步邻居】================================
+      // 当前格属于合并格：以 anchor 上的全局边宽为源，向合并范围外的邻居单元格写入对应边。
+      // 设计分工（与 interactions.ts 第二步分段渲染配合）：
+      //   · 本函数只需要把合并格"全局边宽"同步到邻居格中「最靠边的一列/一行」即可。
+      //     例如合并 A1:C1 的 bottom，只需要同步给 A2(0,1).Top = wB（左列起点），不需要也不应该强行
+      //     把 B2(1,1).Top / C2(2,1).Top 也写为 wB，因为 B2/C2 自身可能有自定义的 Top 宽度，直接覆盖
+      //     会造成 BUG 1 的兄弟问题（邻居局部宽度被合并全局边覆盖）。
+      //
+      //   · 更完整的"合并整条边与下方所有列邻居宽度叠加"的工作交由**渲染端分段绘制**完成：
+      //     对 sC..eC 每列 cc，Bottom 段宽 = max(anchor.ownB, cells[cc, eR+1].Top)，逐列独立计算、逐列独立 fillRect。
+      //     这样 A2/B2/C2 各自独立的 Top 都能正确与合并底做 Math.max 叠加，互不干扰。
+      // ==========================================================================================
+      const sR = m.range.startRow, eR = m.range.endRow;
+      const sC = m.range.startCol, eC = m.range.endCol;
+      // Top 宽度 → 合并上沿上方邻居（row=sR-1）的 Bottom。只写最左列 sC，对应 Left 合法角点。
+      setCellBorderSide(sC, sR - 1, 'Bottom', wT, true);
+      // Bottom 宽度 → 合并下沿下方邻居（row=eR+1）的 Top。只写最左列 sC，对应 Bottom 合法角点列。
+      setCellBorderSide(sC, eR + 1, 'Top',    wB, true);
+      // Left 宽度 → 合并左沿左方邻居（col=sC-1）的 Right。只写最上行 sR，对应 Left 合法角点行。
+      setCellBorderSide(sC - 1, sR, 'Right',  wL, true);
+      // Right 宽度 → 合并右沿右方邻居（col=eC+1）的 Left。只写最上行 sR，对应 Right 合法角点行。
+      setCellBorderSide(eC + 1, sR, 'Left',   wR, true);
+    } else {
+      setCellBorderSide(col,     row - 1, 'Bottom', wT, true);
+      setCellBorderSide(col,     row + 1, 'Top',    wB, true);
+      setCellBorderSide(col - 1, row,     'Right',  wL, true);
+      setCellBorderSide(col + 1, row,     'Left',   wR, true);
+    }
   }
   // 反向注入到 core-state
   s.syncCellBorders = syncCellBorders;
 
   function applyBorderToCell(col: number, row: number, w: { top: number; bottom: number; left: number; right: number }, clearZero: boolean = true) {
-    const k = s.cellKey(col, row);
+    // ==================================================【边框写入统一入口】==================================================
+    // 若 (col,row) 处于合并格内部（即用户点到合并格中间列/行然后 Apply 边框）：
+    //   - 样式必须写入 anchor，因为渲染合并格时只读 anchor 的 style（否则边框看起来"没生效"）。
+    //   - 后续 syncCellBorders 必须传 anchor 的 (startCol, startRow)，它会根据 merge 分支正确计算 4 个外部邻居。
+    // ==========================================================================================================================
+    const m = s.findMerge(col, row);
+    const k = m ? m.anchor : s.cellKey(col, row);
     const val = s.cells[k]?.value ?? '';
     const st = s.cells[k]?.style ? { ...s.cells[k]!.style } : {};
     const dirs = ['Top', 'Bottom', 'Left', 'Right'] as const;
@@ -174,7 +223,7 @@ export function createBordersMerge(
     const style = Object.keys(st).length ? st : null;
     if (val === '' && style === null) s.delCell(k);
     else s.cells[k] = { value: val, style };
-    syncCellBorders(col, row);
+    syncCellBorders(m ? m.range.startCol : col, m ? m.range.startRow : row);
   }
 
   function onBorderChange(bt: BorderType) {
@@ -462,6 +511,7 @@ export function createBordersMerge(
   }
 
   function cutSelected() {
+    us.saveUndo();
     copyToClipboard();
     if (s.selection.value) {
       const sel = s.selection.value;

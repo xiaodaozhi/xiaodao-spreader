@@ -3,6 +3,7 @@ import { UNDO_MAX, FONT_FAMILIES, FONT_SIZES, H_ALIGN_OPTIONS, V_ALIGN_OPTIONS, 
 import type { FontOption } from '../core/constants';
 import type { CoreState } from './core-state';
 import type { CellData, SheetState } from '../core/types';
+import { buildNumberFormatPresets, NF_CUSTOM, NF_MIXED, NF_GENERAL, type NFOption } from '../core/number-format';
 
 // ============ 共享 UndoStyles 接口 ============
 export interface UndoStylesState {
@@ -83,6 +84,15 @@ export interface UndoStylesState {
   // 边框/合并菜单开关（互斥）占位
   borderMenuOpen?: Ref<boolean>;
   mergeMenuOpen?: Ref<boolean>;
+
+  // 数字格式（Number Format）
+  nfOptions: ComputedRef<NFOption[]>;
+  selNumberFormat: ComputedRef<string>;
+  NF_NUMBER_FORMAT_MIXED: string;
+  nfDialogOpen: Ref<boolean>;
+  onNumberFormatChange: (v: string) => void;
+  openNumberFormatDialog: () => void;
+  applyNumberFormatCode: (code: string) => void;
 }
 
 interface UndoSnap {
@@ -525,6 +535,47 @@ export function createUndoStyles(
     return mixed ? '' : (first ?? '');
   });
 
+  // ============ 数字格式（Number Format）============
+  const nfOptions = computed(() => buildNumberFormatPresets(s.locale.value));
+  const nfDialogOpen = ref(false);
+
+  // 选区 numberFormat 一致性检测：不一致时返回 NF_MIXED（与 fontFamily 的 mixed 语义一致）
+  // 没有属性/空串 = 常规，"主动选常规"和"从未设置"天然一致，无需区分
+  const selNumberFormat = computed(() => {
+    const sel = s.selection.value;
+    if (!sel) return NF_GENERAL;
+    let first: string | undefined;
+    let mixed = false;
+    for (let c = sel.startCol; c <= sel.endCol && !mixed; c++) {
+      for (let r = sel.startRow; r <= sel.endRow && !mixed; r++) {
+        const m = s.findMerge(c, r);
+        if (m && (c !== m.range.startCol || r !== m.range.startRow)) continue;
+        const st = s.cells[s.cellKey(c, r)]?.style;
+        const nf = typeof st?.numberFormat === 'string' ? st.numberFormat : '';
+        if (first === undefined) first = nf;
+        else if (nf !== first) mixed = true;
+      }
+    }
+    return mixed ? NF_MIXED : (first ?? NF_GENERAL);
+  });
+
+  // 将格式代码应用到当前选区；General（空串）会删除 numberFormat 属性
+  function applyNumberFormatCode(code: string) {
+    applyStyleToSelection('numberFormat', code);
+  }
+
+  function onNumberFormatChange(v: string) {
+    if (v === NF_CUSTOM) {
+      nfDialogOpen.value = true;
+      return;
+    }
+    applyNumberFormatCode(v);
+  }
+
+  function openNumberFormatDialog() {
+    nfDialogOpen.value = true;
+  }
+
   const ret: UndoStylesState = {
     undoStack,
     redoStack,
@@ -592,6 +643,14 @@ export function createUndoStyles(
     applyCachedFillColor,
     selTextColor,
     selFillColor,
+
+    nfOptions,
+    selNumberFormat,
+    NF_NUMBER_FORMAT_MIXED: NF_MIXED,
+    nfDialogOpen,
+    onNumberFormatChange,
+    openNumberFormatDialog,
+    applyNumberFormatCode,
   };
 
   return ret;

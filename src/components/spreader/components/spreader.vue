@@ -3,6 +3,7 @@ import { ref, reactive, computed, type Ref, type UnwrapRef } from 'vue';
 import { HEADER_HEIGHT, HEADER_WIDTH, SB_SIZE } from '../core/constants';
 import Toolbar from './toolbar.vue';
 import Tabbar from './tabbar.vue';
+import NumberFormatDialog from './pickers/numberFormatDialog.vue';
 import type { SheetModelData, SheetState } from '../core/types';
 
 import { createCoreState, type CoreState } from '../composables/core-state';
@@ -10,6 +11,7 @@ import { createUndoStyles, bindMenuRefs, type UndoStylesState } from '../composa
 import { createBordersMerge, type BordersMergeState } from '../composables/borders-merge';
 import { createSheetsOps, type SheetsOpsState } from '../composables/sheets-ops';
 import { createInteractions, type InteractionsState } from '../composables/interactions';
+import { NF_MIXED } from '../core/number-format';
 
 // ============ Props ============
 const props = withDefaults(defineProps<{
@@ -113,6 +115,19 @@ const isSingleCell = computed(() => {
   return !!sel && sel.startCol === sel.endCol && sel.startRow === sel.endRow;
 });
 
+// 数字格式对话框初始格式：选区一致时用该格式；混合时回退到活动单元格的格式，再不行则常规
+const nfDialogCurrentFormat = computed(() => {
+  const sel = undoStyles.selNumberFormat;
+  if (sel !== NF_MIXED) return sel;
+  const ac = coreState.activeCell;
+  const st = coreState.cells[coreState.cellKey(ac.col, ac.row)]?.style;
+  return typeof st?.numberFormat === 'string' ? st.numberFormat : '';
+});
+
+function setNfDialogOpen(v: boolean) {
+  undoStylesRaw.nfDialogOpen.value = v;
+}
+
 // ============ 模板赋值辅助函数（用于 @update:xxx 事件）============
 function setFontSizeMenuOpen(v: boolean) {
   undoStylesRaw.fontSizeMenuOpen.value = v;
@@ -132,8 +147,11 @@ function setCtxMenuNull() {
 
 // 函数 ref 绑定（用于嵌套在 reactive 对象中的 ref）
 const setFormulaBarRef = (el: unknown) => {
-  sheetsOpsRaw.formulaBarRef.value = el as HTMLInputElement | null;
+  sheetsOpsRaw.formulaBarRef.value = el as HTMLTextAreaElement | null;
 };
+function toggleFormulaBarExpanded() {
+  interactionsRaw.formulaBarExpanded.value = !interactionsRaw.formulaBarExpanded.value;
+}
 const setWrapperRef = (el: unknown) => {
   sheetsOpsRaw.wrapperRef.value = el as HTMLDivElement | null;
 };
@@ -186,11 +204,14 @@ const setDimInputRef = (el: unknown) => {
       :merge-menu-open="bordersMerge.mergeMenuOpen"
       :calc-menu-open="bordersMerge.calcMenuOpen"
       :is-single-cell="isSingleCell"
+      :sel-number-format="undoStyles.selNumberFormat"
+      :nf-options="undoStyles.nfOptions"
       :theme-vars="sheetsOps.toolbarThemeVars"
       @undo="undoStyles.undo()"
       @redo="undoStyles.redo()"
       @paint-format="undoStyles.onPaintFormat"
       @clear-format="undoStyles.clearFormat()"
+      @number-format-change="undoStyles.onNumberFormatChange($event)"
       @font-family-change="undoStyles.onFontFamilyChange($event)"
       @font-size-input="undoStyles.onFontSizeInput($event)"
       @font-size-blur="undoStyles.onFontSizeBlur"
@@ -224,20 +245,120 @@ const setDimInputRef = (el: unknown) => {
       @calc-avg="bordersMerge.onCalcAvg"
     />
 
+    <!-- 数字格式配置对话框 -->
+    <NumberFormatDialog
+      :model-open="undoStyles.nfDialogOpen"
+      :locale="coreState.locale"
+      :current-format="nfDialogCurrentFormat"
+      @update:model-open="setNfDialogOpen($event)"
+      @apply="undoStyles.applyNumberFormatCode($event)"
+    />
+
     <!-- 编辑栏 -->
-    <div class="formula-bar">
+    <div
+      class="formula-bar"
+      :class="{ 'formula-bar--expanded': interactions.formulaBarExpanded }"
+    >
       <div class="formula-bar__cell-label">
         {{ interactions.activeCellLabel }}
       </div>
-      <input
+      <div class="formula-bar__buttons">
+        <button
+          type="button"
+          class="formula-bar__btn formula-bar__btn--cancel"
+          title="取消（Esc）"
+          aria-label="取消"
+          @mousedown.prevent
+          @click.stop="interactions.cancelFormulaBarEdit"
+        >
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 14 14"
+            aria-hidden="true"
+          >
+            <path
+              d="M3 3l8 8M11 3l-8 8"
+              fill="none"
+              stroke="#e53935"
+              stroke-width="1.8"
+              stroke-linecap="round"
+            />
+          </svg>
+        </button>
+        <button
+          type="button"
+          class="formula-bar__btn formula-bar__btn--accept"
+          title="接受（Enter）"
+          aria-label="接受"
+          @mousedown.prevent
+          @click.stop="interactions.acceptFormulaBarEdit"
+        >
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 14 14"
+            aria-hidden="true"
+          >
+            <path
+              d="M2.5 7.5l3.5 3.5L12 3.5"
+              fill="none"
+              stroke="#2e7d32"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+        </button>
+      </div>
+      <textarea
         :ref="setFormulaBarRef"
         class="formula-bar__input"
+        :class="{ 'formula-bar__input--expanded': interactions.formulaBarExpanded }"
+        :rows="interactions.formulaBarExpanded ? 3 : 1"
         :value="interactions.formulaBarDisplay"
+        spellcheck="false"
         @focus="interactions.onFormulaBarFocus"
         @input="interactions.onFormulaBarInput"
         @keydown="interactions.onFormulaBarKeydown"
         @blur="interactions.onFormulaBarBlur"
+      />
+      <button
+        type="button"
+        class="formula-bar__toggle"
+        :title="interactions.formulaBarExpanded ? '折叠为1行' : '展开为3行'"
+        @mousedown.prevent
+        @click.stop="toggleFormulaBarExpanded"
       >
+        <svg
+          v-if="!interactions.formulaBarExpanded"
+          width="12"
+          height="12"
+          viewBox="0 0 12 12"
+          aria-hidden="true"
+        ><path
+          d="M2 4l4 4 4-4"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        /></svg>
+        <svg
+          v-else
+          width="12"
+          height="12"
+          viewBox="0 0 12 12"
+          aria-hidden="true"
+        ><path
+          d="M2 8l4-4 4 4"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        /></svg>
+      </button>
     </div>
 
     <div
@@ -457,10 +578,20 @@ const setDimInputRef = (el: unknown) => {
 
 <style scoped>
 .spreadsheet-outer { flex: 1; display: flex; flex-direction: column; overflow: hidden; height: 100%; min-height: 400px; width: 100%; }
-.formula-bar { display: flex; align-items: start; height: 36px; min-height: 36px; padding: 0; gap: 0; }
+.formula-bar { display: flex; align-items: flex-start; min-height: 36px; padding: 0; gap: 0; }
+.formula-bar--expanded { min-height: 72px; }
 .formula-bar__cell-label { width: 48px; min-width: 48px; height: 28px; line-height: 28px; margin-top: 4px; text-align: center; font-size: 12px; font-weight: 600; color: var(--sp-formula-bar-label-color); background: var(--sp-formula-bar-label-bg); border: 1px solid var(--sp-formula-bar-label-border); border-radius: 2px; user-select: none; }
-.formula-bar__input { flex: 1; height: 28px; margin-top: 4px; border: 1px solid var(--sp-formula-bar-input-border); border-radius: 2px; outline: none; padding: 0 6px; margin-left: 4px; font-size: 13px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; color: var(--sp-formula-bar-input-color); background: var(--sp-formula-bar-input-bg); }
+.formula-bar__buttons { display: inline-flex; align-items: stretch; margin-top: 4px; margin-left: 6px; height: 28px; border: 1px solid var(--sp-formula-bar-input-border); border-radius: 2px; overflow: hidden; background: var(--sp-formula-bar-input-bg); }
+.formula-bar__btn { width: 22px; height: 28px; border: none; border-radius: 0; background: transparent; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; padding: 0; user-select: none; color: inherit; }
+.formula-bar__btn + .formula-bar__btn { border-left: 1px solid var(--sp-formula-bar-input-border); }
+.formula-bar__btn:hover { background: var(--sp-scroll-btn-hover-bg, #f0f0f0); }
+.formula-bar__btn--cancel:hover { color: #e53935; background: #fdecea; }
+.formula-bar__btn--accept:hover { color: #2e7d32; background: #e8f5e9; }
+.formula-bar__input { flex: 1; min-height: 28px; height: 28px; line-height: 20px; margin-top: 4px; border: 1px solid var(--sp-formula-bar-input-border); border-radius: 2px; outline: none; padding: 3px 6px; margin-left: 4px; font-size: 13px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; color: var(--sp-formula-bar-input-color); background: var(--sp-formula-bar-input-bg); resize: none; overflow: hidden; box-sizing: border-box; }
+.formula-bar__input--expanded { height: 68px; overflow: auto; }
 .formula-bar__input:focus { border-color: var(--sp-formula-bar-input-focus-border); box-shadow: 0 0 0 1px var(--sp-formula-bar-input-focus-shadow); }
+.formula-bar__toggle { width: 22px; min-width: 22px; height: 28px; margin-top: 4px; margin-left: 2px; margin-right: 2px; border: 1px solid var(--sp-formula-bar-input-border); border-radius: 2px; background: var(--sp-formula-bar-input-bg); color: var(--sp-formula-bar-input-color); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; padding: 0; user-select: none; }
+.formula-bar__toggle:hover { background: var(--sp-scroll-btn-hover-bg, #e8e8e8); }
 .spreadsheet-wrapper { flex: 1; position: relative; overflow: hidden; background: var(--sp-wrapper-bg); }
 .grid-canvas { position: absolute; top: 0; left: 0; display: block; outline: none; cursor: cell; }
 .grid-canvas:focus { outline: none; }
