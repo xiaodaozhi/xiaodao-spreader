@@ -11,11 +11,55 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue';
+import { ref, watch, onMounted, onBeforeUnmount } from 'vue';
 import Spreadsheet from './components/spreader';
+
+// ===== 禁止移动端网页缩放（严谨方案）=====
+// 1) viewport meta 已设置 user-scalable=no / max-min-scale=1
+// 2) JS 拦截双指缩放手势（iOS Safari 双指缩放仅靠 meta 无法完全禁用，必须阻止事件）
+// 3) JS 拦截 Ctrl/Cmd + +/-/0 键盘缩放（桌面端浏览器快捷键）
+// 注意：multi-touch（或带 ctrl 的 wheel）时 preventDefault，单指/正常滚动不受影响。
+
+const blockedTouch = (e: TouchEvent): void => {
+  // 双指及以上（捏合缩放）时阻止默认行为
+  if (e.touches.length > 1) e.preventDefault();
+};
+const blockedGesture = (e: Event): void => {
+  // iOS Safari/Chrome 的 gesture 系列事件
+  e.preventDefault();
+};
+const blockedKeyZoom = (e: KeyboardEvent): void => {
+  const mod = e.ctrlKey || e.metaKey;
+  if (!mod) return;
+  const k = e.key;
+  if (k === '+' || k === '=' || k === '-' || k === '_' || k === '0') {
+    e.preventDefault();
+  }
+};
+const blockedWheelZoom = (e: WheelEvent): void => {
+  // Ctrl/Meta + 滚轮 = 浏览器页面缩放，阻止之
+  if (e.ctrlKey || e.metaKey) e.preventDefault();
+};
 
 onMounted(() => {
   document.title = '小刀电子表格 | Xiaodao Spreader';
+  document.addEventListener('touchstart', blockedTouch, { passive: false });
+  document.addEventListener('touchmove', blockedTouch, { passive: false });
+  document.addEventListener('gesturestart', blockedGesture, { passive: false });
+  document.addEventListener('gesturechange', blockedGesture, { passive: false });
+  document.addEventListener('gestureend', blockedGesture, { passive: false });
+  document.addEventListener('keydown', blockedKeyZoom);
+  document.addEventListener('wheel', blockedWheelZoom, { passive: false });
+});
+
+onBeforeUnmount(() => {
+  document.removeEventListener('touchstart', blockedTouch);
+  document.removeEventListener('touchmove', blockedTouch);
+  document.removeEventListener('gesturestart', blockedGesture);
+  document.removeEventListener('gesturechange', blockedGesture);
+  document.removeEventListener('gestureend', blockedGesture);
+  document.removeEventListener('keydown', blockedKeyZoom);
+  document.removeEventListener('wheel', blockedWheelZoom);
 });
 
 // ---- 表格范围常量 ----
@@ -230,5 +274,11 @@ watch(myData, (v) => {
   display: flex;
   flex-direction: column;
   background: #e8e8e8;
+  /* 禁止触摸缩放手势与双击/长按选择，避免误触缩放 */
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
 }
 </style>
