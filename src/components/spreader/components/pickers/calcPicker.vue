@@ -2,7 +2,7 @@
 import { ref, watch, nextTick, onBeforeUnmount } from 'vue';
 import { t } from '../../core/constants';
 
-export type CalcType = 'sum' | 'avg';
+export type CalcType = 'sum' | 'avg' | 'count';
 
 const props = withDefaults(defineProps<{
   modelOpen?: boolean;
@@ -24,6 +24,7 @@ const emit = defineEmits<{
 const CALC_OPTIONS: { key: CalcType; labelKey: string }[] = [
   { key: 'sum', labelKey: 'sum' },
   { key: 'avg', labelKey: 'avg' },
+  { key: 'count', labelKey: 'count' },
 ];
 
 const open = ref(false);

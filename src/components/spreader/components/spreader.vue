@@ -243,6 +243,7 @@ const setDimInputRef = (el: unknown) => {
       @update:calc-menu-open="bordersMerge.onCalcMenuToggle($event)"
       @calc-sum="bordersMerge.onCalcSum"
       @calc-avg="bordersMerge.onCalcAvg"
+      @calc-count="bordersMerge.onCalcCount"
     />
 
     <!-- 数字格式配置对话框 -->

@@ -47,12 +47,15 @@ export interface BordersMergeState {
   sumSelected: () => void;
   // 平均值
   avgSelected: () => void;
+  // 计数
+  countSelected: () => void;
 
   // 计算下拉框
   calcMenuOpen: Ref<boolean>;
   onCalcMenuToggle: (v: boolean) => void;
   onCalcSum: () => void;
   onCalcAvg: () => void;
+  onCalcCount: () => void;
 }
 
 export function createBordersMerge(
@@ -586,6 +589,35 @@ export function createBordersMerge(
     s.emitModelData?.();
   }
 
+  // ============ 计数 ============
+  function countSelected() {
+    const sel = s.selection.value;
+    if (!sel) return;
+    us.saveUndo();
+    const sc = sel.startCol, sr = sel.startRow, ec = sel.endCol, er = sel.endRow;
+    if (sr === er) {
+      if (ec + 1 < s.colCount) {
+        const rangeRef = `${colToLabel(sc)}${sr + 1}:${colToLabel(ec)}${sr + 1}`;
+        s.setCellValue(ec + 1, sr, `=COUNT(${rangeRef})`);
+      } else {
+        const rangeRef = `${colToLabel(sc)}${sr + 1}:${colToLabel(ec - 1)}${sr + 1}`;
+        s.setCellValue(ec, sr, `=COUNT(${rangeRef})`);
+      }
+    } else {
+      for (let c = sc; c <= ec; c++) {
+        if (er + 1 < s.rowCount) {
+          const rangeRef = `${colToLabel(c)}${sr + 1}:${colToLabel(c)}${er + 1}`;
+          s.setCellValue(c, er + 1, `=COUNT(${rangeRef})`);
+        } else {
+          const rangeRef = `${colToLabel(c)}${sr + 1}:${colToLabel(c)}${er}`;
+          s.setCellValue(c, er, `=COUNT(${rangeRef})`);
+        }
+      }
+    }
+    s.scheduleRender?.();
+    s.emitModelData?.();
+  }
+
   // ============ 计算下拉框 ============
   const calcMenuOpen = ref(false);
   function onCalcMenuToggle(v: boolean) {
@@ -604,6 +636,10 @@ export function createBordersMerge(
   }
   function onCalcAvg() {
     avgSelected();
+    calcMenuOpen.value = false;
+  }
+  function onCalcCount() {
+    countSelected();
     calcMenuOpen.value = false;
   }
 
@@ -641,10 +677,12 @@ export function createBordersMerge(
 
     sumSelected,
     avgSelected,
+    countSelected,
 
     calcMenuOpen,
     onCalcMenuToggle,
     onCalcSum,
     onCalcAvg,
+    onCalcCount,
   };
 }

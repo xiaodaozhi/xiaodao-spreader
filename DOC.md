@@ -47,7 +47,7 @@ xiaodao-spreader/
             ├── composables/
             │   ├── core-state.ts      # Props, cells/merges/selection, font metrics, navigation
             │   ├── undo-styles.ts      # Undo/redo, format painter, font/alignment/color
-            │   ├── borders-merge.ts    # Border sync, merge ops, clipboard, sum
+            │   ├── borders-merge.ts    # Border sync, merge ops, clipboard, sum/avg/count
             │   ├── sheets-ops.ts      # Row/col ops, multi-sheet, v-model emit, theme, refs
             │   └── interactions.ts    # Renderer, formula bar, tab bar, context menu, scrollbar, events
             └── core/
@@ -280,6 +280,13 @@ Located in `spreader/core/formula.ts`.
 ### 7.1 Supported Formulas
 
 - `=SUM(A1:B5)` — Range summation, supports absolute references `$A$1`
+- `=AVERAGE(A1:B5)` — Range average
+- `=COUNT(A1:B5)` — Count numeric cells in range
+- `=IF(condition, true_val, false_val)` — Conditional logic, supports comparison operators (`> < >= <= = <>`) and arithmetic in branches
+- `=VLOOKUP(value, range, col_index, [approx])` — Vertical lookup, exact match by default, `TRUE` for approximate match
+- `=CONCATENATE(A1, " ", B1)` — Concatenate multiple values into a string
+
+Formula values can be `number`, `string`, or `null` (error). `null` renders as `#ERROR`.
 
 ### 7.2 Dependency Tracking
 
@@ -287,14 +294,14 @@ Located in `spreader/core/formula.ts`.
 - **Forward**: formulaKey → [depKey, ...] (which cells the formula references)
 - **Reverse**: depKey → Set<formulaKey> (which formulas depend on this cell)
 
-When modifying a cell, dirty flags are propagated through the reverse graph. Caching is used during evaluation to avoid redundant calculations. Circular reference detection (depth > 20 returns NaN).
+When modifying a cell, dirty flags are propagated through the reverse graph. Caching is used during evaluation to avoid redundant calculations. Circular reference detection via a separate `inProgress` set (returns `null` on cycle).
 
 ### 7.3 Evaluation Cache
 
-A module-level `evalCache: Map<string, number>` stores computed formula results. During evaluation:
-- Before evaluating a cell, check cache — if present, return `NaN` (prevents circular evaluation)
-- Store the result in cache after successful evaluation
-- `clearEvalCache()` clears the cache (called during sheet switching or rebuild)
+A module-level `evalCache: Map<string, FormulaValue>` stores computed formula results (number, string, or null). A separate `inProgress: Set<string>` tracks cells currently being evaluated for cycle detection. During evaluation:
+- If a cell is in `inProgress`, return `null` (circular reference detected)
+- If a cell is in cache, return the cached result
+- Otherwise, mark as in-progress, evaluate, cache the result, and unmark
 
 ### 7.4 Display Value Calculation
 
@@ -302,7 +309,7 @@ A module-level `evalCache: Map<string, number>` stores computed formula results.
 - Yes → call `evalFormula()` for evaluation
 - No → return original value
 
-Returns `'#ERROR'` if the formula evaluates to `NaN`.
+Returns `'#ERROR'` if the formula evaluates to `null`.
 
 ### 7.5 Formula Reference Offset During Paste
 

@@ -40,7 +40,7 @@ A high-performance, canvas-based spreadsheet component for Vue 3 — bringing an
 ### Core Spreadsheet
 - **Canvas 2D Rendering** — High-DPI aware with DPR scaling, virtual viewport rendering for 200 × 26 sheets
 - **Multi-Sheet Workbook** — Tab bar with add, rename, duplicate, delete, reorder
-- **Formula Engine** — `=SUM()`, `=AVERAGE()` range calculation with dependency tracking and circular-reference detection; toolbar and context menu provide one-click sum/average
+- **Formula Engine** — `=SUM()`, `=AVERAGE()`, `=COUNT()`, `=IF()`, `=VLOOKUP()`, `=CONCATENATE()` with dependency tracking and circular-reference detection; toolbar and context menu provide one-click sum/average/count
 - **Merge Cells** — Merge & Center, Merge Across, Unmerge with border synchronization
 - **Rich Cell Formatting** — Font family, font size (5–72), bold, italic, underline, strikethrough, text color, fill color, horizontal & vertical alignment, wrap text
 - **Borders** — Top / bottom / left / right / all / none with 5 predefined styles and custom color
@@ -293,6 +293,10 @@ src/
 |---------|--------|-------------|
 | `SUM` | `=SUM(A1:B5)` | Range summation |
 | `AVERAGE` | `=AVERAGE(A1:B5)` | Range average |
+| `COUNT` | `=COUNT(A1:B5)` | Count numeric cells in range |
+| `IF` | `=IF(A1>5, A1*2, 0)` | Conditional branching; supports comparison operators (`> < >= <= = <>`) and arithmetic |
+| `VLOOKUP` | `=VLOOKUP(value, A1:C5, 2, FALSE)` | Vertical lookup; exact match by default, `TRUE` for approximate match |
+| `CONCATENATE` | `=CONCATENATE(A1, " ", B1)` | Concatenate multiple values into a string |
 | Absolute ref | `$A$1` | Lock column and row |
 | Mixed ref | `$A1`, `A$1` | Lock column or row only |
 
@@ -303,7 +307,7 @@ The `FormulaDeps` class maintains a bidirectional dependency graph:
 - **Forward**: `formulaKey` → `[depKey, ...]` — which cells a formula references
 - **Reverse**: `depKey` → `Set<formulaKey>` — which formulas depend on a cell
 
-When a cell changes, dirty flags propagate through the reverse graph. Circular references (depth > 20) return `#ERROR`.
+When a cell changes, dirty flags propagate through the reverse graph. Circular references are detected via a separate `inProgress` set and return `#ERROR`.
 
 ### Reference Offsetting During Paste
 
@@ -434,7 +438,7 @@ The project includes a GitHub Actions workflow (`.github/workflows/publish.yml`)
 
 ### Near-term
 
-- [ ] More formulas: `COUNT`, `IF`, `VLOOKUP`, `CONCATENATE`
+- [x] More formulas: `COUNT`, `IF`, `VLOOKUP`, `CONCATENATE`
 - [ ] Cell background color picker
 - [x] Number format (currency, percentage, date, number of decimals) — *see [Number Format](#number-format)*
 - [ ] Conditional formatting rules

@@ -1135,6 +1135,7 @@ export function createInteractions(
       { label: t(s.locale.value, 'calculate'), children: [
         { label: t(s.locale.value, 'sum'), action: bm.sumSelected, disabled: isSingleCell },
         { label: t(s.locale.value, 'avg'), action: bm.avgSelected, disabled: isSingleCell },
+        { label: t(s.locale.value, 'count'), action: bm.countSelected, disabled: isSingleCell },
       ] },
     ]);
   }

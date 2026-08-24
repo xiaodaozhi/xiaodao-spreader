@@ -274,7 +274,7 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  (e: 'undo' | 'redo' | 'paint-format' | 'clear-format' | 'font-size-blur' | 'font-size-toggle' | 'font-size-step-up' | 'font-size-step-down' | 'bold-toggle' | 'italic-toggle' | 'underline-toggle' | 'strikethrough-toggle' | 'apply-text-color' | 'apply-fill-color' | 'apply-border' | 'wrap-toggle' | 'apply-merge' | 'calc-sum' | 'calc-avg'): void;
+  (e: 'undo' | 'redo' | 'paint-format' | 'clear-format' | 'font-size-blur' | 'font-size-toggle' | 'font-size-step-up' | 'font-size-step-down' | 'bold-toggle' | 'italic-toggle' | 'underline-toggle' | 'strikethrough-toggle' | 'apply-text-color' | 'apply-fill-color' | 'apply-border' | 'wrap-toggle' | 'apply-merge' | 'calc-sum' | 'calc-avg' | 'calc-count'): void;
   (e: 'font-family-change' | 'font-size-change' | 'h-align-change' | 'v-align-change', v: string | number): void;
   (e: 'font-size-input' | 'text-color-change' | 'fill-color-change' | 'number-format-change', v: string): void;
   (e: 'font-size-keydown', ev: KeyboardEvent): void;
@@ -1002,7 +1002,7 @@ const nfFallbackLabel = computed(() =>
             :trigger-el="calcArrowRef"
             :disabled="isSingleCell"
             @update:model-open="emit('update:calc-menu-open', $event)"
-            @change="emit($event === 'sum' ? 'calc-sum' : 'calc-avg')"
+            @change="emit(`calc-${$event}`)"
           />
         </div>
       </div>
