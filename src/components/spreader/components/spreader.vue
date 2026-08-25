@@ -513,7 +513,14 @@ const setDimInputRef = (el: unknown) => {
       @tab-rename-keydown="interactions.onTabRenameKd($event)"
       @tab-rename-commit="interactions.commitTabRename"
       @tabbar-contextmenu="interactions.onTabBarCtx($event)"
-      @add-sheet="sheetsOps.addSheet(); interactions.scheduleRender()"
+      @delete-sheet="
+        sheetsOps.removeSheet($event);
+        interactions.scheduleRender();
+      "
+      @add-sheet="
+        sheetsOps.addSheet();
+        interactions.scheduleRender();
+      "
     />
 
     <!-- 右键菜单 -->

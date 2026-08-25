@@ -12,7 +12,7 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  (e: 'tab-click' | 'tab-dblclick', i: number): void;
+  (e: 'tab-click' | 'tab-dblclick' | 'delete-sheet', i: number): void;
   (e: 'tab-contextmenu', payload: { ev: MouseEvent; i: number }): void;
   (e: 'tab-rename-input', v: string): void;
   (e: 'tab-rename-keydown', ev: KeyboardEvent): void;
@@ -34,6 +34,15 @@ const visibleList = computed(() => props.sheets.slice(viewStart.value, viewStart
 const canUp = computed(() => viewStart.value > 0);
 const canDown = computed(() => viewStart.value + vc.value < props.sheets.length);
 const scrollable = computed(() => props.sheets.length > vc.value);
+// 仅有一张工作表时不允许删除
+const canDelete = computed(() => props.sheets.length > 1);
+
+// 删除后若 viewStart 越界则回拉，保持可见项稳定
+watch(() => props.sheets.length, () => {
+  if (!listMenuOpen.value) return;
+  const maxStart = Math.max(0, props.sheets.length - vc.value);
+  if (viewStart.value > maxStart) viewStart.value = maxStart;
+});
 
 function scrollBy(d: number) {
   viewStart.value = Math.max(0, Math.min(props.sheets.length - vc.value, viewStart.value + d));
@@ -62,6 +71,11 @@ function toggleListMenu() {
 function onListSelect(i: number) {
   emit('tab-click', i);
   listMenuOpen.value = false;
+}
+
+function onDeleteSheet(i: number) {
+  if (!canDelete.value) return;
+  emit('delete-sheet', i);
 }
 
 // 外部点击 / Escape 关闭
@@ -225,17 +239,28 @@ onBeforeUnmount(() => {
             @touchmove="onTm"
             @touchend="onTe"
           >
-            <button
+            <div
               v-for="s in visibleList"
               :key="s.id"
-              type="button"
               class="tab-list-menu__item"
               :class="{ 'tab-list-menu__item--active': sheets.indexOf(s) === activeSheetIndex }"
               :title="s.name"
               @click="onListSelect(sheets.indexOf(s))"
             >
               <span class="tab-list-menu__name">{{ s.name }}</span>
-            </button>
+              <button
+                type="button"
+                class="tab-list-menu__del"
+                :title="t(locale, 'delete')"
+                :disabled="!canDelete"
+                @click.stop="onDeleteSheet(sheets.indexOf(s))"
+              >
+                <svg
+                  viewBox="0 0 1024 1024"
+                  fill="currentColor"
+                ><path d="M571.733333 512l288.533334-288.533333c17.066667-17.066667 17.066667-42.666667 0-59.733334-17.066667-17.066667-42.666667-17.066667-59.733334 0L512 452.266667 223.466667 164.266667c-17.066667-17.066667-42.666667-17.066667-59.733334 0-17.066667 17.066667-17.066667 42.666667 0 59.733333L452.266667 512 164.266667 800c-17.066667 17.066667-17.066667 42.666667 0 59.733333 8.533333 8.533333 19.2 12.8 29.866666 12.8 10.666667 0 21.333333-4.266667 29.866667-12.8L512 571.733333l288.533333 288.533334c8.533333 8.533333 19.2 12.8 29.866667 12.8 10.666667 0 21.333333-4.266667 29.866667-12.8 17.066667-17.066667 17.066667-42.666667 0-59.733334L571.733333 512z" /></svg>
+              </button>
+            </div>
           </div>
           <button
             v-if="scrollable"
@@ -268,7 +293,7 @@ onBeforeUnmount(() => {
 .tab-bar__list-btn { display: flex; align-items: center; justify-content: center; width: 24px; min-width: 24px; height: 24px; margin: 0 2px 3px 3px; border: none; background: transparent; color: var(--sp-tab-add-btn-color); cursor: pointer; padding: 0; align-self: flex-end; }
 .tab-bar__list-btn:hover, .tab-bar__list-btn--active { background: var(--sp-tab-add-btn-hover-bg); }
 .tab-bar__list-btn svg { width: 14px; height: 14px; }
-.tab-bar__add-btn { width: 24px; min-width: 24px; height: 24px; margin: 0 4px 3px 3px; border: none; background: transparent; color: var(--sp-tab-add-btn-color); font-size: 16px; line-height: 22px; text-align: center; cursor: pointer; padding: 0; }
+.tab-bar__add-btn { display: flex; align-items: center; justify-content: center; width: 24px; min-width: 24px; height: 24px; margin: 0 4px 3px 3px; border: none; background: transparent; color: var(--sp-tab-add-btn-color); font-size: 16px; line-height: 22px; text-align: center; cursor: pointer; padding: 0; align-self: flex-end; }
 .tab-bar__add-btn:hover { background: var(--sp-tab-add-btn-hover-bg); }
 </style>
 
@@ -280,8 +305,13 @@ onBeforeUnmount(() => {
 .tab-list-menu__nav:disabled { color: #ccc; cursor: default; }
 .tab-list-menu__nav svg { width: 10px; height: 10px; }
 .tab-list-menu__list { display: flex; flex-direction: column; overflow: hidden; touch-action: none; }
-.tab-list-menu__item { display: flex; align-items: center; width: 100%; height: 28px; padding: 0 10px; border: none; background: transparent; color: var(--sp-toolbar-btn-color, #444); font-size: 13px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; cursor: pointer; text-align: left; white-space: nowrap; border-radius: 3px; box-sizing: border-box; }
+.tab-list-menu__item { display: flex; align-items: center; gap: 4px; width: 100%; height: 28px; padding: 0 6px 0 10px; border: none; background: transparent; color: var(--sp-toolbar-btn-color, #444); font-size: 13px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; cursor: pointer; white-space: nowrap; border-radius: 3px; box-sizing: border-box; }
 .tab-list-menu__item:hover { background: var(--sp-toolbar-btn-hover-bg, #e6e6e6); }
 .tab-list-menu__item--active { color: var(--sp-tab-active-border, #0078d7); font-weight: 500; }
-.tab-list-menu__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tab-list-menu__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tab-list-menu__del { display: flex; align-items: center; justify-content: center; width: 18px; height: 18px; flex: 0 0 auto; border: none; background: transparent; color: var(--sp-toolbar-btn-color, #999); cursor: pointer; padding: 0; border-radius: 3px; opacity: 0.55; }
+.tab-list-menu__item:hover .tab-list-menu__del { opacity: 1; }
+.tab-list-menu__del:hover:not(:disabled) { background: rgba(0,0,0,0.08); color: #d9534f; }
+.tab-list-menu__del:disabled { cursor: default; opacity: 0.25; }
+.tab-list-menu__del svg { width: 12px; height: 12px; }
 </style>
