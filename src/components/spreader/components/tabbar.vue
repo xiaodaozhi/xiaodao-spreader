@@ -1,8 +1,9 @@
 <script setup lang="ts">
+import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue';
 import { t } from '../core/constants';
 import type { SheetState } from '../core/types';
 
-const _props = defineProps<{
+const props = defineProps<{
   locale: string;
   sheets: SheetState[];
   activeSheetIndex: number;
@@ -18,6 +19,129 @@ const emit = defineEmits<{
   (e: 'tab-rename-commit' | 'add-sheet'): void;
   (e: 'tabbar-contextmenu', ev: MouseEvent): void;
 }>();
+
+// ============ 工作表列表菜单 ============
+const VISIBLE_COUNT = 8;
+const listBtnRef = ref<HTMLButtonElement | null>(null);
+const listMenuOpen = ref(false);
+const viewStart = ref(0);
+// 用 bottom 定位，菜单底部对齐按钮顶部，自然向上生长
+const listMenuPos = ref<{ left: number; bottom: number }>({ left: 0, bottom: 0 });
+const listRef = ref<HTMLDivElement | null>(null);
+
+const vc = computed(() => Math.min(VISIBLE_COUNT, props.sheets.length));
+const visibleList = computed(() => props.sheets.slice(viewStart.value, viewStart.value + vc.value));
+const canUp = computed(() => viewStart.value > 0);
+const canDown = computed(() => viewStart.value + vc.value < props.sheets.length);
+const scrollable = computed(() => props.sheets.length > vc.value);
+
+function scrollBy(d: number) {
+  viewStart.value = Math.max(0, Math.min(props.sheets.length - vc.value, viewStart.value + d));
+}
+
+function toggleListMenu() {
+  if (listMenuOpen.value) {
+    listMenuOpen.value = false;
+    return;
+  }
+  const el = listBtnRef.value;
+  if (!el) return;
+  const r = el.getBoundingClientRect();
+  listMenuPos.value = {
+    left: r.left,
+    bottom: window.innerHeight - r.top + 4,
+  };
+  // 活动项居中显示
+  const idx = props.activeSheetIndex;
+  viewStart.value = idx >= 0
+    ? Math.max(0, Math.min(idx - Math.floor(vc.value / 2), props.sheets.length - vc.value))
+    : 0;
+  listMenuOpen.value = true;
+}
+
+function onListSelect(i: number) {
+  emit('tab-click', i);
+  listMenuOpen.value = false;
+}
+
+// 外部点击 / Escape 关闭
+function onDocPointerdown(e: PointerEvent) {
+  if (!listMenuOpen.value) return;
+  const target = e.target as Node;
+  if (listBtnRef.value?.contains(target)) return;
+  const menu = document.querySelector('.tab-list-menu');
+  if (menu?.contains(target)) return;
+  listMenuOpen.value = false;
+}
+
+function onDocKeydown(e: KeyboardEvent) {
+  if (listMenuOpen.value && e.key === 'Escape') listMenuOpen.value = false;
+}
+
+// 鼠标滚轮翻页（与 dropdown 一致）
+function onWheel(e: WheelEvent) {
+  if (!listMenuOpen.value) return;
+  e.preventDefault();
+  scrollBy(e.deltaY > 0 ? 1 : -1);
+}
+
+function closeListMenu() {
+  listMenuOpen.value = false;
+}
+
+// 滚动关闭：仅在外部滚动时关闭，菜单内部滚动不关闭
+function onScrollClose(e: Event) {
+  if (!listMenuOpen.value) return;
+  const target = e.target as Node;
+  if (target === listRef.value) return;
+  closeListMenu();
+}
+
+// 触屏滑动翻页（与 dropdown 一致）
+const tY = ref(0);
+const tDrag = ref(false);
+function onTs(e: TouchEvent) {
+  if (listMenuOpen.value) {
+    tY.value = e.touches[0]!.clientY;
+    tDrag.value = true;
+  }
+}
+function onTm(e: TouchEvent) {
+  if (!listMenuOpen.value || !tDrag.value) return;
+  const dy = e.touches[0]!.clientY - tY.value;
+  if (Math.abs(dy) > 5) {
+    scrollBy(dy < 0 ? 1 : -1);
+    tY.value = e.touches[0]!.clientY;
+  }
+}
+function onTe() {
+  tDrag.value = false;
+}
+
+// 菜单打开/关闭时挂载/卸载非 passive wheel 监听
+watch(listMenuOpen, (v) => {
+  nextTick(() => {
+    if (v) {
+      listRef.value?.addEventListener('wheel', onWheel, { passive: false });
+    } else {
+      listRef.value?.removeEventListener('wheel', onWheel);
+    }
+  });
+});
+
+onMounted(() => {
+  document.addEventListener('pointerdown', onDocPointerdown);
+  document.addEventListener('keydown', onDocKeydown);
+  window.addEventListener('resize', closeListMenu);
+  window.addEventListener('scroll', onScrollClose, true);
+});
+
+onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', onDocPointerdown);
+  document.removeEventListener('keydown', onDocKeydown);
+  window.removeEventListener('resize', closeListMenu);
+  window.removeEventListener('scroll', onScrollClose, true);
+});
 </script>
 
 <template>
@@ -25,6 +149,19 @@ const emit = defineEmits<{
     class="tab-bar"
     @contextmenu="emit('tabbar-contextmenu', $event)"
   >
+    <button
+      ref="listBtnRef"
+      class="tab-bar__list-btn"
+      type="button"
+      :title="t(locale, 'sheetList')"
+      :class="{ 'tab-bar__list-btn--active': listMenuOpen }"
+      @click="toggleListMenu"
+    >
+      <svg
+        viewBox="0 0 1024 1024"
+        fill="currentColor"
+      ><path d="M128 256h768a32 32 0 0 0 0-64H128a32 32 0 0 0 0 64z m0 256h768a32 32 0 0 0 0-64H128a32 32 0 0 0 0 64z m0 256h768a32 32 0 0 0 0-64H128a32 32 0 0 0 0 64z" /></svg>
+    </button>
     <div class="tab-list">
       <template
         v-for="(s, i) in sheets"
@@ -60,6 +197,62 @@ const emit = defineEmits<{
     >
       +
     </button>
+    <Teleport to="body">
+      <Transition name="menu-pop">
+        <div
+          v-if="listMenuOpen"
+          class="tab-list-menu"
+          :style="{ left: listMenuPos.left + 'px', bottom: listMenuPos.bottom + 'px' }"
+          @mousedown.prevent
+        >
+          <button
+            v-if="scrollable"
+            type="button"
+            class="tab-list-menu__nav"
+            :class="{ 'tab-list-menu__nav--disabled': !canUp }"
+            :disabled="!canUp"
+            @click="scrollBy(-1)"
+          >
+            <svg
+              viewBox="0 0 1024 1024"
+              fill="currentColor"
+            ><path d="M180.053333 662.613333a32 32 0 0 0 45.226667 0L512 375.893333l286.72 286.72a32 32 0 1 0 45.226667-45.226666l-309.333334-309.333334a32 32 0 0 0-45.226666 0l-309.333334 309.333334a32 32 0 0 0 0 45.226666z" /></svg>
+          </button>
+          <div
+            ref="listRef"
+            class="tab-list-menu__list"
+            @touchstart="onTs"
+            @touchmove="onTm"
+            @touchend="onTe"
+          >
+            <button
+              v-for="s in visibleList"
+              :key="s.id"
+              type="button"
+              class="tab-list-menu__item"
+              :class="{ 'tab-list-menu__item--active': sheets.indexOf(s) === activeSheetIndex }"
+              :title="s.name"
+              @click="onListSelect(sheets.indexOf(s))"
+            >
+              <span class="tab-list-menu__name">{{ s.name }}</span>
+            </button>
+          </div>
+          <button
+            v-if="scrollable"
+            type="button"
+            class="tab-list-menu__nav"
+            :class="{ 'tab-list-menu__nav--disabled': !canDown }"
+            :disabled="!canDown"
+            @click="scrollBy(1)"
+          >
+            <svg
+              viewBox="0 0 1024 1024"
+              fill="currentColor"
+            ><path d="M180.053333 361.386667a32 32 0 0 1 45.226667 0L512 648.106667l286.72-286.72a32 32 0 1 1 45.226667 45.226666l-309.333334 309.333334a32 32 0 0 1-45.226666 0L180.053333 406.613333a32 32 0 0 1 0-45.226666z" /></svg>
+          </button>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
@@ -72,6 +265,23 @@ const emit = defineEmits<{
 .tab-item--active:hover { background: var(--sp-tab-active-bg); }
 .tab-item__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tab-rename-input { width: 100%; height: 18px; border: none; border-radius: 0; outline: none; padding: 0; font-size: 16px; font-family: inherit; background: var(--sp-tab-active-bg); color: var(--sp-tab-active-color); box-sizing: border-box; }
+.tab-bar__list-btn { display: flex; align-items: center; justify-content: center; width: 24px; min-width: 24px; height: 24px; margin: 0 2px 3px 3px; border: none; background: transparent; color: var(--sp-tab-add-btn-color); cursor: pointer; padding: 0; align-self: flex-end; }
+.tab-bar__list-btn:hover, .tab-bar__list-btn--active { background: var(--sp-tab-add-btn-hover-bg); }
+.tab-bar__list-btn svg { width: 14px; height: 14px; }
 .tab-bar__add-btn { width: 24px; min-width: 24px; height: 24px; margin: 0 4px 3px 3px; border: none; background: transparent; color: var(--sp-tab-add-btn-color); font-size: 16px; line-height: 22px; text-align: center; cursor: pointer; padding: 0; }
 .tab-bar__add-btn:hover { background: var(--sp-tab-add-btn-hover-bg); }
+</style>
+
+<style>
+/* 非 scoped：菜单 teleport 到 body，需全局样式 */
+.tab-list-menu { position: fixed; display: flex; flex-direction: column; background: var(--sp-toolbar-bg, #fff); border: 1px solid var(--sp-toolbar-border, #d8d8d8); border-radius: 4px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12); padding: 4px; z-index: 1000; transform-origin: bottom left; min-width: 140px; max-width: 260px; box-sizing: border-box; }
+.tab-list-menu__nav { display: flex; align-items: center; justify-content: center; height: 15px; min-height: 15px; border: none; background: transparent; color: var(--sp-toolbar-btn-color, #666); cursor: pointer; padding: 0; border-radius: 3px; }
+.tab-list-menu__nav:hover:not(:disabled) { background: var(--sp-toolbar-btn-hover-bg, #eef3f9); }
+.tab-list-menu__nav:disabled { color: #ccc; cursor: default; }
+.tab-list-menu__nav svg { width: 10px; height: 10px; }
+.tab-list-menu__list { display: flex; flex-direction: column; overflow: hidden; touch-action: none; }
+.tab-list-menu__item { display: flex; align-items: center; width: 100%; height: 28px; padding: 0 10px; border: none; background: transparent; color: var(--sp-toolbar-btn-color, #444); font-size: 13px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; cursor: pointer; text-align: left; white-space: nowrap; border-radius: 3px; box-sizing: border-box; }
+.tab-list-menu__item:hover { background: var(--sp-toolbar-btn-hover-bg, #e6e6e6); }
+.tab-list-menu__item--active { color: var(--sp-tab-active-border, #0078d7); font-weight: 500; }
+.tab-list-menu__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>
