@@ -946,62 +946,64 @@ const nfFallbackLabel = computed(() =>
         class="tb-item"
         data-key="numFmt"
       >
-        <SpDropdown
-          class="toolbar-number-format"
-          :model-value="selNumberFormat"
-          :options="nfOptions"
-          :width="isOverflow('numFmt') ? '100%' : 92"
-          :menu-width="isOverflow('numFmt') ? 150 : 150"
-          :visible-count="8"
-          :title="t(locale, 'numberFormat')"
-          :fallback-label="nfFallbackLabel"
-          align="right"
-          @change="emit('number-format-change', String($event))"
-        />
-        <!-- 增加小数位数 -->
-        <button
-          class="toolbar-btn"
-          :class="{ 'toolbar-btn--disabled': !canIncreaseDecimals }"
-          :title="t(locale, 'nfIncreaseDecimals')"
-          :disabled="!canIncreaseDecimals"
-          @click="emit('increase-decimals')"
-        >
-          <svg
-            viewBox="0 0 24 24"
-            fill="currentColor"
+        <div class="toolbar-number-format-group">
+          <SpDropdown
+            class="toolbar-number-format"
+            :model-value="selNumberFormat"
+            :options="nfOptions"
+            :width="isOverflow('numFmt') ? 'auto' : 92"
+            :menu-width="isOverflow('numFmt') ? 150 : 150"
+            :visible-count="8"
+            :title="t(locale, 'numberFormat')"
+            :fallback-label="nfFallbackLabel"
+            align="right"
+            @change="emit('number-format-change', String($event))"
+          />
+          <!-- 增加小数位数 -->
+          <button
+            class="toolbar-btn toolbar-number-format__btn"
+            :class="{ 'toolbar-btn--disabled': !canIncreaseDecimals }"
+            :title="t(locale, 'nfIncreaseDecimals')"
+            :disabled="!canIncreaseDecimals"
+            @click="emit('increase-decimals')"
           >
-            <text
-              x="0.5"
-              y="16"
-              font-size="9"
-              font-weight="700"
-              font-family="Arial, sans-serif"
-            >.00</text>
-            <path d="M19 5.5l4.2 5.2h-2.7v7.8h-3v-7.8h-2.7z" />
-          </svg>
-        </button>
-        <!-- 减少小数位数 -->
-        <button
-          class="toolbar-btn"
-          :class="{ 'toolbar-btn--disabled': !canDecreaseDecimals }"
-          :title="t(locale, 'nfDecreaseDecimals')"
-          :disabled="!canDecreaseDecimals"
-          @click="emit('decrease-decimals')"
-        >
-          <svg
-            viewBox="0 0 24 24"
-            fill="currentColor"
+            <svg
+              viewBox="0 0 24 24"
+              fill="currentColor"
+            >
+              <text
+                x="0.5"
+                y="16"
+                font-size="9"
+                font-weight="700"
+                font-family="Arial, sans-serif"
+              >.00</text>
+              <path d="M19 5.5l4.2 5.2h-2.7v7.8h-3v-7.8h-2.7z" />
+            </svg>
+          </button>
+          <!-- 减少小数位数 -->
+          <button
+            class="toolbar-btn toolbar-number-format__btn"
+            :class="{ 'toolbar-btn--disabled': !canDecreaseDecimals }"
+            :title="t(locale, 'nfDecreaseDecimals')"
+            :disabled="!canDecreaseDecimals"
+            @click="emit('decrease-decimals')"
           >
-            <text
-              x="0.5"
-              y="16"
-              font-size="9"
-              font-weight="700"
-              font-family="Arial, sans-serif"
-            >.00</text>
-            <path d="M19 18.5l-4.2-5.2h2.7V5.5h3v7.8h2.7z" />
-          </svg>
-        </button>
+            <svg
+              viewBox="0 0 24 24"
+              fill="currentColor"
+            >
+              <text
+                x="0.5"
+                y="16"
+                font-size="9"
+                font-weight="700"
+                font-family="Arial, sans-serif"
+              >.00</text>
+              <path d="M19 18.5l-4.2-5.2h2.7V5.5h3v7.8h2.7z" />
+            </svg>
+          </button>
+        </div>
       </div>
     </Teleport>
 
@@ -1144,6 +1146,7 @@ const nfFallbackLabel = computed(() =>
 .toolbar-number-format { flex: 0 0 auto; }
 .toolbar-align { flex: 0 0 auto; }
 .toolbar-font-size { display: inline-flex; align-items: center; gap: 0; height: 26px; position: relative; }
+.toolbar-number-format-group { display: inline-flex; align-items: center; gap: 0; height: 26px; position: relative; }
 .toolbar-font-size__input { width: 36px; height: 26px; border: 1px solid transparent; border-right: none; border-radius: 3px 0 0 3px; background: transparent; color: var(--sp-toolbar-btn-color); font-size: 12px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; text-align: left; padding: 0 5px; outline: none; box-sizing: border-box; appearance: none; -moz-appearance: textfield; }
 .toolbar-font-size__input::-webkit-outer-spin-button,
 .toolbar-font-size__input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
@@ -1182,10 +1185,12 @@ const nfFallbackLabel = computed(() =>
 .overflow-menu .toolbar-split { width: 100%; }
 .overflow-menu .toolbar-split__main { flex: 1 1 auto; justify-content: flex-start; padding-left: 6px; }
 .overflow-menu .toolbar-font-size { width: 100%; justify-content: flex-start; }
+.overflow-menu .toolbar-number-format-group { width: 100%; justify-content: flex-start; }
 .overflow-menu .toolbar-font { width: 100%; }
-.overflow-menu .toolbar-number-format { width: 100%; }
+.overflow-menu .toolbar-number-format { flex: 1 1 auto; width: auto !important; min-width: 0; }
 .overflow-menu .toolbar-align { width: 100%; }
-.overflow-menu .toolbar-btn:not(.toolbar-btn--step):not(.toolbar-split__arrow) { width: 100%; justify-content: flex-start; padding-left: 6px; }
+.overflow-menu .toolbar-btn:not(.toolbar-btn--step):not(.toolbar-split__arrow):not(.toolbar-number-format__btn) { width: 100%; justify-content: flex-start; padding-left: 6px; }
+.overflow-menu .toolbar-number-format__btn { flex: 0 0 auto; width: 30px; }
 .overflow-menu .toolbar-color { width: 100%; }
 .overflow-menu .toolbar-wrap { width: 100%; justify-content: flex-start; }
 
@@ -1201,10 +1206,12 @@ const nfFallbackLabel = computed(() =>
 .overflow-menu .toolbar-split { width: 100%; }
 .overflow-menu .toolbar-split__main { flex: 1 1 auto; justify-content: flex-start; padding-left: 6px; }
 .overflow-menu .toolbar-font-size { width: 100%; justify-content: flex-start; }
+.overflow-menu .toolbar-number-format-group { width: 100%; justify-content: flex-start; }
 .overflow-menu .toolbar-font { width: 100%; }
-.overflow-menu .toolbar-number-format { width: 100%; }
+.overflow-menu .toolbar-number-format { flex: 1 1 auto; width: auto !important; min-width: 0; }
 .overflow-menu .toolbar-align { width: 100%; }
-.overflow-menu .toolbar-btn:not(.toolbar-btn--step):not(.toolbar-split__arrow) { width: 100%; justify-content: flex-start; padding-left: 6px; }
+.overflow-menu .toolbar-btn:not(.toolbar-btn--step):not(.toolbar-split__arrow):not(.toolbar-number-format__btn) { width: 100%; justify-content: flex-start; padding-left: 6px; }
+.overflow-menu .toolbar-number-format__btn { flex: 0 0 auto; width: 30px; }
 .overflow-menu .toolbar-color { width: 100%; }
 .overflow-menu .toolbar-wrap { width: 100%; justify-content: flex-start; }
 .overflow-menu .toolbar-font-size__input { flex: 1 1 auto; width: auto; min-width: 40px; }
