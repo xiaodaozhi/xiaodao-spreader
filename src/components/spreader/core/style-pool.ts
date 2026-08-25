@@ -174,12 +174,13 @@ export function resolveStyle(cell: CellData | undefined, styles: CellStyle[]): C
  */
 export function updateCellStyle(cell: CellData, patch: Record<string, unknown>, pool: StylePool): void {
   const oldStyle = pool.get(cell.styleId ?? 0);
-  const newStyle: CellStyle = { ...oldStyle };
+  let newStyle: CellStyle = { ...oldStyle };
 
-  // 应用 patch：空值/空串/undefined/0 表示删除属性
+  // 应用 patch：空值/空串/undefined/0 表示删除属性（用解构 omit 代替动态 delete）
   for (const [prop, value] of Object.entries(patch)) {
     if (value === '' || value === null || value === undefined || value === 0) {
-      delete newStyle[prop];
+      const { [prop]: _omitted, ...rest } = newStyle;
+      newStyle = rest;
     } else {
       (newStyle as Record<string, unknown>)[prop] = value;
     }
@@ -200,13 +201,12 @@ export function unsetCellStyle(cell: CellData, key: string, pool: StylePool): vo
   const oldStyle = pool.get(cell.styleId ?? 0);
   if (!oldStyle || !(key in oldStyle)) return;
 
-  const newStyle: CellStyle = { ...oldStyle };
-  delete (newStyle as Record<string, unknown>)[key];
+  const { [key]: _omitted, ...newStyle } = oldStyle as Record<string, unknown>;
 
   if (Object.keys(newStyle).length === 0) {
     cell.styleId = 0;
   } else {
-    cell.styleId = pool.getId(newStyle);
+    cell.styleId = pool.getId(newStyle as CellStyle);
   }
 }
 

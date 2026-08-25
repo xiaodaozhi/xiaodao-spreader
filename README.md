@@ -20,9 +20,9 @@ A high-performance, canvas-based spreadsheet component for Vue 3 — bringing an
 - **Canvas 2D Rendering** — High-DPI aware with DPR scaling, virtual viewport rendering for 200 × 26 sheets
 - **Multi-Sheet Workbook** — Tab bar with add, rename, duplicate, delete, reorder
 - **Formula Engine** — `=SUM()`, `=AVERAGE()`, `=COUNT()`, `=IF()`, `=VLOOKUP()`, `=CONCATENATE()` with dependency tracking and circular-reference detection; toolbar and context menu provide one-click sum/average/count
-- **Merge Cells** — Merge & Center, Merge Across, Unmerge with border synchronization
+- **Merge Cells** — Merge & Center, Merge Across, Unmerge; merged-region borders stored at the anchor, shared borders resolved at render time
 - **Rich Cell Formatting** — Font family, font size (5–72), bold, italic, underline, strikethrough, text color, fill color, horizontal & vertical alignment, wrap text
-- **Borders** — Top / bottom / left / right / all / none with 5 predefined styles and custom color
+- **Borders** — Top / bottom / left / right / outside / all / none with 5 predefined styles and custom color; stored in a dedicated border pool, shared borders resolved at render time
 - **Undo / Redo** — Full state snapshots for cells, column widths, and row heights (50 steps)
 - **Format Painter** — Copy & apply cell formatting across ranges
 - **Number Format** — Excel-style number formatting (General / Text / Number / Currency / Accounting / Percent / Scientific / Date / Time / DateTime / Duration) with a custom format dialog; display-only, never mutates the stored cell value
@@ -144,6 +144,7 @@ The external data format used for v-model two-way binding:
 interface SheetModelData {
   name: string;
   styles?: CellStyle[];
+  borders?: BorderStyle[];
   cells: Record<string, {
     value: string;
     styleId?: number;
@@ -155,6 +156,7 @@ interface SheetModelData {
 ```
 
 - **`styles`**: Style pool — `styles[0]` is always the default empty style `{}`. Cells reference styles by index (`styleId`).
+- **`borders`**: Border pool — `borders[0]` is always the default empty border `{}`. Styles reference borders by index (`borderId`); auto-migrated from legacy inline border props when omitted.
 - **`cells`**: Key is `"col,row"` (e.g., `"0,0"` for cell A1). `styleId` references into the `styles` array; `styleId=0` or omitted means default style.
 - **`merges`**: Merge cell definitions, keyed by merge anchor cell.
 - **`colWidths` / `rowHeights`**: Sparse maps — only stores non-default values.
@@ -167,6 +169,9 @@ import type {
   SelectionRange,  // { startCol; startRow; endCol; endRow }
   CellData,        // { value: string; styleId?: number }
   CellStyle,       // Typed style interface (font, color, border, alignment, etc.)
+  BorderStyle,     // Four-side border { top; right; bottom; left }
+  BorderSide,      // Single border side { width; color; style }
+  BorderSource,    // Border source 'cell' | 'merge'
   Range,           // { start: number; end: number }
   SpreadsheetOptions,
   SpreadsheetData,
@@ -206,7 +211,7 @@ src/
         ├── composables/
         │   ├── core-state.ts        # Props, cells/merges/selection, font metrics, navigation
         │   ├── undo-styles.ts       # Undo/redo, format painter, font/alignment/color
-        │   ├── borders-merge.ts     # Border sync, merge ops, clipboard, sum
+        │   ├── borders-merge.ts     # Border ops, merge ops, clipboard, sum
         │   ├── sheets-ops.ts        # Row/col ops, multi-sheet, v-model emit, theme, refs
         │   ├── find-replace.ts      # Find/replace state & interaction (Vue-dependent)
         │   └── interactions.ts      # Renderer, formula bar, tab bar, context menu, scrollbar, events
@@ -214,6 +219,8 @@ src/
             ├── constants.ts         # Layout constants, i18n, theme palettes
             ├── types.ts             # All type definitions
             ├── style-pool.ts        # Style pool: dedup, registration, resolve, migration, GC
+            ├── border-pool.ts       # Border pool: dedup, registration, resolve, migration, GC
+            ├── border-resolve.ts    # Shared-border conflict resolution (resolveSharedBorder)
             ├── formula.ts           # Formula engine (parse, evaluate, deps, cache)
             ├── find-replace-core.ts # Find/replace pure algorithms (zero Vue deps, unit-testable)
             ├── number-format.ts     # Number format engine (Excel-style display formatting)
@@ -228,6 +235,7 @@ src/
 - **Canvas 2D Rendering**: Only visible cells are drawn (virtual rendering), ensuring smooth performance on large sheets
 - **No Dirty Flags**: Manual `scheduleRender()` calls at interaction end-points; `requestAnimationFrame` automatically merges multiple calls within the same frame
 - **Style Pool**: Each sheet maintains a `styles: CellStyle[]` array; cells reference styles via `styleId` (array index). Identical styles are automatically deduplicated. Runtime style resolution via `resolveStyle()` / `registerStyle()`; GC (`compactStyles`) runs only at save/export time
+- **Border Pool**: Borders are stored separately from regular styles in a per-sheet `borders: BorderStyle[]` pool; styles reference borders via `borderId` (array index). Adjacent shared borders are resolved at render time via `resolveSharedBorder()`; setting a border no longer mutates neighboring cells
 - **Shared State**: A central `CoreState` object is injected into each composable, enabling cross-module communication without tight coupling
 - **Reactive Wrap**: Composable return values are wrapped in `reactive()` for automatic ref/computed unwrapping in templates
 
@@ -335,6 +343,17 @@ An Excel-style number formatting engine (`spreader/core/number-format.ts`) that 
 - **Display**: `formatNumber(value, format, locale)` parses the code (cached), applies thousands separators / decimals / percent scaling / date-serial conversion, and returns the display string. Invalid date/duration serials render as `###`.
 - **Alignment**: numeric formats default to right-aligned; Text and General-with-non-numeric keep left alignment — matching Excel semantics.
 - **i18n**: currency symbol (`¥` / `$`), month and weekday names follow the `locale` prop.
+
+---
+
+## Border System
+
+A dedicated border storage & rendering mechanism (`spreader/core/border-pool.ts` + `border-resolve.ts`).
+
+- **Dedicated border pool**: each sheet maintains a `borders: BorderStyle[]` pool (`borders[0]` is always the empty border `{}`); styles reference borders by index (`borderId`), and identical borders are deduplicated.
+- **Shared-border resolution**: adjacent cells' shared border is resolved at render time via `resolveSharedBorder()` — wider wins, then the first side on equal width; setting a border no longer mutates neighboring cells.
+- **Merged cells**: merged-region borders are stored at the anchor (top-left); internal borders are masked, outer boundaries are resolved segment-wise against neighbors, and the four corners fill in corner blocks.
+- **Legacy compatibility**: legacy inline border props (`borderTopWidth`, etc., deprecated) are auto-migrated via `migrateBordersInStyles()` on load.
 
 ---
 

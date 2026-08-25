@@ -21,9 +21,9 @@
 - **Canvas 2D 渲染** — 高 DPI 自适应（DPR 缩放），虚拟视口渲染，支持 200 行 × 26 列
 - **多 Sheet 工作簿** — 标签栏支持新建、重命名、复制、删除、拖拽排序
 - **公式引擎** — 支持 `=SUM()`、`=AVERAGE()`、`=COUNT()`、`=IF()`、`=VLOOKUP()`、`=CONCATENATE()`，支持依赖追踪与循环引用检测；工具栏与右键菜单提供一键求和/平均值/计数
-- **合并单元格** — 合并居中、跨列合并、取消合并，边框自动同步
+- **合并单元格** — 合并居中、跨列合并、取消合并；合并区域边框按锚点存储、公共边渲染时统一解析
 - **丰富单元格格式** — 字体、字号（5–72）、加粗、斜体、下划线、删除线、文字颜色、填充颜色、水平/垂直对齐、自动换行
-- **边框** — 上/下/左/右/全部/无，5 种预设样式及自定义颜色
+- **边框** — 上/下/左/右/外边框/全部/无，5 种预设样式及自定义颜色；独立边框池存储、公共边渲染时统一解析
 - **撤销 / 重做** — 单元格、列宽、行高的完整状态快照（50 步）
 - **格式刷** — 复制并应用单元格格式到任意区域
 - **数字格式** — Excel 风格数字格式（常规 / 文本 / 数值 / 货币 / 会计 / 百分比 / 科学计数 / 日期 / 时间 / 日期时间 / 持续时间），提供自定义格式对话框；仅影响显示，绝不修改底层单元格值
@@ -147,6 +147,7 @@ const myData = ref<SheetModelData[]>([
 interface SheetModelData {
   name: string;
   styles?: CellStyle[];
+  borders?: BorderStyle[];
   cells: Record<string, {
     value: string;
     styleId?: number;
@@ -158,6 +159,7 @@ interface SheetModelData {
 ```
 
 - **`styles`**：样式池 —— `styles[0]` 始终为默认空样式 `{}`。单元格通过下标（`styleId`）引用样式。
+- **`borders`**：边框池 —— `borders[0]` 始终为默认空边框 `{}`。样式通过下标（`borderId`）引用边框；省略时由旧版内联边框属性自动迁移。
 - **`cells`**：键为 `"列,行"` 格式（如 `"0,0"` 代表 A1 单元格）。`styleId` 引用 `styles` 数组；`styleId=0` 或省略表示默认样式。
 - **`merges`**：合并单元格定义，以合并锚点单元格为键。
 - **`colWidths` / `rowHeights`**：稀疏映射 — 仅存储非默认值。
@@ -170,6 +172,9 @@ import type {
   SelectionRange,  // { startCol; startRow; endCol; endRow }
   CellData,        // { value: string; styleId?: number }
   CellStyle,       // 类型化样式接口（字体、颜色、边框、对齐等）
+  BorderStyle,     // 四边边框组合 { top; right; bottom; left }
+  BorderSide,      // 单边边框 { width; color; style }
+  BorderSource,    // 边框来源 'cell' | 'merge'
   Range,           // { start: number; end: number }
   SpreadsheetOptions,
   SpreadsheetData,
@@ -209,7 +214,7 @@ src/
         ├── composables/
         │   ├── core-state.ts        # Props、cells/merges/selection、字体度量、导航
         │   ├── undo-styles.ts       # 撤销重做、格式刷、字体/对齐/颜色
-        │   ├── borders-merge.ts     # 边框同步、合并操作、剪贴板、求和
+        │   ├── borders-merge.ts     # 边框操作、合并操作、剪贴板、求和
         │   ├── sheets-ops.ts        # 行列增删、多 Sheet、v-model 发射、主题、refs
         │   ├── find-replace.ts      # 查找替换状态与交互（依赖 Vue）
         │   └── interactions.ts      # 渲染器、编辑栏、标签栏、右键菜单、滚动条、事件
@@ -217,6 +222,8 @@ src/
             ├── constants.ts         # 布局常量、国际化、主题调色板
             ├── types.ts             # 全部类型定义
             ├── style-pool.ts        # 样式池：去重、注册、解析、迁移、GC
+            ├── border-pool.ts       # 边框池：去重、注册、解析、迁移、GC
+            ├── border-resolve.ts    # 公共边冲突解析（resolveSharedBorder）
             ├── formula.ts           # 公式引擎（解析、计算、依赖、缓存）
             ├── find-replace-core.ts # 查找替换纯算法（零 Vue 依赖，可单测）
             ├── number-format.ts     # 数字格式引擎（Excel 风格显示格式化）
@@ -231,6 +238,7 @@ src/
 - **Canvas 2D 渲染**：仅绘制可视区域（虚拟渲染），大表流畅
 - **无脏标记**：在交互结束点手动调用 `scheduleRender()`；`requestAnimationFrame` 自动合并同一帧的多次调用
 - **样式池**：每个 Sheet 维护 `styles: CellStyle[]` 数组，单元格通过 `styleId`（数组下标）引用样式。相同样式自动去重。运行时通过 `resolveStyle()` / `registerStyle()` 解析样式；GC（`compactStyles`）仅在保存/导出时执行
+- **边框池**：边框独立于普通样式，存入每 Sheet 的 `borders: BorderStyle[]` 池，样式通过 `borderId`（数组下标）引用。相邻公共边在渲染时经 `resolveSharedBorder()` 统一解析，设置边框不再同步修改相邻单元格
 - **共享状态**：将 `CoreState` 注入每个 composable，实现跨模块通信而不产生紧耦合
 - **Reactive 包装**：composable 返回值通过 `reactive()` 包装，模板中自动解包 ref/computed
 
@@ -338,6 +346,17 @@ src/
 - **显示**：`formatNumber(value, format, locale)` 解析代码（带缓存），应用千位分隔 / 小数位 / 百分比缩放 / 日期序列号转换，返回显示字符串。非法的日期/持续时间序列号渲染为 `###`。
 - **对齐**：数值类格式默认右对齐；文本及常规下的非数值保持左对齐——与 Excel 语义一致。
 - **国际化**：货币符号（`¥` / `$`）、月份与星期名称随 `locale` 属性变化。
+
+---
+
+## 边框系统
+
+一套独立的边框存储与渲染机制（`spreader/core/border-pool.ts` + `border-resolve.ts`）。
+
+- **独立边框池**：每个 Sheet 维护 `borders: BorderStyle[]` 池（`borders[0]` 恒为空边框 `{}`），样式通过 `borderId`（数组下标）引用边框，相同边框自动去重。
+- **公共边统一解析**：相邻单元格的公共边在渲染时经 `resolveSharedBorder()` 解析——宽者优先、同宽取先侧；设置边框**不再**同步修改相邻单元格。
+- **合并单元格**：合并区域边框统一存储在锚点（左上角），内部边屏蔽，外边界按行/列分段与相邻区域解析，四角补齐角方块。
+- **旧数据兼容**：旧版内联边框属性（`borderTopWidth` 等，已废弃）在加载时经 `migrateBordersInStyles()` 自动迁移。
 
 ---
 

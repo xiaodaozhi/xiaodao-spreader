@@ -1,6 +1,6 @@
 import { ref, reactive, computed, watch, nextTick, type Ref, type ComputedRef } from 'vue';
 import { DEFAULT_COL_WIDTH, lightTheme, darkTheme } from '../core/constants';
-import type { ThemeColors, SheetState, SheetModelData, CellStyle } from '../core/types';
+import type { ThemeColors, SheetState, SheetModelData } from '../core/types';
 import { resolveSize } from '../core/utils';
 import { buildOuterStyle } from '../core/theme';
 import type { CoreState } from './core-state';

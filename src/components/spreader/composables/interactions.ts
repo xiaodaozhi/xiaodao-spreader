@@ -365,7 +365,7 @@ export function createInteractions(
         const mergeInfo = s.findMerge(col, row);
         // 跳过 merge 内部 cell（非 anchor）
         if (mergeInfo && !(col === mergeInfo.range.startCol && row === mergeInfo.range.startRow)) continue;
-    
+
         const x = HW + cP[col]! - sx;
         const y = HH + rP[row]! - sy;
         let cw = cW[col]!;
@@ -375,7 +375,7 @@ export function createInteractions(
           rh = rP[mergeInfo.range.endRow + 1]! - rP[row]!;
         }
         if (x + cw < HW || y + rh < HH || x > W || y > H) continue;
-    
+
         const cell = s.cells[s.cellKey(col, row)];
         const ownBorder: Record<string, BorderSide | undefined> = {
           top: s.getCellBorderSide(cell, 'top'),
@@ -383,11 +383,11 @@ export function createInteractions(
           bottom: s.getCellBorderSide(cell, 'bottom'),
           left: s.getCellBorderSide(cell, 'left'),
         };
-    
+
         if (mergeInfo) {
           const sR = mergeInfo.range.startRow, eRm = mergeInfo.range.endRow;
           const sC = mergeInfo.range.startCol, eCm = mergeInfo.range.endCol;
-    
+
           // ── 横边 · Top：沿合并上沿逐列分段绘制 ──
           for (let cc = sC; cc <= eCm; cc++) {
             if (s.isSameMergeInternal(cc, sR - 1, cc, sR)) continue;
@@ -399,7 +399,7 @@ export function createInteractions(
               rCtx.fillRect(sxSeg, y, cW[cc]!, resolved.width);
             }
           }
-    
+
           // ── 横边 · Bottom：沿合并下沿逐列分段绘制 ──
           for (let cc = sC; cc <= eCm; cc++) {
             if (s.isSameMergeInternal(cc, eRm, cc, eRm + 1)) continue;
@@ -411,7 +411,7 @@ export function createInteractions(
               rCtx.fillRect(sxSeg, y + rh - resolved.width, cW[cc]!, resolved.width);
             }
           }
-    
+
           // ── 竖边 · Left：沿合并左沿逐行分段绘制 ──
           for (let rr = sR; rr <= eRm; rr++) {
             if (s.isSameMergeInternal(sC - 1, rr, sC, rr)) continue;
@@ -423,7 +423,7 @@ export function createInteractions(
               rCtx.fillRect(x, sySeg, resolved.width, rH[rr]!);
             }
           }
-    
+
           // ── 竖边 · Right：沿合并右沿逐行分段绘制 ──
           for (let rr = sR; rr <= eRm; rr++) {
             if (s.isSameMergeInternal(eCm, rr, eCm + 1, rr)) continue;
@@ -435,7 +435,7 @@ export function createInteractions(
               rCtx.fillRect(x + cw - resolved.width, sySeg, resolved.width, rH[rr]!);
             }
           }
-    
+
           // ── 第三步：合并格角方块 ──
           // 左上角 (sC, sR)
           {
@@ -513,15 +513,39 @@ export function createInteractions(
           const wL = rL?.width ?? 0;
           const wB = rB?.width ?? 0;
           const wR = rR?.width ?? 0;
-          if (wT > 0) { rCtx.fillStyle = rT?.color || BORDER_COLOR; rCtx.fillRect(x, y, cw, wT); }
-          if (wB > 0) { rCtx.fillStyle = rB?.color || BORDER_COLOR; rCtx.fillRect(x, y + rh - wB, cw, wB); }
-          if (wL > 0) { rCtx.fillStyle = rL?.color || BORDER_COLOR; rCtx.fillRect(x, y, wL, rh); }
-          if (wR > 0) { rCtx.fillStyle = rR?.color || BORDER_COLOR; rCtx.fillRect(x + cw - wR, y, wR, rh); }
+          if (wT > 0) {
+            rCtx.fillStyle = rT?.color || BORDER_COLOR;
+            rCtx.fillRect(x, y, cw, wT);
+          }
+          if (wB > 0) {
+            rCtx.fillStyle = rB?.color || BORDER_COLOR;
+            rCtx.fillRect(x, y + rh - wB, cw, wB);
+          }
+          if (wL > 0) {
+            rCtx.fillStyle = rL?.color || BORDER_COLOR;
+            rCtx.fillRect(x, y, wL, rh);
+          }
+          if (wR > 0) {
+            rCtx.fillStyle = rR?.color || BORDER_COLOR;
+            rCtx.fillRect(x + cw - wR, y, wR, rh);
+          }
           // 角方块
-          if (wT > 0 && wL > 0) { rCtx.fillStyle = rT?.color || rL?.color || BORDER_COLOR; rCtx.fillRect(x - wL, y - wT, wL, wT); }
-          if (wT > 0 && wR > 0) { rCtx.fillStyle = rT?.color || rR?.color || BORDER_COLOR; rCtx.fillRect(x + cw, y - wT, wR, wT); }
-          if (wB > 0 && wL > 0) { rCtx.fillStyle = rB?.color || rL?.color || BORDER_COLOR; rCtx.fillRect(x - wL, y + rh, wL, wB); }
-          if (wB > 0 && wR > 0) { rCtx.fillStyle = rB?.color || rR?.color || BORDER_COLOR; rCtx.fillRect(x + cw, y + rh, wR, wB); }
+          if (wT > 0 && wL > 0) {
+            rCtx.fillStyle = rT?.color || rL?.color || BORDER_COLOR;
+            rCtx.fillRect(x - wL, y - wT, wL, wT);
+          }
+          if (wT > 0 && wR > 0) {
+            rCtx.fillStyle = rT?.color || rR?.color || BORDER_COLOR;
+            rCtx.fillRect(x + cw, y - wT, wR, wT);
+          }
+          if (wB > 0 && wL > 0) {
+            rCtx.fillStyle = rB?.color || rL?.color || BORDER_COLOR;
+            rCtx.fillRect(x - wL, y + rh, wL, wB);
+          }
+          if (wB > 0 && wR > 0) {
+            rCtx.fillStyle = rB?.color || rR?.color || BORDER_COLOR;
+            rCtx.fillRect(x + cw, y + rh, wR, wB);
+          }
         }
       }
     }

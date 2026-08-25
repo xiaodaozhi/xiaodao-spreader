@@ -1,5 +1,7 @@
 # xiaodao-spreader — Design Document
 
+[中文](./DOC.ZH.md) | **English**
+
 A Vue 3 spreadsheet component based on Canvas 2D.
 
 ---
@@ -47,7 +49,7 @@ xiaodao-spreader/
             ├── composables/
             │   ├── core-state.ts      # Props, cells/merges/selection, font metrics, navigation
             │   ├── undo-styles.ts      # Undo/redo, format painter, font/alignment/color
-            │   ├── borders-merge.ts    # Border sync, merge ops, clipboard, sum/avg/count
+            │   ├── borders-merge.ts    # Border ops, merge ops, clipboard, sum/avg/count
             │   ├── sheets-ops.ts      # Row/col ops, multi-sheet, v-model emit, theme, refs
             │   ├── find-replace.ts    # Find/replace state & interaction (Vue-dependent)
             │   └── interactions.ts    # Renderer, formula bar, tab bar, context menu, scrollbar, events
@@ -55,6 +57,8 @@ xiaodao-spreader/
                 ├── constants.ts       # Layout constants, i18n text, theme color palette
                 ├── types.ts           # All type definitions
                 ├── style-pool.ts      # Style pool: dedup, registration, resolve, migration, GC
+                ├── border-pool.ts     # Border pool: dedup, registration, resolve, migration, GC
+                ├── border-resolve.ts  # Shared-border conflict resolution (resolveSharedBorder)
                 ├── formula.ts         # Formula engine (parsing, evaluation, dependency tracking)
                 ├── find-replace-core.ts # Find/replace pure algorithms (zero Vue deps, unit-testable)
                 ├── number-format.ts    # Number format engine (Excel-style display formatting)
@@ -80,14 +84,28 @@ interface SelectionRange {
   endCol: number; endRow: number
 }
 
+// Single border side
+interface BorderSide {
+  width?: number; color?: string; style?: string;  // style reserved: solid/dashed/dotted
+}
+
+// Four-side border combination
+interface BorderStyle {
+  top?: BorderSide; right?: BorderSide; bottom?: BorderSide; left?: BorderSide;
+}
+
+// Border source identifier
+type BorderSource = 'cell' | 'merge';
+
 // Cell style — typed interface for all style properties
 interface CellStyle {
   fontFamily?: string; fontSize?: number | string; fontWeight?: string;
   fontStyle?: string; underline?: string; strikethrough?: string;
   color?: string; backgroundColor?: string;
   textAlign?: string; verticalAlign?: string; wrap?: string;
-  borderTopWidth?: number; borderBottomWidth?: number;
-  borderLeftWidth?: number; borderRightWidth?: number; borderColor?: string;
+  borderId?: number;  // index into sheet-level borders[] pool; 0 or omitted = no border
+  // borderTopWidth / borderBottomWidth / borderLeftWidth / borderRightWidth / borderColor
+  //   @deprecated — legacy inline border props, kept only for migrating historical data
   numberFormat?: string;
   [key: string]: unknown;  // extensible
 }
@@ -121,6 +139,7 @@ interface SpreadsheetData {
 interface SheetModelData {
   name: string
   styles?: CellStyle[]  // style pool; styles[0] is always {}
+  borders?: BorderStyle[]  // border pool; borders[0] is always {}
   cells: Record<string, { value: string; styleId?: number; style?: CellStyle }>
   colWidths?: Record<number, number>
   rowHeights?: Record<number, number>
@@ -131,6 +150,7 @@ interface SheetState {
   id: string; name: string
   cells: Record<string, CellData>
   styles: CellStyle[]  // style pool; styles[0] is always {}
+  borders: BorderStyle[]  // border pool; borders[0] is always {}
   merges: Record<string, SelectionRange>
   selection: SelectionRange | null
   activeCell: CellCoord
@@ -142,6 +162,7 @@ interface SheetState {
 interface UndoSnapshot {
   cells: Record<string, CellData>
   styles: CellStyle[]
+  borders: BorderStyle[]
   colWidths: number[]; rowHeights: (number | undefined)[]
 }
 
@@ -169,6 +190,7 @@ interface ThemeColors { /* See Section 10 for full list */ }
 |---|---|---|
 | `cells` | `reactive<Record<string, CellData>>` | Cell data for the current sheet |
 | `styles` | `reactive<CellStyle[]>` | Style pool for the current sheet; `styles[0]` is always default `{}` |
+| `borders` | `reactive<BorderStyle[]>` | Border pool for the current sheet; `borders[0]` is always default `{}`; styles reference borders via `borderId` |
 | `selection` | `ref<SelectionRange \| null>` | Current selection range |
 | `activeCell` | `ref<CellCoord>` | Active cell |
 | `scrollX/Y` | `ref<number>` | Grid area scroll offset |
@@ -194,8 +216,8 @@ interface ThemeColors { /* See Section 10 for full list */ }
 ### 4.3 Multi-Sheet Switching
 
 When switching sheets, `saveSheet()` → `loadSheet(i)` is executed:
-- `saveSheet()` serializes current `cells`, `styles`, `selection`, `scrollX/Y`, `colWidths`, `rowHeights` to `sheets[activeSheetIndex]`
-- `loadSheet(i)` restores all state from `sheets[i]`, including `styles` pool sync via `syncStyles()` and formula dependency graph rebuild
+- `saveSheet()` serializes current `cells`, `styles`, `borders`, `selection`, `scrollX/Y`, `colWidths`, `rowHeights` to `sheets[activeSheetIndex]`
+- `loadSheet(i)` restores all state from `sheets[i]`, including `styles` pool sync via `syncStyles()`, `borders` pool sync via `syncBorders()`, and formula dependency graph rebuild
 
 ### 4.4 v-model Data Sync
 
@@ -278,6 +300,7 @@ No dirty flags, no watchers. Manually call `scheduleRender()` after each interac
 3. Visible range calculation (cumulative per-column determination, no binary search — direct traversal in render loop)
 4. Grid area cells (clip to `[52,24]` - `[W,H]`)
    - Selection highlight / active cell border / grid lines / text
+   - Cell borders + merge boundary segments + corner blocks (unified via `resolveSharedBorder`)
 5. Column headers (including selected column highlight + bold bottom border)
 6. Row headers (including selected row highlight + bold right border)
 7. Corner cell
@@ -444,7 +467,7 @@ The `ThemeColors` interface includes:
 
 ## 12. Undo/Redo
 
-- **Snapshot**: `takeSnap()` deep clones current `cells`, `styles`, `colWidths`, `rowHeights`
+- **Snapshot**: `takeSnap()` deep clones current `cells`, `styles`, `borders`, `colWidths`, `rowHeights`
 - **Stack Push**: Call `saveUndo()` before each modification, deduplicate with stack top (JSON comparison)
 - **Undo**: `undoStack.pop()` → `restoreSnap()` and rebuild formula dependency graph
 - **Redo**: `redoStack.pop()` → `restoreSnap()` and rebuild formula dependency graph
@@ -456,7 +479,8 @@ The `ThemeColors` interface includes:
 
 ### 13.1 Data Layer
 - **More Formulas**: AVERAGE, COUNT, IF, VLOOKUP, etc.
-- **Cell Styles**: Styles are managed via a per-sheet Style Pool (`styles: CellStyle[]`); cells reference styles by `styleId` (array index). Identical styles are automatically deduplicated. See [Section 17](#17-样式池-style-pool) for details.
+- **Cell Styles**: Styles are managed via a per-sheet Style Pool (`styles: CellStyle[]`); cells reference styles by `styleId` (array index). Identical styles are automatically deduplicated. See [Section 17](#17-style-pool) for details.
+- **Cell Borders**: Borders are managed via a separate per-sheet Border Pool (`borders: BorderStyle[]`); styles reference borders by `borderId`. Shared borders are resolved at render time. See [Section 18](#18-border-system) for details.
 - **Merged Cells**: Extend data model to store merge information
 
 ### 13.2 Rendering Layer
@@ -465,57 +489,13 @@ The `ThemeColors` interface includes:
 - **Auto-Fill**: Drag handle at bottom-right of active cell
 
 ### 13.3 Interaction Layer
-- **Find/Replace** — *now implemented, see [Section 16](#16-查找与替换-find--replace)*
+- **Find/Replace** — *now implemented, see [Section 16](#16-find--replace)*
 - **Data Sort/Filter**
 - **Charts**
 
 ### 13.4 Performance Optimization
 - **OffscreenCanvas + Web Worker**: Offload rendering to worker thread
 - **Dirty Rectangle Redraw**: Currently full redraw, can optimize to redraw only changed areas
-
----
-
-## 15. 数字格式引擎 (Number Format)
-
-位于 `spreader/core/number-format.ts`，是一套 Excel / Univer 风格的「显示格式化」引擎。
-
-### 15.1 设计原则
-
-- **只负责显示，绝不修改 `Cell.value`**：`Cell.value` 始终保持原始字符串；格式仅影响 Canvas 渲染时的显示文本。
-- **解析结果按格式代码缓存**：`parseNumberFormat()` 内部用 `Map` 缓存，避免 Canvas 每帧重复解析（性能）。
-- **纯函数、不依赖 Vue**：便于测试与复用。
-
-### 15.2 存储
-
-格式代码按单元格存入解析后样式的 `numberFormat` 属性（字符串）。存储层约定：
-
-- 不存储该属性 / 空串 = 常规（General）。
-- 文本（Text）= `'@'`。
-- 常规下若原始值能解析为有限数字，按「数值」语义自动决定显示（极大/极小用科学计数法），并默认右对齐。
-
-### 15.3 分类与格式代码
-
-支持 General / Text / Number / Currency / Accounting / Financial / Percent / Scientific / Date / Time / DateTime / Duration / Custom。常用代码见 README「数字格式」章节的对照表。
-
-关键行为：
-
-- **百分比 `%`**：缩放 100 倍（`scale = 100`）。
-- **会计 / 财务**：通过 `;` 分隔的正值/负值/零值区段实现，财务支持 `[Red]` 条件颜色。
-- **日期 / 时间**：单元格值视为 Excel 1900 日期系统的序列号（1 = 1900-01-01，UTC 构造避免时区偏移）。非法序列号（date 超出 [0, 2958465]、duration < 0）返回 `__NF_INVALID__`，渲染端替换为连续 `#` 填充。
-- **持续时间 `[h]:mm:ss`**：总小时数可超过 24。
-
-### 15.4 渲染与对齐
-
-- `formatNumber(value, format, locale)` 是顶层入口，返回显示字符串（绝不修改 value）。
-- `shouldAlignRightByDefault(value, format)`：数值类格式及常规下的有限数字默认右对齐；Text 与常规非数字保持左对齐——与 Excel 一致。
-- `isFormatOverflowsToHashes(format)` / `isInvalidDisplayValue(value, format)`：供渲染端判断是否需要用 `#` 填充。
-- **i18n**：货币符号（`¥` / `$`）、月份与星期名称随 `locale` 变化。
-
-### 15.5 界面
-
-- 工具栏「数字格式」下拉框（`buildNumberFormatPresets`）提供预设：常规、文本、数值、百分比、科学计数、会计、财务、货币、货币取整、日期、时间、日期时间、持续时间，外加「格式…」自定义项（`NF_CUSTOM`）。
-- 「格式…」打开 `numberFormatDialog.vue`，可输入自定义格式代码、设置小数位数与千位分隔符。
-- 选区格式不一致时，`selNumberFormat` 返回 `NF_MIXED`（特殊标记 `0x01`），下拉框显示「混合」。
 
 ---
 
@@ -537,108 +517,204 @@ The `ThemeColors` interface includes:
 
 ---
 
-## 16. 查找与替换 (Find & Replace)
+## 15. Number Format Engine
 
-位于 `composables/find-replace.ts`（状态与交互）与 `core/find-replace-core.ts`（纯算法，零 Vue 依赖，可单测）。UI 由 `find-replace-bar.vue` 提供，工具栏新增查找按钮，快捷键 `Ctrl/Cmd+F`（含 `Ctrl/Cmd+H`）打开。
+Located in `spreader/core/number-format.ts`, an Excel / Univer-style "display formatting" engine.
 
-### 16.1 设计原则
+### 15.1 Design Principles
 
-- **基于原始 `Cell.value`**：始终读取单元格的 `value`（字符串），**不**基于 Canvas 格式化显示文本，因此与数字格式、公式等显示层无关。
-- **算法与 UI 分离**：匹配/替换的纯函数（`cellMatches` / `replaceFirst` / `replaceAllOccurrences` / `scanSheetCells`）不依赖 Vue，便于单元测试。
-- **复用既有能力**：查找定位复用现有 Selection（`selectCell` / `activeCell` / `ensureVisible`）与多 Sheet（`switchSheet`），撤销/重做复用 `undo-styles` 的 snapshot 机制。
+- **Display-only, never mutates `Cell.value`**: `Cell.value` always keeps the raw string; the format only affects the display text during Canvas rendering.
+- **Parse results cached by format code**: `parseNumberFormat()` caches internally with a `Map`, avoiding per-frame re-parsing in Canvas (performance).
+- **Pure functions, zero Vue dependency**: easy to test and reuse.
 
-### 16.2 搜索范围
+### 15.2 Storage
 
-| 范围 | 实现 |
-|------|------|
-| 当前工作表（默认） | 仅扫描 `s.cells`（当前激活 Sheet） |
-| 整个工作簿 | 遍历 `so.sheets.value` 所有 Sheet 的 `cells`，记录 `sheetIndex`；定位时跨表自动 `switchSheet` 并滚动 |
-| 当前选区 | 将 `s.selection` 矩形作为 `range` 传入 `scanSheetCells`；定位时仅移动 `activeCell`，不破坏原选区矩形 |
+The format code is stored per-cell in the resolved style's `numberFormat` property (a string). Storage conventions:
 
-### 16.3 匹配与替换规则
+- Property absent / empty string = General.
+- Text = `'@'`.
+- Under General, if the raw value parses to a finite number, the display is determined automatically by "number" semantics (very large/small use scientific notation), defaulting to right-aligned.
 
-- **匹配**：默认不区分大小写、非完整匹配（子串包含）；支持「区分大小写」与「匹配整个单元格」。
-- **替换**：替换仅改 `Cell.value`，且 `String()` 强制保持字符串类型，保留 `styleId` / `numberFormat` / 边框 / 合并。单元格内多匹配时，单次替换仅改首个、全部替换改所有。
-- **$ 安全**：不区分大小写的全部替换用正则回调 `() => replace` 形式，避免 `replace` 字符串中的 `$&` / `$1` 被当作分组引用。
+### 15.3 Categories & Format Codes
 
-### 16.4 Undo / Redo 接入
+Supports General / Text / Number / Currency / Accounting / Financial / Percent / Scientific / Date / Time / DateTime / Duration / Custom. Common codes are listed in the README's Number Format table.
 
-- 单次「替换」仅在内容变化时调用一次 `us.saveUndo()`。
-- 「全部替换」在循环外仅调用一次 `us.saveUndo()`（整次操作一个撤销点），并用 `results` 快照遍历，避免重算过程中 `results` 变化导致漏改。
-- 撤销 / 重做后，通过 watch `undoStack` / `redoStack` 长度触发结果重算，搜索状态与匹配高亮同步刷新。
+Key behaviors:
 
-### 16.5 高亮与定位
+- **Percent `%`**: scaled by 100 (`scale = 100`).
+- **Accounting / Financial**: implemented via `;`-separated positive/negative/zero sections; Financial supports `[Red]` conditional color.
+- **Date / Time**: the cell value is treated as an Excel 1900 date-system serial number (1 = 1900-01-01, constructed in UTC to avoid timezone shift). Invalid serials (date out of [0, 2958465], duration < 0) return `__NF_INVALID__`, which the renderer replaces with a run of `#`.
+- **Duration `[h]:mm:ss`**: total hours may exceed 24.
 
-- 通过 `s.findHighlight(col, row)` 钩子注入渲染：普通匹配返回 `'match'`、当前项返回 `'active'`。`interactions.ts` 在 render 背景阶段用 `findMatchBg` / `findActiveBg` 填充，活动格额外描边强化。
-- 查找上下循环：取模实现首尾相接，`Enter` = 下一个、`Shift+Enter` = 上一个、`Esc` 关闭（均在查找栏内处理）。编辑态下 `onKeydown` 已 `return`，全局 `Ctrl/Cmd+F/H` 不与单元格编辑快捷键冲突。
-- 性能：基于数据模型扫描、零 DOM；重算用 `requestAnimationFrame` 防抖，仅在关键词 / 范围 / 规则 / 单元格数据 / 替换变更时重搜。
+### 15.4 Rendering & Alignment
+
+- `formatNumber(value, format, locale)` is the top-level entry, returning the display string (never mutates value).
+- `shouldAlignRightByDefault(value, format)`: numeric formats and finite numbers under General default to right-aligned; Text and General non-numbers stay left-aligned — consistent with Excel.
+- `isFormatOverflowsToHashes(format)` / `isInvalidDisplayValue(value, format)`: let the renderer decide whether to pad with `#`.
+- **i18n**: currency symbol (`¥` / `$`), month and weekday names follow `locale`.
+
+### 15.5 UI
+
+- The toolbar "Number Format" dropdown (`buildNumberFormatPresets`) provides presets: General, Text, Number, Percent, Scientific, Accounting, Financial, Currency, Currency (rounded), Date, Time, DateTime, Duration, plus a "Format…" custom item (`NF_CUSTOM`).
+- "Format…" opens `numberFormatDialog.vue` for entering a custom format code, decimals, and thousands separator.
+- When selection formats are inconsistent, `selNumberFormat` returns `NF_MIXED` (special marker `0x01`), and the dropdown shows "Mixed".
 
 ---
 
-## 17. 样式池 (Style Pool)
+## 16. Find & Replace
 
-位于 `spreader/core/style-pool.ts`。实现表格级样式去重存储，减少重复样式数据的存储体积。
+Located in `composables/find-replace.ts` (state & interaction) and `core/find-replace-core.ts` (pure algorithms, zero Vue dependency, unit-testable). The UI is provided by `find-replace-bar.vue`; a find button is added to the toolbar, opened via `Ctrl/Cmd+F` (also `Ctrl/Cmd+H`).
 
-### 17.1 核心思路
+### 16.1 Design Principles
 
-- 每个 Sheet 维护一个 `styles: CellStyle[]` 数组，`styles[0]` 始终为默认空样式 `{}`。
-- 单元格通过 `styleId`（数组下标）引用样式，而非内联存储完整样式对象。
-- 相同内容的样式（即使属性顺序不同）自动复用同一 `styleId`。
-- 已注册的样式对象禁止直接修改（`Object.freeze`），修改必须创建副本后重新注册。
+- **Based on the raw `Cell.value`**: always reads the cell's `value` (a string), **not** the Canvas-formatted display text, so it is independent of number format, formula, and other display layers.
+- **Algorithm/UI separation**: the pure match/replace functions (`cellMatches` / `replaceFirst` / `replaceAllOccurrences` / `scanSheetCells`) have no Vue dependency, easy to unit-test.
+- **Reuses existing capabilities**: locating reuses existing Selection (`selectCell` / `activeCell` / `ensureVisible`) and multi-sheet (`switchSheet`); undo/redo reuses the `undo-styles` snapshot mechanism.
 
-### 17.2 StylePool 类
+### 16.2 Search Scopes
 
-| 方法 | 说明 |
-|------|------|
-| `get(styleId)` | 根据 styleId 获取样式对象（只读，`Object.freeze`） |
-| `getId(style)` | 查找或注册样式，返回对应的 styleId（相同内容自动复用） |
-| `getStyles()` | 返回 styles 数组浅拷贝（用于持久化/快照） |
-| `setStyles(styles)` | 直接设置 styles 数组（用于恢复快照），同时重建 index |
-| `compactStyles(cells)` | Style GC：扫描 cells 实际使用的 styleId，删除未引用样式，重新生成连续 id |
+| Scope | Implementation |
+|-------|----------------|
+| Current sheet (default) | Scans only `s.cells` (the active sheet) |
+| Entire workbook | Iterates `cells` of all sheets in `so.sheets.value`, recording `sheetIndex`; locating auto `switchSheet` across sheets and scrolls |
+| Current selection | Passes the `s.selection` rectangle as `range` to `scanSheetCells`; locating only moves `activeCell`, preserving the original selection rectangle |
 
-**稳定 key 生成**：对属性名排序后 `JSON.stringify`，保证属性顺序不同但内容相同的样式产生相同的 key。
+### 16.3 Matching & Replacement Rules
 
-### 17.3 辅助函数
+- **Matching**: case-insensitive and non-exact (substring) by default; supports "match case" and "match entire cell".
+- **Replacement**: replacement mutates only `Cell.value`, with `String()` coercion keeping the string type, preserving `styleId` / `numberFormat` / border / merge. For multiple matches within a cell, a single replace changes only the first; replace-all changes all.
+- **`$` safety**: case-insensitive replace-all uses the regex callback form `() => replace` to avoid `$&` / `$1` in the `replace` string being treated as group references.
 
-| 函数 | 说明 |
-|------|------|
-| `resolveStyle(cell, styles)` | 根据 styleId 从 styles 数组获取样式对象；styleId 不存在或为 0 时返回 null |
-| `updateCellStyle(cell, patch, pool)` | 读取旧样式 → 创建副本 → 合并 patch → 注册到 pool → 更新 styleId |
-| `unsetCellStyle(cell, key, pool)` | 删除单元格的某个样式属性 |
-| `updateCellsStyle(cells, patch, pool)` | 批量修改多个单元格样式 |
-| `migrateCells(oldCells)` | 将旧格式 cells（`{value, style}`）迁移到新格式（`{value, styleId}`），自动去重并生成 styles 数组 |
-| `cloneCells(src)` | 深拷贝 cells（同时保留 styleId 引用） |
+### 16.4 Undo / Redo Integration
 
-### 17.4 CoreState 集成
+- A single "Replace" calls `us.saveUndo()` only when content actually changes.
+- "Replace All" calls `us.saveUndo()` once outside the loop (one undo point per operation), and iterates over a `results` snapshot to avoid missing changes caused by `results` mutating during recomputation.
+- After undo/redo, watching `undoStack` / `redoStack` length triggers result recomputation, keeping search state and match highlights in sync.
 
-`CoreState` 持有 reactive `styles: CellStyle[]` 数组与闭包 `styleIndex: Map<string, number>`，对外提供：
+### 16.5 Highlighting & Navigation
 
-- `registerStyle(style)` → `number`：查找或注册样式，返回 styleId
-- `resolveStyle(cell)` → `CellStyle | null`：解析单元格样式
-- `syncStyles(styles)`：从外部 styles 数组恢复（重建 styleIndex）
-- `rebuildStyleIndex()`：从当前 styles 数组重建 index
+- Injected into rendering via the `s.findHighlight(col, row)` hook: ordinary matches return `'match'`, the current item returns `'active'`. `interactions.ts` fills `findMatchBg` / `findActiveBg` during the render background phase, and strokes the active cell for emphasis.
+- Wrap-around find: modulo achieves head-to-tail wrap; `Enter` = next, `Shift+Enter` = previous, `Esc` closes (all handled inside the find bar). In edit mode `onKeydown` already `return`s, so global `Ctrl/Cmd+F/H` does not conflict with cell-edit shortcuts.
+- Performance: scans the data model, zero DOM; recomputation is debounced with `requestAnimationFrame`, re-searching only when keyword / scope / rules / cell data / replacement changes.
 
-### 17.5 序列化格式
+---
 
-`SheetModelData` 包含 `styles?: CellStyle[]`。序列化时：
+## 17. Style Pool
 
-- cells 中 `styleId=0` 时省略（默认样式），仅输出 `styleId > 0` 的单元格。
-- `styles` 数组仅在长度 > 1（存在非默认样式）时输出。
-- `index`（Map）仅运行时使用，不参与序列化。
+Located in `spreader/core/style-pool.ts`. Implements sheet-level style deduplication to reduce the storage footprint of repeated style data.
 
-### 17.6 旧数据兼容
+### 17.1 Core Idea
 
-`migrateCells()` 支持将旧格式 `{value, style}` 自动转换为新格式 `{value, styleId}`：
+- Each sheet maintains a `styles: CellStyle[]` array; `styles[0]` is always the default empty style `{}`.
+- Cells reference styles by `styleId` (array index) rather than inlining full style objects.
+- Identical styles (even with different property order) automatically reuse the same `styleId`.
+- Registered style objects must not be mutated directly (`Object.freeze`); modifications require creating a copy and re-registering.
 
-- 扫描所有 cells 的 `style` 属性，注册到临时 StylePool。
-- 已包含 `styleId` 的 cells 直接保留。
-- 返回 `{ cells, styles }`，调用方将 styles 赋给 Sheet 即可。
+### 17.2 StylePool Class
 
-### 17.7 GC 策略
+| Method | Description |
+|--------|-------------|
+| `get(styleId)` | Get a style object by styleId (read-only, `Object.freeze`) |
+| `getId(style)` | Look up or register a style, returning its styleId (identical content auto-reused) |
+| `getStyles()` | Return a shallow copy of the styles array (for persistence/snapshot) |
+| `setStyles(styles)` | Directly set the styles array (for restoring a snapshot), rebuilding the index |
+| `compactStyles(cells)` | Style GC: scan styleIds actually used by cells, drop unreferenced styles, regenerate contiguous ids |
 
-`compactStyles(cells)` 在保存/导出时执行（不在每次编辑时）：
+**Stable key generation**: sort property names then `JSON.stringify`, so styles with the same content but different property order produce the same key.
 
-1. 收集 cells 中所有实际使用的 styleId。
-2. 构建旧 id → 新 id 映射，删除未被引用的样式。
-3. 更新所有 cells 的 styleId 为新连续 id。
-4. `styles[0]` 始终保留。
+### 17.3 Helper Functions
+
+| Function | Description |
+|----------|-------------|
+| `resolveStyle(cell, styles)` | Get the style object from the styles array by styleId; returns null when styleId is missing or 0 |
+| `updateCellStyle(cell, patch, pool)` | Read old style → copy → merge patch → register into pool → update styleId |
+| `unsetCellStyle(cell, key, pool)` | Remove a single style property from a cell |
+| `updateCellsStyle(cells, patch, pool)` | Batch-update styles of multiple cells |
+| `migrateCells(oldCells)` | Migrate legacy cells (`{value, style}`) to the new format (`{value, styleId}`), auto-deduplicating and generating the styles array |
+| `cloneCells(src)` | Deep-clone cells (preserving styleId references) |
+
+### 17.4 CoreState Integration
+
+`CoreState` holds a reactive `styles: CellStyle[]` array and a closure `styleIndex: Map<string, number>`, exposing:
+
+- `registerStyle(style)` → `number`: look up or register a style, returning styleId
+- `resolveStyle(cell)` → `CellStyle | null`: resolve a cell's style
+- `syncStyles(styles)`: restore from an external styles array (rebuild styleIndex)
+- `rebuildStyleIndex()`: rebuild the index from the current styles array
+
+### 17.5 Serialization Format
+
+`SheetModelData` includes `styles?: CellStyle[]`. On serialization:
+
+- Cells with `styleId=0` omit it (default style); only cells with `styleId > 0` are emitted.
+- The `styles` array is emitted only when its length > 1 (non-default styles exist).
+- The `index` (Map) is runtime-only and not serialized.
+
+### 17.6 Legacy Data Compatibility
+
+`migrateCells()` converts the legacy `{value, style}` format to the new `{value, styleId}` format:
+
+- Scans every cell's `style` property and registers it into a temporary StylePool.
+- Cells already carrying `styleId` are kept as-is.
+- Returns `{ cells, styles }`; the caller assigns styles to the sheet.
+
+### 17.7 GC Strategy
+
+`compactStyles(cells)` runs at save/export time (not on every edit):
+
+1. Collect all styleIds actually used by cells.
+2. Build an old-id → new-id map and drop unreferenced styles.
+3. Update every cell's styleId to the new contiguous id.
+4. `styles[0]` is always preserved.
+
+---
+
+## 18. Border System
+
+Located in `spreader/core/border-pool.ts` and `spreader/core/border-resolve.ts`. Borders are decoupled from regular styles, stored with dedicated deduplication, and resolved for shared edges at render time.
+
+### 18.1 Data Structures
+
+- `BorderSide`: a single border side `{ width?, color?, style? }` (`style` reserved for solid/dashed/dotted).
+- `BorderStyle`: a four-side combination `{ top?, right?, bottom?, left? }`, each side stored independently.
+- `CellStyle.borderId`: a style references a border via `borderId` (index into `borders`); `0` or omitted means no border.
+- Legacy inline props (`borderTopWidth` / `borderBottomWidth` / `borderLeftWidth` / `borderRightWidth` / `borderColor`) are marked `@deprecated`, used only for migrating historical data.
+
+### 18.2 BorderPool
+
+A border pool isomorphic to StylePool:
+
+| Method | Description |
+|--------|-------------|
+| `get(borderId)` | Get a border object by borderId (read-only, `Object.freeze`) |
+| `getId(border)` | Look up or register a border, returning its borderId (identical content auto-reused) |
+| `getBorders()` / `setBorders(borders)` | Return a shallow array copy / restore a snapshot and rebuild the index |
+| `compactBorders(styles)` | Border GC: drop borders unreferenced by styles, regenerate contiguous ids |
+
+Constraints: `borders[0]` is always the default empty border `{}`; registered borders are frozen via `Object.freeze` — modifications require copying and re-registering; `index` (Map) is runtime-only and not serialized.
+
+Helper functions: `getCellBorderSide` / `getCellBorder` / `setCellBorderSide` / `setCellBorder` / `clearCellBorder` / `migrateBordersInStyles` / `cleanupMergeInternalBorders`.
+
+### 18.3 Shared-Border Resolution (resolveSharedBorder)
+
+`border-resolve.ts` provides unified conflict resolution for adjacent borders, producing a single visual result:
+
+1. Both sides empty → do not draw.
+2. Only one side present → use that side.
+3. Both present: the larger `width` wins; on equal width → the `first` side wins (stable tie-break).
+4. `firstSource`/`secondSource` (`'cell'`/`'merge'`) are reserved parameters that currently do not affect priority — merge does not unconditionally override cell.
+
+When the renderer draws borders and corner blocks, every adjacent edge goes through this function. **Setting a border no longer synchronizes neighboring cells** (the old `syncCellBorders` mechanism has been removed).
+
+### 18.4 Merged-Cell Borders
+
+- **Write redirect to anchor**: a merged region's borders are stored uniformly on the anchor (top-left) cell; writing a border to an internal cell of the merge is automatically redirected to the anchor.
+- **Internal edges masked**: grid lines inside the same merged region are not drawn (`isSameMergeInternal`).
+- **Boundary segment resolution**: the top/bottom/left/right outer boundaries of a merged region are split by column/row, resolved segment-wise against neighbors via `resolveSharedBorder`; the four corners separately fill in corner blocks.
+- Reads also redirect through the anchor (renderer-side `getBorderSideAt`), ensuring write and render consistency.
+
+### 18.5 Serialization & Migration
+
+- `SheetModelData` / `SheetState` / `UndoSnapshot` all add `borders: BorderStyle[]`.
+- `migrateBordersInStyles(styles)`: migrates legacy inline border props into the `borders` pool + `borderId` mechanism.
+- On load: if `smd.borders` exists it is used directly; otherwise migration runs over `styles`.

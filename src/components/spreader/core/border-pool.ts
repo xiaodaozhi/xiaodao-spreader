@@ -14,6 +14,14 @@
 
 import type { BorderStyle, BorderSide, CellData, CellStyle } from './types';
 
+/**
+ * 边框池结构化接口：BorderPool 实例与运行时适配器（如 CoreState 的 borders 数组 + 索引）均可满足。
+ */
+export interface BorderPoolLike {
+  get(borderId: number): BorderStyle;
+  getId(border: BorderStyle): number;
+}
+
 // ============ BorderPool 类 ============
 
 export class BorderPool {
@@ -186,7 +194,7 @@ export function getCellBorderSide(
   cell: CellData | undefined,
   side: 'top' | 'right' | 'bottom' | 'left',
   styles: CellStyle[],
-  borderPool: BorderPool,
+  borderPool: BorderPoolLike,
 ): BorderSide | undefined {
   if (!cell) return undefined;
   const styleId = cell.styleId ?? 0;
@@ -205,7 +213,7 @@ export function getCellBorderSide(
 export function getCellBorder(
   cell: CellData | undefined,
   styles: CellStyle[],
-  borderPool: BorderPool,
+  borderPool: BorderPoolLike,
 ): BorderStyle | undefined {
   if (!cell) return undefined;
   const styleId = cell.styleId ?? 0;
@@ -226,7 +234,7 @@ export function setCellBorderSide(
   side: 'top' | 'right' | 'bottom' | 'left',
   borderSide: BorderSide | undefined,
   styles: CellStyle[],
-  borderPool: BorderPool,
+  borderPool: BorderPoolLike,
   registerStyle: (style: CellStyle) => number,
 ): void {
   const oldStyle = styles[cell.styleId ?? 0] ?? {};
@@ -281,7 +289,7 @@ export function setCellBorder(
   cell: CellData,
   border: BorderStyle,
   styles: CellStyle[],
-  borderPool: BorderPool,
+  borderPool: BorderPoolLike,
   registerStyle: (style: CellStyle) => number,
 ): void {
   const oldStyle = styles[cell.styleId ?? 0] ?? {};
@@ -402,7 +410,7 @@ export function cleanupMergeInternalBorders(
   cells: Record<string, CellData>,
   merges: Record<string, { startCol: number; startRow: number; endCol: number; endRow: number }>,
   styles: CellStyle[],
-  borderPool: BorderPool,
+  borderPool: BorderPoolLike,
   cellKey: (c: number, r: number) => string,
   registerStyle: (style: CellStyle) => number,
 ): void {

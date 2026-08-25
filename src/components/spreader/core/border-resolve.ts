@@ -34,8 +34,8 @@ export function isEmptyBorderSide(border: BorderSide | undefined): boolean {
  *
  * @param first - 第一个候选边框（对于水平公共边：上方 cell 的 bottom；对于垂直公共边：左方 cell 的 right）
  * @param second - 第二个候选边框（对于水平公共边：下方 cell 的 top；对于垂直公共边：右方 cell 的 left）
- * @param firstSource - 第一个候选的来源（'cell' 或 'merge'），预留参数
- * @param secondSource - 第二个候选的来源（'cell' 或 'merge'），预留参数
+ * @param _firstSource - 第一个候选的来源（'cell' 或 'merge'），预留参数，当前不影响优先级
+ * @param _secondSource - 第二个候选的来源（'cell' 或 'merge'），预留参数，当前不影响优先级
  * @returns 最终要绘制的 BorderSide，或 undefined（不绘制）
  *
  * 规则：
@@ -48,8 +48,8 @@ export function isEmptyBorderSide(border: BorderSide | undefined): boolean {
 export function resolveSharedBorder(
   first: BorderSide | undefined,
   second: BorderSide | undefined,
-  firstSource?: BorderSource,
-  secondSource?: BorderSource,
+  _firstSource?: BorderSource,
+  _secondSource?: BorderSource,
 ): BorderSide | undefined {
   const firstValid = hasBorderSide(first);
   const secondValid = hasBorderSide(second);
@@ -71,7 +71,7 @@ export function resolveSharedBorder(
 
   // 3b. width 相同 → first 优先（稳定 tie-break）
   // 注意：merge 不无条件覆盖 cell
-  // firstSource/secondSource 参数预留，当前不影响优先级
+  // _firstSource/_secondSource 参数预留，当前不影响优先级
   return first;
 }
 

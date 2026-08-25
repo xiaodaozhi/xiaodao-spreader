@@ -3,8 +3,9 @@ import { HEADER_HEIGHT, HEADER_WIDTH, SB_SIZE, DEFAULT_COL_WIDTH, DEFAULT_ROW_HE
 import { FormulaDeps, clearEvalCache, computeCellValue, parseFormulaRefs } from '../core/formula';
 import { formatNumber } from '../core/number-format';
 import type { CellCoord, CellData, CellStyle, SelectionRange, BorderStyle, BorderSide } from '../core/types';
-import { resolveStyle as _resolveStyle, type StylePool } from '../core/style-pool';
-import { BorderPool, getCellBorderSide as _getCellBorderSide } from '../core/border-pool';
+import { resolveStyle as _resolveStyle } from '../core/style-pool';
+import type { BorderPool } from '../core/border-pool';
+import { getCellBorderSide as _getCellBorderSide } from '../core/border-pool';
 
 /** 选区触发方式，影响「合并单元格是否扩大选区」。
  *  - 'cell'：单元格点击/拖动（默认）→ 保持现有 expandSelectionForMerges 行为

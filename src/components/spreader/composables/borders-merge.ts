@@ -66,11 +66,6 @@ export function createBordersMerge(
   const borderMenuOpen = ref(false);
   const BORDER_COLOR = '#444';
 
-  function getCellBorderWidth(col: number, row: number, side: 'top' | 'right' | 'bottom' | 'left'): number {
-    const bs = s.getCellBorderSide(s.cells[s.cellKey(col, row)], side);
-    return bs?.width ?? 0;
-  }
-
   function setCellBorderSideNew(col: number, row: number, side: 'top' | 'right' | 'bottom' | 'left', borderSide: BorderSide | undefined) {
     if (col < 0 || row < 0 || col >= s.colCount || row >= s.rowCount) return;
     // 如果目标 cell 在 merge 内部，重定向到 merge anchor
@@ -82,9 +77,9 @@ export function createBordersMerge(
       s.cells[targetKey] = { value: '' };
     }
     _setCellBorderSidePool(s.cells[targetKey]!, side, borderSide, s.styles, {
-      get: (id: number) => s.resolveBorder(id),
-      getId: (b: BorderStyle) => s.registerBorder(b),
-    } as any, s.registerStyle);
+      get: (id) => s.resolveBorder(id),
+      getId: (b) => s.registerBorder(b),
+    }, s.registerStyle);
   }
 
   function applyBorderToCell(col: number, row: number, border: BorderStyle) {

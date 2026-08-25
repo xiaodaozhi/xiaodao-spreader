@@ -295,9 +295,11 @@ export function createUndoStyles(
         const val = s.cells[k]?.value ?? '';
         // 读取旧样式副本 → 应用修改 → 注册到 StylePool → 更新 styleId
         const oldStyle = s.resolveStyle(s.cells[k]) ?? {};
-        const newStyle: Record<string, unknown> = { ...oldStyle };
+        let newStyle: Record<string, unknown> = { ...oldStyle };
         if (value === '' || value === null || value === undefined || value === 0) {
-          delete newStyle[prop];
+          // 用解构 omit 代替动态 delete，避免修改共享对象
+          const { [prop]: _omitted, ...rest } = newStyle;
+          newStyle = rest;
         } else {
           newStyle[prop] = value;
         }
