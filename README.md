@@ -105,10 +105,11 @@ import type { SheetModelData } from 'xiaodao-spreader';
 const myData = ref<SheetModelData[]>([
   {
     name: 'Sheet1',
+    styles: [{}, { fontSize: 14, fontWeight: 'bold' }],
     cells: {
       '0,0': { value: 'Name' },
       '0,1': { value: 'Age' },
-      '1,0': { value: 'Alice', style: { fontSize: 14, fontWeight: 'bold' } },
+      '1,0': { value: 'Alice', styleId: 1 },
       '1,1': { value: '28' },
     },
     colWidths: { 0: 120, 1: 80 },
@@ -142,9 +143,10 @@ The external data format used for v-model two-way binding:
 ```typescript
 interface SheetModelData {
   name: string;
+  styles?: CellStyle[];
   cells: Record<string, {
     value: string;
-    style?: Record<string, unknown>;
+    styleId?: number;
   }>;
   merges?: Record<string, SelectionRange>;
   colWidths?: Record<number, number>;
@@ -152,8 +154,8 @@ interface SheetModelData {
 }
 ```
 
-- **`cells`**: Key is `"col,row"` (e.g., `"0,0"` for cell A1).
-- **`style`**: Arbitrary CSS-like style properties (`fontSize`, `fontWeight`, `color`, `background`, etc.).
+- **`styles`**: Style pool — `styles[0]` is always the default empty style `{}`. Cells reference styles by index (`styleId`).
+- **`cells`**: Key is `"col,row"` (e.g., `"0,0"` for cell A1). `styleId` references into the `styles` array; `styleId=0` or omitted means default style.
 - **`merges`**: Merge cell definitions, keyed by merge anchor cell.
 - **`colWidths` / `rowHeights`**: Sparse maps — only stores non-default values.
 
@@ -163,7 +165,8 @@ interface SheetModelData {
 import type {
   CellCoord,       // { col: number; row: number }
   SelectionRange,  // { startCol; startRow; endCol; endRow }
-  CellData,        // { value: string; style: Record<string, unknown> | null }
+  CellData,        // { value: string; styleId?: number }
+  CellStyle,       // Typed style interface (font, color, border, alignment, etc.)
   Range,           // { start: number; end: number }
   SpreadsheetOptions,
   SpreadsheetData,
@@ -174,6 +177,9 @@ import type {
   ThemeColors,
   Point,
 } from 'xiaodao-spreader';
+
+// Runtime utilities
+import { StylePool, resolveStyle, migrateCells, cloneCells } from 'xiaodao-spreader';
 ```
 
 ---
@@ -202,14 +208,17 @@ src/
         │   ├── undo-styles.ts       # Undo/redo, format painter, font/alignment/color
         │   ├── borders-merge.ts     # Border sync, merge ops, clipboard, sum
         │   ├── sheets-ops.ts        # Row/col ops, multi-sheet, v-model emit, theme, refs
+        │   ├── find-replace.ts      # Find/replace state & interaction (Vue-dependent)
         │   └── interactions.ts      # Renderer, formula bar, tab bar, context menu, scrollbar, events
         └── core/
             ├── constants.ts         # Layout constants, i18n, theme palettes
             ├── types.ts             # All type definitions
-            ├── formula.ts          # Formula engine (parse, evaluate, deps, cache)
-            ├── number-format.ts    # Number format engine (Excel-style display formatting)
+            ├── style-pool.ts        # Style pool: dedup, registration, resolve, migration, GC
+            ├── formula.ts           # Formula engine (parse, evaluate, deps, cache)
+            ├── find-replace-core.ts # Find/replace pure algorithms (zero Vue deps, unit-testable)
+            ├── number-format.ts     # Number format engine (Excel-style display formatting)
             ├── theme.ts             # Theme CSS variable construction
-            └── utils.ts            # Pure utilities (col label, hit test, resolve size)
+            └── utils.ts             # Pure utilities (col label, hit test, resolve size)
 ```
 
 ### Design Principles
@@ -218,6 +227,7 @@ src/
 - **Barrel Export**: `spreader/index.ts` centralizes all component and type exports; `src/index.ts` re-exports everything, so consumers import uniformly from `xiaodao-spreader`
 - **Canvas 2D Rendering**: Only visible cells are drawn (virtual rendering), ensuring smooth performance on large sheets
 - **No Dirty Flags**: Manual `scheduleRender()` calls at interaction end-points; `requestAnimationFrame` automatically merges multiple calls within the same frame
+- **Style Pool**: Each sheet maintains a `styles: CellStyle[]` array; cells reference styles via `styleId` (array index). Identical styles are automatically deduplicated. Runtime style resolution via `resolveStyle()` / `registerStyle()`; GC (`compactStyles`) runs only at save/export time
 - **Shared State**: A central `CoreState` object is injected into each composable, enabling cross-module communication without tight coupling
 - **Reactive Wrap**: Composable return values are wrapped in `reactive()` for automatic ref/computed unwrapping in templates
 
@@ -320,7 +330,7 @@ An Excel-style number formatting engine (`spreader/core/number-format.ts`) that 
 
 ### How it works
 
-- **Storage**: the format code is stored per-cell in `cell.style.numberFormat` (a string). Omitting the property (or empty string) means General.
+- **Storage**: the format code is stored per-cell in the resolved style's `numberFormat` property (a string). Omitting the property (or empty string) means General.
 - **UI**: the toolbar number-format dropdown applies presets to the current selection; the **「Format…」(格式…)** item opens `numberFormatDialog.vue` for a custom code, decimals, and thousands separator.
 - **Display**: `formatNumber(value, format, locale)` parses the code (cached), applies thousands separators / decimals / percent scaling / date-serial conversion, and returns the display string. Invalid date/duration serials render as `###`.
 - **Alignment**: numeric formats default to right-aligned; Text and General-with-non-numeric keep left alignment — matching Excel semantics.

@@ -2,7 +2,8 @@ import { ref, computed, watch, nextTick, type ComputedRef, type Ref } from 'vue'
 import { UNDO_MAX, FONT_FAMILIES, FONT_SIZES, H_ALIGN_OPTIONS, V_ALIGN_OPTIONS, DEFAULT_FONT_SIZE, t } from '../core/constants';
 import type { FontOption } from '../core/constants';
 import type { CoreState } from './core-state';
-import type { CellData, SheetState } from '../core/types';
+import type { CellData, CellStyle, SheetState } from '../core/types';
+import { cloneCells as _cloneCellsFromPool } from '../core/style-pool';
 import { buildNumberFormatPresets, NF_CUSTOM, NF_MIXED, NF_GENERAL, type NFOption } from '../core/number-format';
 
 // ============ 共享 UndoStyles 接口 ============
@@ -21,7 +22,7 @@ export interface UndoStylesState {
   canUndo: ComputedRef<boolean>;
   canRedo: ComputedRef<boolean>;
   hasSelection: ComputedRef<boolean>;
-  paintFmt: Ref<{ styles: Record<string, Record<string, unknown> | null> } | null>;
+  paintFmt: Ref<{ styles: Record<string, number> } | null>; // styleId 映射：相对坐标 → styleId
   onPaintFormat: () => void;
   applyPaintFormat: () => void;
   clearFormat: () => void;
@@ -97,6 +98,7 @@ export interface UndoStylesState {
 
 interface UndoSnap {
   sheets: SheetState[];
+  styles: CellStyle[];
   activeSheetIndex: number;
 }
 
@@ -115,9 +117,7 @@ export function createUndoStyles(
   const redoStack = ref<UndoSnap[]>([]);
 
   function cloneCells(src: Record<string, CellData>): Record<string, CellData> {
-    const o: Record<string, CellData> = {};
-    for (const [k, v] of Object.entries(src)) o[k] = { value: v.value, style: v.style };
-    return o;
+    return _cloneCellsFromPool(src);
   }
 
   function takeSnap(): UndoSnap {
@@ -126,18 +126,24 @@ export function createUndoStyles(
       sheets: sheetsCtx.sheets.value.map((sh) => ({
         id: sh.id, name: sh.name,
         cells: cloneCells(sh.cells),
+        styles: [...sh.styles],
         merges: sh.merges ? { ...sh.merges } : {},
         selection: sh.selection ? { ...sh.selection } : null,
         activeCell: sh.activeCell ? { ...sh.activeCell } : { col: 0, row: 0 },
         scrollX: sh.scrollX, scrollY: sh.scrollY,
         colWidths: [...sh.colWidths], rowHeights: [...sh.rowHeights],
       })),
+      styles: [...s.styles],
       activeSheetIndex: sheetsCtx.activeSheetIndex.value,
     };
   }
 
   function restoreSnap(snap: UndoSnap) {
-    sheetsCtx.sheets.value = snap.sheets.map((x) => ({ ...x, cells: cloneCells(x.cells) }));
+    sheetsCtx.sheets.value = snap.sheets.map((x) => ({
+      ...x,
+      cells: cloneCells(x.cells),
+      styles: [...x.styles],
+    }));
     sheetsCtx.loadSheet(Math.max(0, Math.min(snap.activeSheetIndex, sheetsCtx.sheets.value.length - 1)));
     s.formulaDeps.rebuild(s.cells, s.colCount, s.rowCount);
   }
@@ -174,18 +180,18 @@ export function createUndoStyles(
   const canRedo = computed(() => redoStack.value.length > 0);
   const hasSelection = computed(() => !!s.selection.value);
 
-  const paintFmt = ref<{ styles: Record<string, Record<string, unknown> | null> } | null>(null);
+  const paintFmt = ref<{ styles: Record<string, number> } | null>(null);
 
   function onPaintFormat() {
     const sel = s.selection.value;
     if (!sel) return;
-    const styles: Record<string, Record<string, unknown> | null> = {};
+    const styleIds: Record<string, number> = {};
     for (let c = sel.startCol; c <= sel.endCol; c++) {
       for (let r = sel.startRow; r <= sel.endRow; r++) {
-        styles[`${c - sel.startCol},${r - sel.startRow}`] = s.cells[s.cellKey(c, r)]?.style ?? null;
+        styleIds[`${c - sel.startCol},${r - sel.startRow}`] = s.cells[s.cellKey(c, r)]?.styleId ?? 0;
       }
     }
-    paintFmt.value = { styles };
+    paintFmt.value = { styles: styleIds };
   }
 
   function applyPaintFormat() {
@@ -197,11 +203,15 @@ export function createUndoStyles(
       for (let r = sel.startRow; r <= sel.endRow; r++) {
         const m = s.findMerge(c, r);
         if (m && (c !== m.range.startCol || r !== m.range.startRow)) continue;
-        const st = pf.styles[`${c - sel.startCol},${r - sel.startRow}`] ?? null;
+        const sid = pf.styles[`${c - sel.startCol},${r - sel.startRow}`] ?? 0;
         const k = s.cellKey(c, r);
         const val = s.cells[k]?.value ?? '';
-        if (val === '' && st === null) s.delCell(k);
-        else s.cells[k] = { value: val, style: st };
+        if (val === '' && sid === 0) s.delCell(k);
+        else {
+          const cell: CellData = { value: val };
+          if (sid > 0) cell.styleId = sid;
+          s.cells[k] = cell;
+        }
         s.syncCellBorders?.(c, r);
       }
     }
@@ -221,7 +231,7 @@ export function createUndoStyles(
         const k = s.cellKey(c, r);
         const val = s.cells[k]?.value ?? '';
         if (val === '') s.delCell(k);
-        else s.cells[k] = { value: val, style: null };
+        else s.cells[k] = { value: val }; // styleId 省略 = 默认样式
         s.syncCellBorders?.(c, r);
       }
     }
@@ -247,7 +257,7 @@ export function createUndoStyles(
       for (let r = sel.startRow; r <= sel.endRow && !mixed; r++) {
         const m = s.findMerge(c, r);
         if (m && (c !== m.range.startCol || r !== m.range.startRow)) continue;
-        const st = s.cells[s.cellKey(c, r)]?.style;
+        const st = s.resolveStyle(s.cells[s.cellKey(c, r)]);
         const ff = typeof st?.fontFamily === 'string' ? st.fontFamily : '';
         if (first === undefined) first = ff;
         else if (ff !== first) mixed = true;
@@ -283,12 +293,21 @@ export function createUndoStyles(
         if (m && (c !== m.range.startCol || r !== m.range.startRow)) continue;
         const k = s.cellKey(c, r);
         const val = s.cells[k]?.value ?? '';
-        const st = s.cells[k]?.style ? { ...s.cells[k]!.style } : {};
-        if (value === '' || value === null || value === undefined || value === 0) Reflect.deleteProperty(st, prop);
-        else st[prop] = value;
-        const style = Object.keys(st).length ? st : null;
-        if (val === '' && style === null) s.delCell(k);
-        else s.cells[k] = { value: val, style };
+        // 读取旧样式副本 → 应用修改 → 注册到 StylePool → 更新 styleId
+        const oldStyle = s.resolveStyle(s.cells[k]) ?? {};
+        const newStyle: Record<string, unknown> = { ...oldStyle };
+        if (value === '' || value === null || value === undefined || value === 0) {
+          delete newStyle[prop];
+        } else {
+          newStyle[prop] = value;
+        }
+        const styleId = Object.keys(newStyle).length ? s.registerStyle(newStyle as CellStyle) : 0;
+        if (val === '' && styleId === 0) s.delCell(k);
+        else {
+          const cell: CellData = { value: val };
+          if (styleId > 0) cell.styleId = styleId;
+          s.cells[k] = cell;
+        }
       }
     }
     s.scheduleRender?.();
@@ -321,21 +340,21 @@ export function createUndoStyles(
   const selHAlign = computed(() => {
     const sel = s.selection.value;
     if (!sel) return 'left';
-    const st = s.cells[s.cellKey(sel.startCol, sel.startRow)]?.style;
+    const st = s.resolveStyle(s.cells[s.cellKey(sel.startCol, sel.startRow)]);
     const a = typeof st?.textAlign === 'string' ? st.textAlign : '';
     return a === 'center' || a === 'right' ? a : 'left';
   });
   const selVAlign = computed(() => {
     const sel = s.selection.value;
     if (!sel) return 'top';
-    const st = s.cells[s.cellKey(sel.startCol, sel.startRow)]?.style;
+    const st = s.resolveStyle(s.cells[s.cellKey(sel.startCol, sel.startRow)]);
     const a = typeof st?.verticalAlign === 'string' ? st.verticalAlign : '';
     return a === 'middle' || a === 'bottom' ? a : 'top';
   });
   const selWrap = computed(() => {
     const sel = s.selection.value;
     if (!sel) return false;
-    const st = s.cells[s.cellKey(sel.startCol, sel.startRow)]?.style;
+    const st = s.resolveStyle(s.cells[s.cellKey(sel.startCol, sel.startRow)]);
     return st?.wrap === 'wrap';
   });
   function onHAlignChange(v: string | number) {
@@ -431,7 +450,7 @@ export function createUndoStyles(
       for (let r = sel.startRow; r <= sel.endRow && !mixed; r++) {
         const m = s.findMerge(c, r);
         if (m && (c !== m.range.startCol || r !== m.range.startRow)) continue;
-        const st = s.cells[s.cellKey(c, r)]?.style;
+        const st = s.resolveStyle(s.cells[s.cellKey(c, r)]);
         const v = Boolean(st?.[prop]);
         if (first === undefined) first = v;
         else if (v !== first) mixed = true;
@@ -508,7 +527,7 @@ export function createUndoStyles(
       for (let r = sel.startRow; r <= sel.endRow && !mixed; r++) {
         const m = s.findMerge(c, r);
         if (m && (c !== m.range.startCol || r !== m.range.startRow)) continue;
-        const st = s.cells[s.cellKey(c, r)]?.style;
+        const st = s.resolveStyle(s.cells[s.cellKey(c, r)]);
         const v = typeof st?.color === 'string' ? st.color : '';
         if (first === undefined) first = v;
         else if (v !== first) mixed = true;
@@ -526,7 +545,7 @@ export function createUndoStyles(
       for (let r = sel.startRow; r <= sel.endRow && !mixed; r++) {
         const m = s.findMerge(c, r);
         if (m && (c !== m.range.startCol || r !== m.range.startRow)) continue;
-        const st = s.cells[s.cellKey(c, r)]?.style;
+        const st = s.resolveStyle(s.cells[s.cellKey(c, r)]);
         const v = typeof st?.backgroundColor === 'string' ? st.backgroundColor : '';
         if (first === undefined) first = v;
         else if (v !== first) mixed = true;
@@ -550,7 +569,7 @@ export function createUndoStyles(
       for (let r = sel.startRow; r <= sel.endRow && !mixed; r++) {
         const m = s.findMerge(c, r);
         if (m && (c !== m.range.startCol || r !== m.range.startRow)) continue;
-        const st = s.cells[s.cellKey(c, r)]?.style;
+        const st = s.resolveStyle(s.cells[s.cellKey(c, r)]);
         const nf = typeof st?.numberFormat === 'string' ? st.numberFormat : '';
         if (first === undefined) first = nf;
         else if (nf !== first) mixed = true;

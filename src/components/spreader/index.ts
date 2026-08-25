@@ -7,6 +7,7 @@ export type {
   CellCoord,
   SelectionRange,
   CellData,
+  CellStyle,
   Range,
   SpreadsheetOptions,
   SpreadsheetData,
@@ -17,3 +18,5 @@ export type {
   ThemeColors,
   Point,
 } from './core/types';
+
+export { StylePool, resolveStyle, migrateCells, cloneCells } from './core/style-pool';

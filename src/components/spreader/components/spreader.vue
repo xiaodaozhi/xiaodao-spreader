@@ -57,6 +57,7 @@ const sheetsCtx: {
     name,
     cells: {},
     merges: {},
+    styles: [{}],
     selection: null,
     activeCell: { col: 0, row: 0 },
     scrollX: 0,
@@ -132,7 +133,7 @@ const nfDialogCurrentFormat = computed(() => {
   const sel = undoStyles.selNumberFormat;
   if (sel !== NF_MIXED) return sel;
   const ac = coreState.activeCell;
-  const st = coreState.cells[coreState.cellKey(ac.col, ac.row)]?.style;
+  const st = coreStateRaw.resolveStyle(coreState.cells[coreState.cellKey(ac.col, ac.row)]);
   return typeof st?.numberFormat === 'string' ? st.numberFormat : '';
 });
 

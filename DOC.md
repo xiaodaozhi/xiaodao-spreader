@@ -49,11 +49,14 @@ xiaodao-spreader/
             │   ├── undo-styles.ts      # Undo/redo, format painter, font/alignment/color
             │   ├── borders-merge.ts    # Border sync, merge ops, clipboard, sum/avg/count
             │   ├── sheets-ops.ts      # Row/col ops, multi-sheet, v-model emit, theme, refs
+            │   ├── find-replace.ts    # Find/replace state & interaction (Vue-dependent)
             │   └── interactions.ts    # Renderer, formula bar, tab bar, context menu, scrollbar, events
             └── core/
                 ├── constants.ts       # Layout constants, i18n text, theme color palette
                 ├── types.ts           # All type definitions
+                ├── style-pool.ts      # Style pool: dedup, registration, resolve, migration, GC
                 ├── formula.ts         # Formula engine (parsing, evaluation, dependency tracking)
+                ├── find-replace-core.ts # Find/replace pure algorithms (zero Vue deps, unit-testable)
                 ├── number-format.ts    # Number format engine (Excel-style display formatting)
                 ├── theme.ts           # Theme CSS variable construction
                 └── utils.ts           # Pure utility functions (column label conversion, hit testing, etc.)
@@ -77,10 +80,22 @@ interface SelectionRange {
   endCol: number; endRow: number
 }
 
-// Cell data + style reservation
+// Cell style — typed interface for all style properties
+interface CellStyle {
+  fontFamily?: string; fontSize?: number | string; fontWeight?: string;
+  fontStyle?: string; underline?: string; strikethrough?: string;
+  color?: string; backgroundColor?: string;
+  textAlign?: string; verticalAlign?: string; wrap?: string;
+  borderTopWidth?: number; borderBottomWidth?: number;
+  borderLeftWidth?: number; borderRightWidth?: number; borderColor?: string;
+  numberFormat?: string;
+  [key: string]: unknown;  // extensible
+}
+
+// Cell data — value is always string; style referenced via styleId
 interface CellData {
   value: string
-  style: Record<string, unknown> | null
+  styleId?: number  // index into sheet-level styles[] pool; 0 or omitted = default
 }
 
 // Range utility (start/end span)
@@ -99,13 +114,14 @@ interface SpreadsheetOptions {
 
 // Cell reference map for import/export
 interface SpreadsheetData {
-  [cellRef: string]: { value: string; style?: Record<string, unknown> }
+  [cellRef: string]: { value: string; styleId?: number; style?: CellStyle }
 }
 
 // v-model two-way binding external data format
 interface SheetModelData {
   name: string
-  cells: Record<string, { value: string; style?: Record<string, unknown> }>
+  styles?: CellStyle[]  // style pool; styles[0] is always {}
+  cells: Record<string, { value: string; styleId?: number; style?: CellStyle }>
   colWidths?: Record<number, number>
   rowHeights?: Record<number, number>
 }
@@ -114,21 +130,24 @@ interface SheetModelData {
 interface SheetState {
   id: string; name: string
   cells: Record<string, CellData>
+  styles: CellStyle[]  // style pool; styles[0] is always {}
+  merges: Record<string, SelectionRange>
   selection: SelectionRange | null
   activeCell: CellCoord
   scrollX: number; scrollY: number
-  colWidths: number[]; rowHeights: number[]
+  colWidths: number[]; rowHeights: (number | undefined)[]
 }
 
 // Undo snapshot
 interface UndoSnapshot {
   cells: Record<string, CellData>
-  colWidths: number[]; rowHeights: number[]
+  styles: CellStyle[]
+  colWidths: number[]; rowHeights: (number | undefined)[]
 }
 
 // Context menu item
 interface ContextMenuItem {
-  label: string; action: () => void; disabled?: boolean
+  label: string; action?: () => void; disabled?: boolean; children?: ContextMenuItem[]
 }
 
 // Point utility
@@ -149,6 +168,7 @@ interface ThemeColors { /* See Section 10 for full list */ }
 | State | Type | Description |
 |---|---|---|
 | `cells` | `reactive<Record<string, CellData>>` | Cell data for the current sheet |
+| `styles` | `reactive<CellStyle[]>` | Style pool for the current sheet; `styles[0]` is always default `{}` |
 | `selection` | `ref<SelectionRange \| null>` | Current selection range |
 | `activeCell` | `ref<CellCoord>` | Active cell |
 | `scrollX/Y` | `ref<number>` | Grid area scroll offset |
@@ -174,12 +194,12 @@ interface ThemeColors { /* See Section 10 for full list */ }
 ### 4.3 Multi-Sheet Switching
 
 When switching sheets, `saveSheet()` → `loadSheet(i)` is executed:
-- `saveSheet()` serializes current `cells`, `selection`, `scrollX/Y`, `colWidths`, `rowHeights` to `sheets[activeSheetIndex]`
-- `loadSheet(i)` restores all state from `sheets[i]`, including formula dependency graph rebuild
+- `saveSheet()` serializes current `cells`, `styles`, `selection`, `scrollX/Y`, `colWidths`, `rowHeights` to `sheets[activeSheetIndex]`
+- `loadSheet(i)` restores all state from `sheets[i]`, including `styles` pool sync via `syncStyles()` and formula dependency graph rebuild
 
 ### 4.4 v-model Data Sync
 
-`emitModelData()` serializes all sheets to `SheetModelData[]` and triggers two-way binding via `modelData.value = out`. Uses `lastEmittedData` string comparison for deduplication to avoid circular updates.
+`emitModelData()` serializes all sheets to `SheetModelData[]` (cells with `styleId` references + the `styles` pool array) and triggers two-way binding via `modelData.value = out`. Uses `lastEmittedData` string comparison for deduplication to avoid circular updates.
 
 ---
 
@@ -424,7 +444,7 @@ The `ThemeColors` interface includes:
 
 ## 12. Undo/Redo
 
-- **Snapshot**: `takeSnap()` deep clones current `cells`, `colWidths`, `rowHeights`
+- **Snapshot**: `takeSnap()` deep clones current `cells`, `styles`, `colWidths`, `rowHeights`
 - **Stack Push**: Call `saveUndo()` before each modification, deduplicate with stack top (JSON comparison)
 - **Undo**: `undoStack.pop()` → `restoreSnap()` and rebuild formula dependency graph
 - **Redo**: `redoStack.pop()` → `restoreSnap()` and rebuild formula dependency graph
@@ -436,7 +456,7 @@ The `ThemeColors` interface includes:
 
 ### 13.1 Data Layer
 - **More Formulas**: AVERAGE, COUNT, IF, VLOOKUP, etc.
-- **Cell Styles**: `CellData.style` field is already reserved (background color, font, alignment, number format) — *number format is now implemented, see Section 15*
+- **Cell Styles**: Styles are managed via a per-sheet Style Pool (`styles: CellStyle[]`); cells reference styles by `styleId` (array index). Identical styles are automatically deduplicated. See [Section 17](#17-样式池-style-pool) for details.
 - **Merged Cells**: Extend data model to store merge information
 
 ### 13.2 Rendering Layer
@@ -467,7 +487,7 @@ The `ThemeColors` interface includes:
 
 ### 15.2 存储
 
-格式代码按单元格存入 `cell.style.numberFormat`（字符串）。存储层约定：
+格式代码按单元格存入解析后样式的 `numberFormat` 属性（字符串）。存储层约定：
 
 - 不存储该属性 / 空串 = 常规（General）。
 - 文本（Text）= `'@'`。
@@ -538,7 +558,7 @@ The `ThemeColors` interface includes:
 ### 16.3 匹配与替换规则
 
 - **匹配**：默认不区分大小写、非完整匹配（子串包含）；支持「区分大小写」与「匹配整个单元格」。
-- **替换**：替换仅改 `Cell.value`，且 `String()` 强制保持字符串类型，保留 `style` / `numberFormat` / 边框 / 合并。单元格内多匹配时，单次替换仅改首个、全部替换改所有。
+- **替换**：替换仅改 `Cell.value`，且 `String()` 强制保持字符串类型，保留 `styleId` / `numberFormat` / 边框 / 合并。单元格内多匹配时，单次替换仅改首个、全部替换改所有。
 - **$ 安全**：不区分大小写的全部替换用正则回调 `() => replace` 形式，避免 `replace` 字符串中的 `$&` / `$1` 被当作分组引用。
 
 ### 16.4 Undo / Redo 接入
@@ -552,3 +572,73 @@ The `ThemeColors` interface includes:
 - 通过 `s.findHighlight(col, row)` 钩子注入渲染：普通匹配返回 `'match'`、当前项返回 `'active'`。`interactions.ts` 在 render 背景阶段用 `findMatchBg` / `findActiveBg` 填充，活动格额外描边强化。
 - 查找上下循环：取模实现首尾相接，`Enter` = 下一个、`Shift+Enter` = 上一个、`Esc` 关闭（均在查找栏内处理）。编辑态下 `onKeydown` 已 `return`，全局 `Ctrl/Cmd+F/H` 不与单元格编辑快捷键冲突。
 - 性能：基于数据模型扫描、零 DOM；重算用 `requestAnimationFrame` 防抖，仅在关键词 / 范围 / 规则 / 单元格数据 / 替换变更时重搜。
+
+---
+
+## 17. 样式池 (Style Pool)
+
+位于 `spreader/core/style-pool.ts`。实现表格级样式去重存储，减少重复样式数据的存储体积。
+
+### 17.1 核心思路
+
+- 每个 Sheet 维护一个 `styles: CellStyle[]` 数组，`styles[0]` 始终为默认空样式 `{}`。
+- 单元格通过 `styleId`（数组下标）引用样式，而非内联存储完整样式对象。
+- 相同内容的样式（即使属性顺序不同）自动复用同一 `styleId`。
+- 已注册的样式对象禁止直接修改（`Object.freeze`），修改必须创建副本后重新注册。
+
+### 17.2 StylePool 类
+
+| 方法 | 说明 |
+|------|------|
+| `get(styleId)` | 根据 styleId 获取样式对象（只读，`Object.freeze`） |
+| `getId(style)` | 查找或注册样式，返回对应的 styleId（相同内容自动复用） |
+| `getStyles()` | 返回 styles 数组浅拷贝（用于持久化/快照） |
+| `setStyles(styles)` | 直接设置 styles 数组（用于恢复快照），同时重建 index |
+| `compactStyles(cells)` | Style GC：扫描 cells 实际使用的 styleId，删除未引用样式，重新生成连续 id |
+
+**稳定 key 生成**：对属性名排序后 `JSON.stringify`，保证属性顺序不同但内容相同的样式产生相同的 key。
+
+### 17.3 辅助函数
+
+| 函数 | 说明 |
+|------|------|
+| `resolveStyle(cell, styles)` | 根据 styleId 从 styles 数组获取样式对象；styleId 不存在或为 0 时返回 null |
+| `updateCellStyle(cell, patch, pool)` | 读取旧样式 → 创建副本 → 合并 patch → 注册到 pool → 更新 styleId |
+| `unsetCellStyle(cell, key, pool)` | 删除单元格的某个样式属性 |
+| `updateCellsStyle(cells, patch, pool)` | 批量修改多个单元格样式 |
+| `migrateCells(oldCells)` | 将旧格式 cells（`{value, style}`）迁移到新格式（`{value, styleId}`），自动去重并生成 styles 数组 |
+| `cloneCells(src)` | 深拷贝 cells（同时保留 styleId 引用） |
+
+### 17.4 CoreState 集成
+
+`CoreState` 持有 reactive `styles: CellStyle[]` 数组与闭包 `styleIndex: Map<string, number>`，对外提供：
+
+- `registerStyle(style)` → `number`：查找或注册样式，返回 styleId
+- `resolveStyle(cell)` → `CellStyle | null`：解析单元格样式
+- `syncStyles(styles)`：从外部 styles 数组恢复（重建 styleIndex）
+- `rebuildStyleIndex()`：从当前 styles 数组重建 index
+
+### 17.5 序列化格式
+
+`SheetModelData` 包含 `styles?: CellStyle[]`。序列化时：
+
+- cells 中 `styleId=0` 时省略（默认样式），仅输出 `styleId > 0` 的单元格。
+- `styles` 数组仅在长度 > 1（存在非默认样式）时输出。
+- `index`（Map）仅运行时使用，不参与序列化。
+
+### 17.6 旧数据兼容
+
+`migrateCells()` 支持将旧格式 `{value, style}` 自动转换为新格式 `{value, styleId}`：
+
+- 扫描所有 cells 的 `style` 属性，注册到临时 StylePool。
+- 已包含 `styleId` 的 cells 直接保留。
+- 返回 `{ cells, styles }`，调用方将 styles 赋给 Sheet 即可。
+
+### 17.7 GC 策略
+
+`compactStyles(cells)` 在保存/导出时执行（不在每次编辑时）：
+
+1. 收集 cells 中所有实际使用的 styleId。
+2. 构建旧 id → 新 id 映射，删除未被引用的样式。
+3. 更新所有 cells 的 styleId 为新连续 id。
+4. `styles[0]` 始终保留。

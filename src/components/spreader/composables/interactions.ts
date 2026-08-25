@@ -4,6 +4,7 @@ import { colToLabel, resolveSize, getCanvasXY } from '../core/utils';
 import type { CoreState } from './core-state';
 import type { UndoStylesState } from './undo-styles';
 import { formatNumber, shouldAlignRightByDefault, NF_INVALID_VALUE, isFormatOverflowsToHashes, isInvalidDisplayValue } from '../core/number-format';
+import { migrateCells } from '../core/style-pool';
 import type { BordersMergeState } from './borders-merge';
 import type { SheetsOpsState } from './sheets-ops';
 import type { ContextMenuItem } from '../core/types';
@@ -219,8 +220,8 @@ export function createInteractions(
         // 查找高亮：整体填充（在背景色之后、选区/文本之前绘制）
         const hl = s.findHighlight ? s.findHighlight(col, row) : null;
 
-        const stBg = s.cells[s.cellKey(col, row)]?.style;
-        const bgColor = typeof stBg?.backgroundColor === 'string' ? stBg.backgroundColor : '';
+        const resolvedBg = s.resolveStyle(s.cells[s.cellKey(col, row)]);
+        const bgColor = typeof resolvedBg?.backgroundColor === 'string' ? resolvedBg.backgroundColor : '';
         if (bgColor) {
           rCtx.fillStyle = bgColor;
           rCtx.fillRect(x, y, cw, rh);
@@ -254,7 +255,7 @@ export function createInteractions(
         rCtx.lineWidth = 0.5;
         rCtx.strokeRect(x + 0.25, y + 0.25, cw - 0.5, rh - 0.5);
         if (!(ed && ed.col === col && ed.row === row)) {
-          const st = s.cells[s.cellKey(col, row)]?.style;
+          const st = s.resolveStyle(s.cells[s.cellKey(col, row)]);
           const rawV = s.getCellValue(col, row);
           const nf = typeof st?.numberFormat === 'string' ? st.numberFormat : '';
           const v = rawV ? formatNumber(rawV, nf, s.locale.value) : '';
@@ -362,7 +363,7 @@ export function createInteractions(
         }
         if (x + cw < HW || y + rh < HH || x > W || y > H) continue;
 
-        const cst = s.cells[s.cellKey(col, row)]?.style;
+        const cst = s.resolveStyle(s.cells[s.cellKey(col, row)]);
         const ownT = (cst?.borderTopWidth as number) || 0;
         const ownL = (cst?.borderLeftWidth as number) || 0;
         const ownB = (cst?.borderBottomWidth as number) || 0;
@@ -461,10 +462,11 @@ export function createInteractions(
         }
         if (x + cw < HW || y + rh < HH || x > W || y > H) continue;
 
-        const ownT = (s.cells[s.cellKey(col, row)]?.style?.borderTopWidth as number) || 0;
-        const ownL = (s.cells[s.cellKey(col, row)]?.style?.borderLeftWidth as number) || 0;
-        const ownB = (s.cells[s.cellKey(col, row)]?.style?.borderBottomWidth as number) || 0;
-        const ownR = (s.cells[s.cellKey(col, row)]?.style?.borderRightWidth as number) || 0;
+        const resolvedCorner = s.resolveStyle(s.cells[s.cellKey(col, row)]);
+        const ownT = (resolvedCorner?.borderTopWidth as number) || 0;
+        const ownL = (resolvedCorner?.borderLeftWidth as number) || 0;
+        const ownB = (resolvedCorner?.borderBottomWidth as number) || 0;
+        const ownR = (resolvedCorner?.borderRightWidth as number) || 0;
 
         rCtx.fillStyle = BORDER_COLOR;
         if (mergeInfo) {
@@ -1269,7 +1271,7 @@ export function createInteractions(
     const hidden = !s.editingCell.value;
     const pos = s.editingCell.value ?? s.activeCell.value;
     const c = pos.col, r = pos.row;
-    const st = s.cells[s.cellKey(c, r)]?.style;
+    const st = s.resolveStyle(s.cells[s.cellKey(c, r)]);
     const fsz = s.cellFontSize(c, r);
     const ffa = typeof st?.fontFamily === 'string' && st.fontFamily ? st.fontFamily : DEFAULT_FONT_FAMILY;
     const fw = st?.fontWeight === 'bold' ? 'bold' : 'normal';
@@ -2011,9 +2013,9 @@ export function createInteractions(
         lastEmittedDataRef.value = JSON.stringify(so.modelData.value);
         so.sheets.value = so.modelData.value.map((smd) => {
           const sh = so.mkSheet(smd.name);
-          for (const [k, v] of Object.entries(smd.cells)) {
-            sh.cells[k] = { value: v.value, style: v.style ?? null };
-          }
+          const { cells: migratedCells, styles: migratedStyles } = migrateCells(smd.cells);
+          Object.assign(sh.cells, migratedCells);
+          sh.styles = smd.styles ?? migratedStyles;
           if (smd.colWidths) {
             for (const [c, w] of Object.entries(smd.colWidths)) {
               const ci = Number(c);
@@ -2067,9 +2069,9 @@ export function createInteractions(
       const savedActive = { ...s.activeCell.value };
       so.sheets.value = v.map((smd) => {
         const sh = so.mkSheet(smd.name);
-        for (const [k, it] of Object.entries(smd.cells)) {
-          sh.cells[k] = { value: it.value, style: it.style ?? null };
-        }
+        const { cells: migratedCells, styles: migratedStyles } = migrateCells(smd.cells);
+        Object.assign(sh.cells, migratedCells);
+        sh.styles = smd.styles ?? migratedStyles;
         if (smd.colWidths) {
           for (const [c, w] of Object.entries(smd.colWidths)) {
             const ci = Number(c);

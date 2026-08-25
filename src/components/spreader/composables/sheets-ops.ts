@@ -1,6 +1,6 @@
 import { ref, reactive, computed, watch, nextTick, type Ref, type ComputedRef } from 'vue';
 import { DEFAULT_COL_WIDTH, lightTheme, darkTheme } from '../core/constants';
-import type { ThemeColors, SheetState, SheetModelData  } from '../core/types';
+import type { ThemeColors, SheetState, SheetModelData, CellStyle } from '../core/types';
 import { resolveSize } from '../core/utils';
 import { buildOuterStyle } from '../core/theme';
 import type { CoreState } from './core-state';
@@ -174,20 +174,20 @@ export function createSheetsOps(
   //  * 插入行列时：整体在插入点之后的合并 → 整体平移；插入点落在合并跨度内部 → 合并相应"扩大"吞掉新行/列
 
   function applyAdjustedMerges(
-    rebuilt: Array<{ newAnchorKey: string; newRange: { startCol: number; startRow: number; endCol: number; endRow: number }; anchorCell?: { value: string; style: Record<string, unknown> | null } }>,
+    rebuilt: Array<{ newAnchorKey: string; newRange: { startCol: number; startRow: number; endCol: number; endRow: number }; anchorCell?: { value: string; styleId: number } }>,
   ) {
     // 清空旧 merges
     Object.keys(s.merges).forEach((k) => Reflect.deleteProperty(s.merges, k));
-    // 写入新 merges，并对需要迁移的 anchor cell 写入 value+style
+    // 写入新 merges，并对需要迁移的 anchor cell 写入 value+styleId
     for (const entry of rebuilt) {
       if (entry.newRange.startCol > entry.newRange.endCol || entry.newRange.startRow > entry.newRange.endRow) continue;
       s.merges[entry.newAnchorKey] = { ...entry.newRange };
       if (entry.anchorCell) {
-        const v = entry.anchorCell.value, st = entry.anchorCell.style;
-        if (v === '' && (!st || Object.keys(st).length === 0)) {
+        const v = entry.anchorCell.value, sid = entry.anchorCell.styleId;
+        if (v === '' && !sid) {
           // s.delCell(entry.newAnchorKey); — 不主动删，避免破坏已经由 cells 主流程正确就位的空 cell
         } else {
-          s.cells[entry.newAnchorKey] = { value: v, style: st && Object.keys(st).length ? { ...st } : null };
+          s.cells[entry.newAnchorKey] = { value: v, styleId: sid || undefined };
         }
       }
     }
@@ -195,12 +195,12 @@ export function createSheetsOps(
 
   function adjustMergesForDeleteRows(rS: number, rE: number) {
     const d = rE - rS + 1;
-    const rebuilt: Array<{ newAnchorKey: string; newRange: { startCol: number; startRow: number; endCol: number; endRow: number }; anchorCell?: { value: string; style: Record<string, unknown> | null } }> = [];
+    const rebuilt: Array<{ newAnchorKey: string; newRange: { startCol: number; startRow: number; endCol: number; endRow: number }; anchorCell?: { value: string; styleId: number } }> = [];
     for (const oldKey in s.merges) {
       const m = s.merges[oldKey];
       if (!m) continue;
-      // 旧 anchor 的 value+style 快照（在 cells 主流程删/改之前保留）
-      const oldAnchorCell = s.cells[oldKey] ? { value: s.cells[oldKey]!.value, style: s.cells[oldKey]!.style ? { ...s.cells[oldKey]!.style } : null } : { value: '', style: null };
+      // 旧 anchor 的 value+styleId 快照（在 cells 主流程删/改之前保留）
+      const oldAnchorCell = s.cells[oldKey] ? { value: s.cells[oldKey]!.value, styleId: s.cells[oldKey]!.styleId ?? 0 } : { value: '', styleId: 0 };
       const { startCol, endCol } = m;
       let { startRow, endRow } = m;
 
@@ -261,11 +261,11 @@ export function createSheetsOps(
 
   function adjustMergesForDeleteCols(cS: number, cE: number) {
     const d = cE - cS + 1;
-    const rebuilt: Array<{ newAnchorKey: string; newRange: { startCol: number; startRow: number; endCol: number; endRow: number }; anchorCell?: { value: string; style: Record<string, unknown> | null } }> = [];
+    const rebuilt: Array<{ newAnchorKey: string; newRange: { startCol: number; startRow: number; endCol: number; endRow: number }; anchorCell?: { value: string; styleId: number } }> = [];
     for (const oldKey in s.merges) {
       const m = s.merges[oldKey];
       if (!m) continue;
-      const oldAnchorCell = s.cells[oldKey] ? { value: s.cells[oldKey]!.value, style: s.cells[oldKey]!.style ? { ...s.cells[oldKey]!.style } : null } : { value: '', style: null };
+      const oldAnchorCell = s.cells[oldKey] ? { value: s.cells[oldKey]!.value, styleId: s.cells[oldKey]!.styleId ?? 0 } : { value: '', styleId: 0 };
       let { startCol, endCol } = m;
       const { startRow, endRow } = m;
 
@@ -363,6 +363,7 @@ export function createSheetsOps(
   function mkSheet(name: string): SheetState {
     return {
       id: nid(), name, cells: {}, merges: {},
+      styles: [{}],
       selection: { startCol: 0, startRow: 0, endCol: 0, endRow: 0 },
       activeCell: { col: 0, row: 0 },
       scrollX: 0, scrollY: 0,
@@ -384,6 +385,7 @@ export function createSheetsOps(
     sh.scrollY = s.scrollY.value;
     sh.colWidths = [...s.colWidths.value];
     sh.rowHeights = [...s.rowHeights.value];
+    sh.styles = [...s.styles];
   }
 
   function loadSheet(i: number) {
@@ -399,6 +401,7 @@ export function createSheetsOps(
     s.scrollY.value = sh.scrollY;
     s.colWidths.value = [...sh.colWidths];
     s.rowHeights.value = [...sh.rowHeights];
+    s.syncStyles(sh.styles);
     activeSheetIndex.value = i;
   }
 
@@ -453,6 +456,7 @@ export function createSheetsOps(
     const cp: SheetState = {
       id: nid(), name: nn, cells: { ...src.cells },
       merges: src.merges ? { ...src.merges } : {},
+      styles: [...src.styles],
       selection: src.selection ? { ...src.selection } : null,
       activeCell: src.activeCell ? { ...src.activeCell } : { col: 0, row: 0 },
       scrollX: src.scrollX, scrollY: src.scrollY,
@@ -485,12 +489,16 @@ export function createSheetsOps(
   function emitModelData() {
     saveSheet();
     const out: SheetModelData[] = sheets.value.map((sh) => {
-      const cs: Record<string, { value: string; style?: Record<string, unknown> }> = {};
+      const cs: Record<string, { value: string; styleId?: number }> = {};
       for (const [k, v] of Object.entries(sh.cells)) {
         cs[k] = { value: v.value };
-        if (v.style) cs[k]!.style = v.style;
+        if (v.styleId && v.styleId > 0) cs[k]!.styleId = v.styleId;
       }
       const smd: SheetModelData = { name: sh.name, cells: cs };
+      // 输出样式池（styles[0] 始终为默认空样式 {}）
+      if (sh.styles && sh.styles.length > 1) {
+        smd.styles = [...sh.styles];
+      }
       if (sh.merges && Object.keys(sh.merges).length) {
         smd.merges = { ...sh.merges };
       }

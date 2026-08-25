@@ -34,9 +34,9 @@ export interface BordersMergeState {
 
   // 剪贴板
   copySourceRange: SelectionRange | null;
-  copySourceStyles: (Record<string, unknown> | null)[][];
+  copySourceStyles: number[][];
   captureStyles: (cS: number, cE: number, rS: number, rE: number) => void;
-  setCellWithStyle: (c: number, r: number, val: string, style: Record<string, unknown> | null) => void;
+  setCellWithStyle: (c: number, r: number, val: string, styleId: number | null) => void;
   copyToClipboard: () => void;
   copyRowCol: () => void;
   pasteFromClipboard: () => Promise<void>;
@@ -143,7 +143,7 @@ export function createBordersMerge(
     }
     const k = m ? m.anchor : s.cellKey(col, row);
     const val = s.cells[k]?.value ?? '';
-    const st = s.cells[k]?.style ? { ...s.cells[k]!.style } : {};
+    const st = s.resolveStyle(s.cells[k]) ? { ...s.resolveStyle(s.cells[k])! } : {};
     const prop = `border${side}Width`;
     if (width === 0) {
       if (clearZero) Reflect.deleteProperty(st, prop);
@@ -154,15 +154,17 @@ export function createBordersMerge(
     const dirs = ['Top', 'Bottom', 'Left', 'Right'] as const;
     const hasBorder = dirs.some((d) => st[`border${d}Width`] !== undefined);
     if (!hasBorder) Reflect.deleteProperty(st, 'borderColor');
-    const style = Object.keys(st).length ? st : null;
-    if (val === '' && style === null) s.delCell(k);
-    else s.cells[k] = { value: val, style };
+    if (val === '' && !Object.keys(st).length) s.delCell(k);
+    else {
+      const styleId = s.registerStyle(st);
+      s.cells[k] = { value: val, styleId: styleId || undefined };
+    }
   }
 
   function syncCellBorders(col: number, row: number) {
     const m = s.findMerge(col, row);
     const k = m ? m.anchor : s.cellKey(col, row);
-    const st = s.cells[k]?.style;
+    const st = s.resolveStyle(s.cells[k]);
     const wT = (st?.borderTopWidth as number) || 0;
     const wB = (st?.borderBottomWidth as number) || 0;
     const wL = (st?.borderLeftWidth as number) || 0;
@@ -209,7 +211,7 @@ export function createBordersMerge(
     const m = s.findMerge(col, row);
     const k = m ? m.anchor : s.cellKey(col, row);
     const val = s.cells[k]?.value ?? '';
-    const st = s.cells[k]?.style ? { ...s.cells[k]!.style } : {};
+    const st = s.resolveStyle(s.cells[k]) ? { ...s.resolveStyle(s.cells[k])! } : {};
     const dirs = ['Top', 'Bottom', 'Left', 'Right'] as const;
     const vals = [w.top, w.bottom, w.left, w.right];
     for (let i = 0; i < 4; i++) {
@@ -223,9 +225,11 @@ export function createBordersMerge(
     }
     const hasBorder = dirs.some((d) => st[`border${d}Width`] !== undefined);
     if (!hasBorder) Reflect.deleteProperty(st, 'borderColor');
-    const style = Object.keys(st).length ? st : null;
-    if (val === '' && style === null) s.delCell(k);
-    else s.cells[k] = { value: val, style };
+    if (val === '' && !Object.keys(st).length) s.delCell(k);
+    else {
+      const styleId = s.registerStyle(st);
+      s.cells[k] = { value: val, styleId: styleId || undefined };
+    }
     syncCellBorders(m ? m.range.startCol : col, m ? m.range.startRow : row);
   }
 
@@ -263,14 +267,14 @@ export function createBordersMerge(
   function cellBorderWidth(col: number, row: number, side: 'Top' | 'Bottom' | 'Left' | 'Right'): number {
     const m = s.findMerge(col, row);
     if (m) {
-      const anchorStyle = s.cells[m.anchor]?.style;
+      const anchorStyle = s.resolveStyle(s.cells[m.anchor]);
       if (side === 'Top' && row === m.range.startRow) return (anchorStyle?.borderTopWidth as number) || 0;
       if (side === 'Bottom' && row === m.range.endRow) return (anchorStyle?.borderBottomWidth as number) || 0;
       if (side === 'Left' && col === m.range.startCol) return (anchorStyle?.borderLeftWidth as number) || 0;
       if (side === 'Right' && col === m.range.endCol) return (anchorStyle?.borderRightWidth as number) || 0;
       return 0;
     }
-    const st = s.cells[s.cellKey(col, row)]?.style;
+    const st = s.resolveStyle(s.cells[s.cellKey(col, row)]);
     return (st?.[`border${side}Width`] as number) || 0;
   }
 
@@ -312,9 +316,10 @@ export function createBordersMerge(
         s.clearCellsInRange(c, c, r, r);
       }
     }
-    const st = s.cells[anchorKey]?.style ? { ...s.cells[anchorKey]!.style } : {};
-    st.textAlign = 'center';
-    s.cells[anchorKey] = { value: anchorVal, style: st };
+    const anchorSt = s.resolveStyle(s.cells[anchorKey]) ? { ...s.resolveStyle(s.cells[anchorKey])! } : {};
+    anchorSt.textAlign = 'center';
+    const anchorStyleId = s.registerStyle(anchorSt);
+    s.cells[anchorKey] = { value: anchorVal, styleId: anchorStyleId || undefined };
     s.merges[anchorKey] = { startCol: sel.startCol, startRow: sel.startRow, endCol: sel.endCol, endRow: sel.endRow };
     s.selectCell(sel.startCol, sel.startRow);
     s.scheduleRender?.();
@@ -398,34 +403,34 @@ export function createBordersMerge(
 
   // ============ 剪贴板 ============
   let copySourceRange: SelectionRange | null = null;
-  let copySourceStyles: (Record<string, unknown> | null)[][] = [];
+  let copySourceStyles: number[][] = [];
 
   function captureStyles(cS: number, cE: number, rS: number, rE: number) {
     copySourceStyles = [];
     for (let r = rS; r <= rE; r++) {
-      const row: (Record<string, unknown> | null)[] = [];
+      const row: number[] = [];
       for (let c = cS; c <= cE; c++) {
-        const st = s.cells[s.cellKey(c, r)]?.style;
-        row.push(st ? { ...st } : null);
+        const cell = s.cells[s.cellKey(c, r)];
+        row.push(cell?.styleId ?? 0);
       }
       copySourceStyles.push(row);
     }
   }
 
-  function setCellWithStyle(c: number, r: number, val: string, style: Record<string, unknown> | null) {
+  function setCellWithStyle(c: number, r: number, val: string, styleId: number | null) {
     const k = s.cellKey(c, r);
     clearEvalCache();
     if (val === '' || val == null) {
       s.formulaDeps.clear(k);
-      if (style) {
-        s.cells[k] = { value: '', style: { ...style } };
+      if (styleId && styleId > 0) {
+        s.cells[k] = { value: '', styleId };
       } else {
         s.delCell(k);
       }
       s.formulaDeps.markDirty(k);
       return;
     }
-    s.cells[k] = { value: val, style: style ? { ...style } : null };
+    s.cells[k] = { value: val, styleId: styleId && styleId > 0 ? styleId : undefined };
     if (val.startsWith('=')) {
       s.formulaDeps.set(k, parseFormulaRefs(val.slice(1), s.colCount, s.rowCount));
     } else {
@@ -666,7 +671,7 @@ export function createBordersMerge(
     onMergeChange,
 
     copySourceRange: null as SelectionRange | null,
-    copySourceStyles: [] as (Record<string, unknown> | null)[][],
+    copySourceStyles: [] as number[][],
     captureStyles,
     setCellWithStyle,
     copyToClipboard,

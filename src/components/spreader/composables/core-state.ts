@@ -2,7 +2,8 @@ import { ref, reactive, computed, watchEffect, type ComputedRef, type Ref } from
 import { HEADER_HEIGHT, HEADER_WIDTH, SB_SIZE, DEFAULT_COL_WIDTH, DEFAULT_ROW_HEIGHT, MAX_ROW_HEIGHT, DEFAULT_FONT_FAMILY, DEFAULT_FONT_SIZE } from '../core/constants';
 import { FormulaDeps, clearEvalCache, computeCellValue, parseFormulaRefs } from '../core/formula';
 import { formatNumber } from '../core/number-format';
-import type { CellCoord, CellData, SelectionRange } from '../core/types';
+import type { CellCoord, CellData, CellStyle, SelectionRange } from '../core/types';
+import { resolveStyle as _resolveStyle, type StylePool } from '../core/style-pool';
 
 /** 选区触发方式，影响「合并单元格是否扩大选区」。
  *  - 'cell'：单元格点击/拖动（默认）→ 保持现有 expandSelectionForMerges 行为
@@ -29,6 +30,8 @@ export interface CoreState {
 
   // 核心数据
   cells: Record<string, CellData>;
+  /** 表格级样式池（reactive 数组），styles[0] 始终为默认空样式 */
+  styles: CellStyle[];
   merges: Record<string, SelectionRange>;
   formulaDeps: FormulaDeps;
   selection: Ref<SelectionRange | null>;
@@ -94,6 +97,16 @@ export interface CoreState {
   hitRow: (y: number) => number;
 
   // ===== 后续模块注入的占位函数 =====
+  // StylePool 运行时辅助
+  /** 注册样式到池中，返回 styleId（去重） */
+  registerStyle: (style: CellStyle) => number;
+  /** 解析单元格样式（通过 styleId 查 styles 数组） */
+  resolveStyle: (cell: CellData | undefined) => CellStyle | null;
+  /** 重建 styleIndex（从当前 styles 数组） */
+  rebuildStyleIndex: () => void;
+  /** 同步 styles 数组内容（用于 sheet 切换/加载） */
+  syncStyles: (newStyles: CellStyle[]) => void;
+
   saveUndo?: () => void;
   scheduleRender?: () => void;
   emitModelData?: () => void;
@@ -141,6 +154,51 @@ export function createCoreState(
 
   // ============ 核心数据 ============
   const cells = reactive<Record<string, CellData>>({});
+  // 样式池：styles[0] 始终为默认空样式，reactive 保证渲染时 Vue 能跟踪属性访问
+  const styles = reactive<CellStyle[]>([{}]);
+  // 运行时去重索引：stableKey → styleId，不参与持久化
+  let styleIndex = new Map<string, number>();
+  styleIndex.set('{}', 0);
+
+  /** 生成稳定的样式 key（属性排序后 JSON.stringify） */
+  function stableStyleKey(style: CellStyle): string {
+    const keys = Object.keys(style).sort();
+    const obj: Record<string, unknown> = {};
+    for (const k of keys) obj[k] = style[k];
+    return JSON.stringify(obj);
+  }
+
+  /** 注册样式到池中，返回 styleId（去重） */
+  function registerStyle(style: CellStyle): number {
+    if (!style || Object.keys(style).length === 0) return 0;
+    const key = stableStyleKey(style);
+    const existing = styleIndex.get(key);
+    if (existing !== undefined) return existing;
+    const id = styles.length;
+    styles.push(Object.freeze({ ...style }));
+    styleIndex.set(key, id);
+    return id;
+  }
+
+  /** 解析单元格样式（通过 styleId 查 styles 数组） */
+  function resolveStyleFn(cell: CellData | undefined): CellStyle | null {
+    return _resolveStyle(cell, styles);
+  }
+
+  /** 重建 styleIndex（从当前 styles 数组） */
+  function rebuildStyleIndex(): void {
+    styleIndex = new Map();
+    for (let i = 0; i < styles.length; i++) {
+      styleIndex.set(stableStyleKey(styles[i]!), i);
+    }
+  }
+
+  /** 同步 styles 数组内容（用于 sheet 切换/加载） */
+  function syncStyles(newStyles: CellStyle[]): void {
+    styles.splice(0, styles.length, ...newStyles);
+    rebuildStyleIndex();
+  }
+
   const merges = reactive<Record<string, SelectionRange>>({});
   const formulaDeps = new FormulaDeps();
   const selection = ref<SelectionRange | null>(null);
@@ -216,7 +274,7 @@ export function createCoreState(
   });
 
   function _getFontMetricsForCell(c: number, r: number): { ascent: number; descent: number } {
-    const st = cells[cellKeyFn(c, r)]?.style;
+    const st = resolveStyleFn(cells[cellKeyFn(c, r)]);
     const fsz = cellFontSizeFn(c, r);
     const ffa = typeof st?.fontFamily === 'string' && st.fontFamily ? st.fontFamily : DEFAULT_FONT_FAMILY;
     const fw = st?.fontWeight === 'bold' ? 'bold' : 'normal';
@@ -251,7 +309,7 @@ export function createCoreState(
   }
 
   function cellFontSize(c: number, r: number): number {
-    const st = cells[cellKeyFn(c, r)]?.style;
+    const st = resolveStyleFn(cells[cellKeyFn(c, r)]);
     return typeof st?.fontSize === 'number' && st.fontSize > 0 ? st.fontSize : DEFAULT_FONT_SIZE;
   }
   cellFontSizeFn = cellFontSize;
@@ -282,7 +340,7 @@ export function createCoreState(
     maxDesc = defMetrics.descent;
     for (let c = 0; c < colCount; c++) {
       const fs = cellFontSize(c, r);
-      const st = cells[cellKeyFn(c, r)]?.style;
+      const st = resolveStyleFn(cells[cellKeyFn(c, r)]);
       const ffa = typeof st?.fontFamily === 'string' && st.fontFamily ? st.fontFamily : DEFAULT_FONT_FAMILY;
       const fw = st?.fontWeight === 'bold' ? 'bold' : 'normal';
       const fstyle = st?.fontStyle === 'italic' ? 'italic' : 'normal';
@@ -480,9 +538,9 @@ export function createCoreState(
     clearEvalCache();
     if (v === '' || v == null) {
       formulaDeps.clear(k);
-      const st = cells[k]?.style ?? null;
-      if (st) {
-        cells[k] = { value: '', style: st };
+      const styleId = cells[k]?.styleId;
+      if (styleId !== undefined && styleId > 0) {
+        cells[k] = { value: '', styleId };
       } else {
         delCell(k);
       }
@@ -490,8 +548,10 @@ export function createCoreState(
       return;
     }
     const val = String(v);
-    const st = cells[k]?.style ?? null;
-    cells[k] = { value: val, style: st };
+    const styleId = cells[k]?.styleId;
+    const cell: CellData = { value: val };
+    if (styleId !== undefined && styleId > 0) cell.styleId = styleId;
+    cells[k] = cell;
     if (val.startsWith('=')) {
       formulaDeps.set(k, parseFormulaRefs(val.slice(1), colCount, rowCount));
     } else {
@@ -612,6 +672,7 @@ export function createCoreState(
     rowCount,
 
     cells,
+    styles,
     merges,
     formulaDeps,
     selection,
@@ -666,6 +727,12 @@ export function createCoreState(
 
     hitCol,
     hitRow,
+
+    // StylePool 运行时辅助
+    registerStyle,
+    resolveStyle: resolveStyleFn,
+    rebuildStyleIndex,
+    syncStyles,
 
     // viewSize 引用
     viewSize: viewSizeProxy,

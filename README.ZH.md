@@ -108,10 +108,11 @@ import type { SheetModelData } from 'xiaodao-spreader';
 const myData = ref<SheetModelData[]>([
   {
     name: 'Sheet1',
+    styles: [{}, { fontSize: 14, fontWeight: 'bold' }],
     cells: {
       '0,0': { value: '姓名' },
       '0,1': { value: '年龄' },
-      '1,0': { value: '张三', style: { fontSize: 14, fontWeight: 'bold' } },
+      '1,0': { value: '张三', styleId: 1 },
       '1,1': { value: '28' },
     },
     colWidths: { 0: 120, 1: 80 },
@@ -145,9 +146,10 @@ const myData = ref<SheetModelData[]>([
 ```typescript
 interface SheetModelData {
   name: string;
+  styles?: CellStyle[];
   cells: Record<string, {
     value: string;
-    style?: Record<string, unknown>;
+    styleId?: number;
   }>;
   merges?: Record<string, SelectionRange>;
   colWidths?: Record<number, number>;
@@ -155,8 +157,8 @@ interface SheetModelData {
 }
 ```
 
-- **`cells`**：键为 `"列,行"` 格式（如 `"0,0"` 代表 A1 单元格）。
-- **`style`**：类 CSS 样式属性（`fontSize`、`fontWeight`、`color`、`background` 等）。
+- **`styles`**：样式池 —— `styles[0]` 始终为默认空样式 `{}`。单元格通过下标（`styleId`）引用样式。
+- **`cells`**：键为 `"列,行"` 格式（如 `"0,0"` 代表 A1 单元格）。`styleId` 引用 `styles` 数组；`styleId=0` 或省略表示默认样式。
 - **`merges`**：合并单元格定义，以合并锚点单元格为键。
 - **`colWidths` / `rowHeights`**：稀疏映射 — 仅存储非默认值。
 
@@ -166,7 +168,8 @@ interface SheetModelData {
 import type {
   CellCoord,       // { col: number; row: number }
   SelectionRange,  // { startCol; startRow; endCol; endRow }
-  CellData,        // { value: string; style: Record<string, unknown> | null }
+  CellData,        // { value: string; styleId?: number }
+  CellStyle,       // 类型化样式接口（字体、颜色、边框、对齐等）
   Range,           // { start: number; end: number }
   SpreadsheetOptions,
   SpreadsheetData,
@@ -177,6 +180,9 @@ import type {
   ThemeColors,
   Point,
 } from 'xiaodao-spreader';
+
+// 运行时工具函数
+import { StylePool, resolveStyle, migrateCells, cloneCells } from 'xiaodao-spreader';
 ```
 
 ---
@@ -205,14 +211,17 @@ src/
         │   ├── undo-styles.ts       # 撤销重做、格式刷、字体/对齐/颜色
         │   ├── borders-merge.ts     # 边框同步、合并操作、剪贴板、求和
         │   ├── sheets-ops.ts        # 行列增删、多 Sheet、v-model 发射、主题、refs
+        │   ├── find-replace.ts      # 查找替换状态与交互（依赖 Vue）
         │   └── interactions.ts      # 渲染器、编辑栏、标签栏、右键菜单、滚动条、事件
         └── core/
             ├── constants.ts         # 布局常量、国际化、主题调色板
             ├── types.ts             # 全部类型定义
-            ├── formula.ts          # 公式引擎（解析、计算、依赖、缓存）
-            ├── number-format.ts    # 数字格式引擎（Excel 风格显示格式化）
+            ├── style-pool.ts        # 样式池：去重、注册、解析、迁移、GC
+            ├── formula.ts           # 公式引擎（解析、计算、依赖、缓存）
+            ├── find-replace-core.ts # 查找替换纯算法（零 Vue 依赖，可单测）
+            ├── number-format.ts     # 数字格式引擎（Excel 风格显示格式化）
             ├── theme.ts             # 主题 CSS 变量构建
-            └── utils.ts            # 纯工具函数（列标签、命中测试、尺寸解析）
+            └── utils.ts             # 纯工具函数（列标签、命中测试、尺寸解析）
 ```
 
 ### 设计原则
@@ -221,6 +230,7 @@ src/
 - **Barrel 导出**：`spreader/index.ts` 集中导出组件和全部类型，`src/index.ts` 再统一 re-export，外部统一从 `xiaodao-spreader` 引入
 - **Canvas 2D 渲染**：仅绘制可视区域（虚拟渲染），大表流畅
 - **无脏标记**：在交互结束点手动调用 `scheduleRender()`；`requestAnimationFrame` 自动合并同一帧的多次调用
+- **样式池**：每个 Sheet 维护 `styles: CellStyle[]` 数组，单元格通过 `styleId`（数组下标）引用样式。相同样式自动去重。运行时通过 `resolveStyle()` / `registerStyle()` 解析样式；GC（`compactStyles`）仅在保存/导出时执行
 - **共享状态**：将 `CoreState` 注入每个 composable，实现跨模块通信而不产生紧耦合
 - **Reactive 包装**：composable 返回值通过 `reactive()` 包装，模板中自动解包 ref/computed
 
@@ -323,7 +333,7 @@ src/
 
 ### 工作原理
 
-- **存储**：格式代码按单元格存入 `cell.style.numberFormat`（字符串）。省略该属性（或空串）即常规格式。
+- **存储**：格式代码按单元格存入解析后样式的 `numberFormat` 属性（字符串）。省略该属性（或空串）即常规格式。
 - **界面**：工具栏数字格式下拉框将预设应用到当前选区；**「格式…」** 项打开 `numberFormatDialog.vue`，可自定义格式代码、小数位数与千位分隔符。
 - **显示**：`formatNumber(value, format, locale)` 解析代码（带缓存），应用千位分隔 / 小数位 / 百分比缩放 / 日期序列号转换，返回显示字符串。非法的日期/持续时间序列号渲染为 `###`。
 - **对齐**：数值类格式默认右对齐；文本及常规下的非数值保持左对齐——与 Excel 语义一致。

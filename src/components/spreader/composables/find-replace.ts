@@ -109,8 +109,8 @@ export function createFindReplace(
       const sh = so.sheets.value[m.sheetIndex];
       if (!sh) return;
       const cd = sh.cells[k];
-      // 仅修改 value（String 保证），保留 style，不改动其它属性
-      sh.cells[k] = { value: String(newVal), style: cd?.style ?? null };
+      // 仅修改 value（String 保证），保留 styleId，不改动其它属性
+      sh.cells[k] = { value: String(newVal), styleId: cd?.styleId };
     }
   }
 
