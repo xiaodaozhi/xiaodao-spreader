@@ -4,6 +4,7 @@
   "description": "A Vue 3 component for spreading sheets",
   "type": "module",
   "license": "MIT",
+  "homepage": "https://xiaodaozhi.com/xiaodao-spreader.html",
   "keywords": [
     "vue",
     "canvas",

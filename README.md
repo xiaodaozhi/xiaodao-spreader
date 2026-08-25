@@ -1,37 +1,16 @@
 # Xiaodao Spreader
 
-[中文](./README.ZH.md) | English
+[中文](./README.ZH.md) | **English**
 
-A high-performance, canvas-based spreadsheet component for Vue 3 — bringing an Excel-like editing experience to the web.
-
+[![Downloads](https://img.shields.io/npm/d18m/xiaodao-spreader)](https://www.npmjs.com/package/xiaodao-spreader)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Vue 3](https://img.shields.io/badge/Vue-3.4+-42b883.svg)](https://vuejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.4+-3178C6.svg)](https://www.typescriptlang.org/)
 [![Vite](https://img.shields.io/badge/Vite-5.0+-646CFF.svg)](https://vitejs.dev/)
 
+A high-performance, canvas-based spreadsheet component for Vue 3 — bringing an Excel-like editing experience to the web.
+
 ![Preview](./img/preview.png)
-
----
-
-## Table of Contents
-
-- [Features](#features)
-- [Installation](#installation)
-- [Quick Start](#quick-start)
-- [Basic Usage](#basic-usage)
-- [Props](#props)
-- [Data Model](#data-model)
-- [Architecture](#architecture)
-- [Keyboard Shortcuts](#keyboard-shortcuts)
-- [Formula Engine](#formula-engine)
-- [Number Format](#number-format)
-- [Theming](#theming)
-- [Development](#development)
-- [Building](#building)
-- [Roadmap](#roadmap)
-- [Contributing](#contributing)
-- [License](#license)
-- [中文版](./README.ZH.md)
 
 ---
 
@@ -496,7 +475,3 @@ Before submitting, please ensure the type check passes (`pnpm type-check`) and t
 ## License
 
 This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
-
----
-
-**Crafted with care by [xiaodaozhi](https://github.com/xiaodaozhi)**

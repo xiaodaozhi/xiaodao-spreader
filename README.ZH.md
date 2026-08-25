@@ -1,37 +1,16 @@
 # 小刀电子表格 (Xiaodao Spreader)
 
-[中文](./README.ZH.md) | English
+**中文** | [English](./README.md)
 
-基于 Canvas 的高性能 Vue 3 电子表格组件，在网页中提供类 Excel 的编辑体验。
-
+[![Downloads](https://img.shields.io/npm/d18m/xiaodao-spreader)](https://www.npmjs.com/package/xiaodao-spreader)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Vue 3](https://img.shields.io/badge/Vue-3.4+-42b883.svg)](https://vuejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.4+-3178C6.svg)](https://www.typescriptlang.org/)
 [![Vite](https://img.shields.io/badge/Vite-5.0+-646CFF.svg)](https://vitejs.dev/)
 
+基于 Canvas 的高性能 Vue 3 电子表格组件，在网页中提供类 Excel 的编辑体验。
+
 ![预览](./img/preview.png)
-
----
-
-## 目录
-
-- [功能特性](#功能特性)
-- [安装](#安装)
-- [快速开始](#快速开始)
-- [基础用法](#基础用法)
-- [Props 属性](#props-属性)
-- [数据模型](#数据模型)
-- [架构设计](#架构设计)
-- [键盘快捷键](#键盘快捷键)
-- [公式引擎](#公式引擎)
-- [数字格式](#数字格式)
-- [主题与国际化](#主题与国际化)
-- [开发指南](#开发指南)
-- [构建发布](#构建发布)
-- [路线图](#路线图)
-- [贡献指南](#贡献指南)
-- [开源协议](#开源协议)
-- [English Version](./README.md)
 
 ---
 
@@ -499,7 +478,3 @@ pnpm build:demo
 ## 开源协议
 
 本项目基于 MIT 协议 — 详见 [LICENSE](LICENSE) 文件。
-
----
-
-**由 [xiaodaozhi](https://github.com/xiaodaozhi) 精心打造**
