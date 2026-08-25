@@ -107,6 +107,7 @@ interface CellStyle {
   // borderTopWidth / borderBottomWidth / borderLeftWidth / borderRightWidth / borderColor
   //   @deprecated — 旧版内联边框属性，仅为迁移历史数据保留
   numberFormat?: string;
+  numberFormatCategory?: 'custom';  // 标记常规单元格经小数位按钮自动生成的格式（自定义分类）
   [key: string]: unknown;  // 可扩展
 }
 
@@ -533,6 +534,7 @@ Canvas CSS 坐标（逻辑像素）
 - 属性缺失 / 空字符串 = 常规（General）。
 - 文本 = `'@'`。
 - 常规格式下，若原始值可解析为有限数字，则按"数字"语义自动决定显示（极大/极小用科学计数），默认右对齐。
+- **日期/时间输入自动识别（仅常规单元格，对齐 Excel）**：通过 `setCellValue` 提交值时，若单元格当前格式为常规且输入命中常见模式，会自动转换为 Excel 序列值并套用对应格式代码——日期（`yyyy-m-d`、`yyyy/m/d`、`yyyy年m月d日`、`m-d`/`m/d` 补当前年）、时间（`h:mm`、`h:mm:ss`）、日期时间（日期 + 空格/`T` + 时间）。非法日期（如 `2023-2-29`、月/日越界）与不匹配的文本保持纯文本。套用的代码为 locale 日期/日期时间预设与 `h:mm:ss`，因此工具栏下拉会回显对应预设。序列号遵循 1900 日期系统，含 1900 闰年修正（`core/number-format.ts` 的 `parseDateTimeInput`）。
 
 ### 15.3 分类与格式代码
 
@@ -556,7 +558,9 @@ Canvas CSS 坐标（逻辑像素）
 
 - 工具栏"数字格式"下拉（`buildNumberFormatPresets`）提供预设：常规、文本、数值、百分比、科学计数、会计、财务、货币、货币（取整）、日期、时间、日期时间、时长，以及"格式…"自定义项（`NF_CUSTOM`）。
 - "格式…"打开 `numberFormatDialog.vue`，可输入自定义格式代码、小数位数与千分位分隔符。
+- 下拉右侧的「增加/减少小数位数」按钮对数值类格式（数字/百分比/货币等）与值可解析为数字的常规单元格逐格步进小数位，边界 0–30，不支持或达边界时按钮置灰。对常规单元格生成的格式会额外标记 `numberFormatCategory: 'custom'`：下拉回显为"其他数字格式…"（自定义），对话框打开时分类直接显示"自定义"；用户显式选择格式（下拉或对话框应用）会清除该标记。
 - 当选区内格式不一致时，`selNumberFormat` 返回 `NF_MIXED`（特殊标记 `0x01`），下拉显示"混合"。
+- 下拉回显按分类归一化（`normalizeNumberFormatForDisplay`，仅用于显示）：不在预设列表中的代码（增减小数位产生的非默认小数位、对话框改过的货币符号、非默认日期/时间变体等）映射到对应分类的预设项显示（分类规则与对话框 `detectFromCode` 一致），无法识别的代码显示"其他数字格式…"（自定义）。`selNumberFormat` 保留原始代码供存储/对话框使用，`selNumberFormatDisplay` 仅供工具栏回显。
 
 ---
 

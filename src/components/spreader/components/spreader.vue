@@ -13,7 +13,7 @@ import { createBordersMerge, type BordersMergeState } from '../composables/borde
 import { createSheetsOps, type SheetsOpsState } from '../composables/sheets-ops';
 import { createInteractions, type InteractionsState } from '../composables/interactions';
 import { createFindReplace, type FindReplaceState } from '../composables/find-replace';
-import { NF_MIXED } from '../core/number-format';
+import { NF_MIXED, NF_CUSTOM } from '../core/number-format';
 
 // ============ Props ============
 const props = withDefaults(defineProps<{
@@ -129,10 +129,10 @@ const isSingleCell = computed(() => {
   return !!sel && sel.startCol === sel.endCol && sel.startRow === sel.endRow;
 });
 
-// 数字格式对话框初始格式：选区一致时用该格式；混合时回退到活动单元格的格式，再不行则常规
+// 数字格式对话框初始格式：选区一致时用该格式；混合或自定义标记（NF_CUSTOM）时回退到活动单元格的真实格式代码，再不行则常规
 const nfDialogCurrentFormat = computed(() => {
   const sel = undoStyles.selNumberFormat;
-  if (sel !== NF_MIXED) return sel;
+  if (sel !== NF_MIXED && sel !== NF_CUSTOM) return sel;
   const ac = coreState.activeCell;
   const st = coreStateRaw.resolveStyle(coreState.cells[coreState.cellKey(ac.col, ac.row)]);
   return typeof st?.numberFormat === 'string' ? st.numberFormat : '';
@@ -218,14 +218,18 @@ const setDimInputRef = (el: unknown) => {
       :merge-menu-open="bordersMerge.mergeMenuOpen"
       :calc-menu-open="bordersMerge.calcMenuOpen"
       :is-single-cell="isSingleCell"
-      :sel-number-format="undoStyles.selNumberFormat"
+      :sel-number-format="undoStyles.selNumberFormatDisplay"
       :nf-options="undoStyles.nfOptions"
+      :can-increase-decimals="undoStyles.canIncreaseDecimals"
+      :can-decrease-decimals="undoStyles.canDecreaseDecimals"
       :theme-vars="sheetsOps.toolbarThemeVars"
       @undo="undoStyles.undo()"
       @redo="undoStyles.redo()"
       @paint-format="undoStyles.onPaintFormat"
       @clear-format="undoStyles.clearFormat()"
       @number-format-change="undoStyles.onNumberFormatChange($event)"
+      @increase-decimals="undoStyles.onIncreaseDecimals"
+      @decrease-decimals="undoStyles.onDecreaseDecimals"
       @font-family-change="undoStyles.onFontFamilyChange($event)"
       @font-size-input="undoStyles.onFontSizeInput($event)"
       @font-size-blur="undoStyles.onFontSizeBlur"
@@ -292,6 +296,7 @@ const setDimInputRef = (el: unknown) => {
       :model-open="undoStyles.nfDialogOpen"
       :locale="coreState.locale"
       :current-format="nfDialogCurrentFormat"
+      :is-custom="undoStyles.selNumberFormat === NF_CUSTOM"
       @update:model-open="setNfDialogOpen($event)"
       @apply="undoStyles.applyNumberFormatCode($event)"
     />

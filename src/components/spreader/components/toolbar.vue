@@ -278,10 +278,12 @@ const props = defineProps<{
   // 数字格式
   selNumberFormat: string;
   nfOptions: NFOption[];
+  canIncreaseDecimals: boolean;
+  canDecreaseDecimals: boolean;
 }>();
 
 const emit = defineEmits<{
-  (e: 'undo' | 'redo' | 'paint-format' | 'clear-format' | 'font-size-blur' | 'font-size-toggle' | 'font-size-step-up' | 'font-size-step-down' | 'bold-toggle' | 'italic-toggle' | 'underline-toggle' | 'strikethrough-toggle' | 'apply-text-color' | 'apply-fill-color' | 'apply-border' | 'wrap-toggle' | 'apply-merge' | 'calc-sum' | 'calc-avg' | 'calc-count' | 'find'): void;
+  (e: 'undo' | 'redo' | 'paint-format' | 'clear-format' | 'font-size-blur' | 'font-size-toggle' | 'font-size-step-up' | 'font-size-step-down' | 'bold-toggle' | 'italic-toggle' | 'underline-toggle' | 'strikethrough-toggle' | 'apply-text-color' | 'apply-fill-color' | 'apply-border' | 'wrap-toggle' | 'apply-merge' | 'calc-sum' | 'calc-avg' | 'calc-count' | 'find' | 'increase-decimals' | 'decrease-decimals'): void;
   (e: 'font-family-change' | 'font-size-change' | 'h-align-change' | 'v-align-change', v: string | number): void;
   (e: 'font-size-input' | 'text-color-change' | 'fill-color-change' | 'number-format-change', v: string): void;
   (e: 'font-size-keydown', ev: KeyboardEvent): void;
@@ -956,6 +958,50 @@ const nfFallbackLabel = computed(() =>
           align="right"
           @change="emit('number-format-change', String($event))"
         />
+        <!-- 增加小数位数 -->
+        <button
+          class="toolbar-btn"
+          :class="{ 'toolbar-btn--disabled': !canIncreaseDecimals }"
+          :title="t(locale, 'nfIncreaseDecimals')"
+          :disabled="!canIncreaseDecimals"
+          @click="emit('increase-decimals')"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="currentColor"
+          >
+            <text
+              x="0.5"
+              y="16"
+              font-size="9"
+              font-weight="700"
+              font-family="Arial, sans-serif"
+            >.00</text>
+            <path d="M19 5.5l4.2 5.2h-2.7v7.8h-3v-7.8h-2.7z" />
+          </svg>
+        </button>
+        <!-- 减少小数位数 -->
+        <button
+          class="toolbar-btn"
+          :class="{ 'toolbar-btn--disabled': !canDecreaseDecimals }"
+          :title="t(locale, 'nfDecreaseDecimals')"
+          :disabled="!canDecreaseDecimals"
+          @click="emit('decrease-decimals')"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="currentColor"
+          >
+            <text
+              x="0.5"
+              y="16"
+              font-size="9"
+              font-weight="700"
+              font-family="Arial, sans-serif"
+            >.00</text>
+            <path d="M19 18.5l-4.2-5.2h2.7V5.5h3v7.8h2.7z" />
+          </svg>
+        </button>
       </div>
     </Teleport>
 

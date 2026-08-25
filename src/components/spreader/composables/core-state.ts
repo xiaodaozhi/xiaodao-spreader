@@ -1,7 +1,7 @@
 import { ref, reactive, computed, watchEffect, type ComputedRef, type Ref } from 'vue';
 import { HEADER_HEIGHT, HEADER_WIDTH, SB_SIZE, DEFAULT_COL_WIDTH, DEFAULT_ROW_HEIGHT, MAX_ROW_HEIGHT, DEFAULT_FONT_FAMILY, DEFAULT_FONT_SIZE } from '../core/constants';
 import { FormulaDeps, clearEvalCache, computeCellValue, parseFormulaRefs } from '../core/formula';
-import { formatNumber } from '../core/number-format';
+import { formatNumber, isGeneralFormat, parseDateTimeInput } from '../core/number-format';
 import type { CellCoord, CellData, CellStyle, SelectionRange, BorderStyle, BorderSide } from '../core/types';
 import { resolveStyle as _resolveStyle } from '../core/style-pool';
 import type { BorderPool } from '../core/border-pool';
@@ -643,6 +643,22 @@ export function createCoreState(
       return;
     }
     const val = String(v);
+    // 常规单元格：常见日期/时间/日期时间字符串自动识别（对齐 Excel 输入语义）——
+    // 转为序列值并套用对应格式代码；仅当当前格式为常规时生效（文本/已设格式不干预）
+    if (!val.startsWith('=')) {
+      const oldStyle = resolveStyleFn(cells[k]);
+      const nf = typeof oldStyle?.numberFormat === 'string' ? oldStyle.numberFormat : '';
+      if (isGeneralFormat(nf)) {
+        const dt = parseDateTimeInput(val, locale.value);
+        if (dt) {
+          const newStyle: CellStyle = { ...(oldStyle ?? {}), numberFormat: dt.format };
+          cells[k] = { value: String(dt.serial), styleId: registerStyle(newStyle) };
+          formulaDeps.clear(k);
+          formulaDeps.markDirty(k);
+          return;
+        }
+      }
+    }
     const styleId = cells[k]?.styleId;
     const cell: CellData = { value: val };
     if (styleId !== undefined && styleId > 0) cell.styleId = styleId;

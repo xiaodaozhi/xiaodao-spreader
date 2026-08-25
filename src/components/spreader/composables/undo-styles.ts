@@ -4,7 +4,7 @@ import type { FontOption } from '../core/constants';
 import type { CoreState } from './core-state';
 import type { CellData, CellStyle, SheetState } from '../core/types';
 import { cloneCells as _cloneCellsFromPool } from '../core/style-pool';
-import { buildNumberFormatPresets, NF_CUSTOM, NF_MIXED, NF_GENERAL, type NFOption } from '../core/number-format';
+import { buildNumberFormatPresets, NF_CUSTOM, NF_MIXED, NF_GENERAL, NF_MAX_DECIMALS, NF_MIN_DECIMALS, isGeneralFormat, isDecimalsAdjustable, getEffectiveDecimals, adjustNumberFormatDecimals, normalizeNumberFormatForDisplay, type NFOption } from '../core/number-format';
 
 // ============ 共享 UndoStyles 接口 ============
 export interface UndoStylesState {
@@ -89,11 +89,18 @@ export interface UndoStylesState {
   // 数字格式（Number Format）
   nfOptions: ComputedRef<NFOption[]>;
   selNumberFormat: ComputedRef<string>;
+  /** 仅供工具栏下拉回显：非预设代码归类到对应预设，避免回显为空 */
+  selNumberFormatDisplay: ComputedRef<string>;
   NF_NUMBER_FORMAT_MIXED: string;
   nfDialogOpen: Ref<boolean>;
   onNumberFormatChange: (v: string) => void;
   openNumberFormatDialog: () => void;
   applyNumberFormatCode: (code: string) => void;
+  // 小数位数步进（增加/减少小数位按钮）
+  canIncreaseDecimals: ComputedRef<boolean>;
+  canDecreaseDecimals: ComputedRef<boolean>;
+  onIncreaseDecimals: () => void;
+  onDecreaseDecimals: () => void;
 }
 
 interface UndoSnap {
@@ -561,7 +568,8 @@ export function createUndoStyles(
   const nfDialogOpen = ref(false);
 
   // 选区 numberFormat 一致性检测：不一致时返回 NF_MIXED（与 fontFamily 的 mixed 语义一致）
-  // 没有属性/空串 = 常规，"主动选常规"和"从未设置"天然一致，无需区分
+  // 没有属性/空串 = 常规，"主动选常规"和"从未设置"天然一致，无需区分。
+  // 带 numberFormatCategory='custom' 标记（常规单元格经小数位按钮生成）的格式 → 回显为 NF_CUSTOM（自定义）
   const selNumberFormat = computed(() => {
     const sel = s.selection.value;
     if (!sel) return NF_GENERAL;
@@ -572,7 +580,9 @@ export function createUndoStyles(
         const m = s.findMerge(c, r);
         if (m && (c !== m.range.startCol || r !== m.range.startRow)) continue;
         const st = s.resolveStyle(s.cells[s.cellKey(c, r)]);
-        const nf = typeof st?.numberFormat === 'string' ? st.numberFormat : '';
+        const nf = st?.numberFormatCategory === 'custom'
+          ? NF_CUSTOM
+          : (typeof st?.numberFormat === 'string' ? st.numberFormat : '');
         if (first === undefined) first = nf;
         else if (nf !== first) mixed = true;
       }
@@ -580,9 +590,67 @@ export function createUndoStyles(
     return mixed ? NF_MIXED : (first ?? NF_GENERAL);
   });
 
-  // 将格式代码应用到当前选区；General（空串）会删除 numberFormat 属性
+  // 仅供显示的归一化回显值：增减小数位、对话框改符号/日期/自定义代码等产生的代码
+  // 不在预设列表中，按分类归到对应预设显示（原始代码语义仍由 selNumberFormat 保留，
+  // 供对话框初始值等使用）
+  function cellDisplayNF(st: CellStyle | null | undefined): string {
+    if (st?.numberFormatCategory === 'custom') return NF_CUSTOM;
+    const nf = typeof st?.numberFormat === 'string' ? st.numberFormat : '';
+    return normalizeNumberFormatForDisplay(nf, s.locale.value);
+  }
+
+  const selNumberFormatDisplay = computed(() => {
+    const raw = selNumberFormat.value;
+    if (raw !== NF_MIXED) {
+      return raw === NF_CUSTOM ? NF_CUSTOM : normalizeNumberFormatForDisplay(raw, s.locale.value);
+    }
+    // 原始代码不一致，但归类后可能同属一类（如 '#,##0.00' 与 '0.000'）→ 归一化后重判一致性
+    const sel = s.selection.value;
+    if (!sel) return NF_GENERAL;
+    let first: string | undefined;
+    let mixed = false;
+    for (let c = sel.startCol; c <= sel.endCol && !mixed; c++) {
+      for (let r = sel.startRow; r <= sel.endRow && !mixed; r++) {
+        const m = s.findMerge(c, r);
+        if (m && (c !== m.range.startCol || r !== m.range.startRow)) continue;
+        const nf = cellDisplayNF(s.resolveStyle(s.cells[s.cellKey(c, r)]));
+        if (first === undefined) first = nf;
+        else if (nf !== first) mixed = true;
+      }
+    }
+    return mixed ? NF_MIXED : (first ?? NF_GENERAL);
+  });
+
+  // 将格式代码应用到当前选区；General（空串）会删除 numberFormat 属性。
+  // 用户显式选择格式 → 同时清除自动生成的自定义标记（由后续代码反推分类）
   function applyNumberFormatCode(code: string) {
     applyStyleToSelection('numberFormat', code);
+    clearSelectionNumberFormatCategory();
+  }
+
+  // 移除选区样式的 numberFormatCategory 标记
+  function clearSelectionNumberFormatCategory() {
+    const sel = s.selection.value;
+    if (!sel) return;
+    for (let c = sel.startCol; c <= sel.endCol; c++) {
+      for (let r = sel.startRow; r <= sel.endRow; r++) {
+        const m = s.findMerge(c, r);
+        if (m && (c !== m.range.startCol || r !== m.range.startRow)) continue;
+        const k = s.cellKey(c, r);
+        const cell = s.cells[k];
+        const oldStyle = s.resolveStyle(cell);
+        if (oldStyle?.numberFormatCategory !== 'custom') continue;
+        const { numberFormatCategory: _omitted, ...rest } = oldStyle;
+        const styleId = Object.keys(rest).length ? s.registerStyle(rest) : 0;
+        const val = cell?.value ?? '';
+        if (val === '' && styleId === 0) s.delCell(k);
+        else {
+          const nc: CellData = { value: val };
+          if (styleId > 0) nc.styleId = styleId;
+          s.cells[k] = nc;
+        }
+      }
+    }
   }
 
   function onNumberFormatChange(v: string) {
@@ -595,6 +663,88 @@ export function createUndoStyles(
 
   function openNumberFormatDialog() {
     nfDialogOpen.value = true;
+  }
+
+  // ============ 小数位数步进（增加/减少小数位） ============
+  // 收集选区内"可调整小数位"的单元格：数值类格式（数字/百分比/货币等）恒适用；
+  // 常规格式仅当值为数字时适用；文本/日期/时间/持续时间跳过。
+  // 合并单元格只在锚点处理一次。
+  function collectAdjustableCells(): { key: string; nf: string; decimals: number }[] {
+    const sel = s.selection.value;
+    if (!sel) return [];
+    const out: { key: string; nf: string; decimals: number }[] = [];
+    for (let c = sel.startCol; c <= sel.endCol; c++) {
+      for (let r = sel.startRow; r <= sel.endRow; r++) {
+        const m = s.findMerge(c, r);
+        if (m && (c !== m.range.startCol || r !== m.range.startRow)) continue;
+        const k = s.cellKey(c, r);
+        const cell = s.cells[k];
+        const st = s.resolveStyle(cell);
+        const nf = typeof st?.numberFormat === 'string' ? st.numberFormat : NF_GENERAL;
+        const value = cell?.value ?? '';
+        if (!isDecimalsAdjustable(nf, value)) continue;
+        out.push({ key: k, nf, decimals: getEffectiveDecimals(nf, value) });
+      }
+    }
+    return out;
+  }
+
+  // 存在可调整单元格且未全部达到上限 → 增加按钮可用
+  const canIncreaseDecimals = computed(() =>
+    collectAdjustableCells().some((c) => c.decimals < NF_MAX_DECIMALS));
+  // 存在可调整单元格且至少一个未达下限（0）→ 减少按钮可用
+  const canDecreaseDecimals = computed(() =>
+    collectAdjustableCells().some((c) => c.decimals > NF_MIN_DECIMALS));
+
+  // 按 key 单独设置 numberFormat（空串 = 删除属性回常规）；
+  // category='custom' 表示格式由常规单元格经小数位按钮自动生成，需写入分类标记；
+  // 目标归零（'0'/'0.00' → 非常规）仍保留标记，只有回到常规才清除
+  function setCellNumberFormat(k: string, code: string, category?: 'custom') {
+    const val = s.cells[k]?.value ?? '';
+    const oldStyle = s.resolveStyle(s.cells[k]) ?? {};
+    const newStyle: CellStyle = { ...oldStyle };
+    if (code === '') {
+      delete newStyle.numberFormat;
+      delete newStyle.numberFormatCategory;
+    } else {
+      newStyle.numberFormat = code;
+      if (category === 'custom') newStyle.numberFormatCategory = 'custom';
+    }
+    const styleId = Object.keys(newStyle).length ? s.registerStyle(newStyle) : 0;
+    if (val === '' && styleId === 0) {
+      s.delCell(k);
+    } else {
+      const cell: CellData = { value: val };
+      if (styleId > 0) cell.styleId = styleId;
+      s.cells[k] = cell;
+    }
+  }
+
+  // 逐格基于自身当前格式步进 ±1 小数位；越界/不支持的单元格跳过；一次操作一个撤销点。
+  // 常规单元格（识别为数字）步进后，数字格式属性自动标记为自定义分类。
+  function stepSelectionDecimals(delta: 1 | -1) {
+    const items = collectAdjustableCells();
+    const changes: { key: string; code: string; category?: 'custom' }[] = [];
+    for (const it of items) {
+      const target = it.decimals + delta;
+      if (target < NF_MIN_DECIMALS || target > NF_MAX_DECIMALS) continue;
+      const code = adjustNumberFormatDecimals(it.nf, target);
+      if (code == null || code === it.nf) continue;
+      changes.push({ key: it.key, code, category: isGeneralFormat(it.nf) ? 'custom' : undefined });
+    }
+    if (!changes.length) return;
+    saveUndo();
+    for (const ch of changes) setCellNumberFormat(ch.key, ch.code, ch.category);
+    s.scheduleRender?.();
+    s.emitModelData?.();
+  }
+
+  function onIncreaseDecimals() {
+    stepSelectionDecimals(1);
+  }
+
+  function onDecreaseDecimals() {
+    stepSelectionDecimals(-1);
   }
 
   const ret: UndoStylesState = {
@@ -667,11 +817,16 @@ export function createUndoStyles(
 
     nfOptions,
     selNumberFormat,
+    selNumberFormatDisplay,
     NF_NUMBER_FORMAT_MIXED: NF_MIXED,
     nfDialogOpen,
     onNumberFormatChange,
     openNumberFormatDialog,
     applyNumberFormatCode,
+    canIncreaseDecimals,
+    canDecreaseDecimals,
+    onIncreaseDecimals,
+    onDecreaseDecimals,
   };
 
   return ret;

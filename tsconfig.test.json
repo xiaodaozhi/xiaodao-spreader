@@ -18,6 +18,7 @@
     "src/components/spreader/core/border-pool.ts",
     "src/components/spreader/core/border-resolve.ts",
     "src/components/spreader/core/style-pool.ts",
+    "src/components/spreader/core/number-format.ts",
     "test/**/*.ts"
   ]
 }

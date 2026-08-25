@@ -60,6 +60,11 @@ export interface CellStyle {
   borderColor?: string;
   // 数字格式
   numberFormat?: string;
+  /**
+   * 数字格式分类标记：'custom' 表示该格式由「增加/减少小数位数」等操作在常规单元格上自动生成，
+   * 下拉/对话框应按「自定义」展示。仅存标记，渲染不受影响。
+   */
+  numberFormatCategory?: 'custom';
   // 后续扩展属性使用索引签名
   [key: string]: unknown;
 }

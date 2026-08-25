@@ -262,8 +262,11 @@ function tokenizeDate(str: string): { tokens: NFToken[]; isDuration: boolean } {
 const _parseCache = new Map<string, NFParsed>();
 
 function doParse(format: string): NFParsed {
-  // 日期/时间/持续时间判定：含年/日/时/秒/周标识，或 [h] 持续时间
-  const looksLikeDate = /[ydhs]/.test(format) || /AM\/PM/i.test(format) || /\[h\]/i.test(format);
+  // 日期/时间/持续时间判定：含年/日/时/秒/周标识，或 [h] 持续时间。
+  // 先移除 [Red]/[Blue] 等颜色修饰符与 [>100] 等条件修饰符（其内含 d/s 字母或数字，
+  // 不应触发日期误判），仅保留 [h]/[mm]/[ss] 持续时间标记。
+  const stripped = format.replace(/\[[^\]]*\]/gi, (m) => (/^\[(h|mm|ss)\]$/i.test(m) ? m : ''));
+  const looksLikeDate = /[ydhs]/.test(stripped) || /AM\/PM/i.test(stripped) || /\[h\]/i.test(stripped);
   if (looksLikeDate) {
     const firstSection = format.split(';')[0] ?? format;
     const { tokens, isDuration } = tokenizeDate(firstSection);
@@ -624,6 +627,292 @@ export function isInvalidDisplayValue(
   if (p.kind === 'date') return serial < EXCEL_DATE_MIN_SERIAL || serial > EXCEL_DATE_MAX_SERIAL;
   if (p.kind === 'duration') return serial < 0;
   return false;
+}
+
+// ============ 小数位数调整（增加/减少小数位按钮） ============
+
+/** 最大小数位数（与数字格式对话框一致：0–30） */
+export const NF_MAX_DECIMALS = 30;
+/** 最小小数位数 */
+export const NF_MIN_DECIMALS = 0;
+
+/** 判断原始值是否可解析为有限数字（常规格式下的"数值"语义） */
+export function isNumericValue(value: string): boolean {
+  if (value == null || value === '' || value.trim() === '') return false;
+  const n = Number(value);
+  return !Number.isNaN(n) && Number.isFinite(n);
+}
+
+/**
+ * 判断某单元格（格式 + 值）的小数位数是否可调整：
+ * - 文本 / 日期 / 时间 / 持续时间 → 不支持
+ * - 数值类格式（含数字占位符）→ 支持（与单元格内容无关）
+ * - 常规 → 仅当值可解析为数字时支持（识别为数字格式）
+ */
+export function isDecimalsAdjustable(
+  format: string | undefined | null,
+  value: string,
+): boolean {
+  if (format == null || format === NF_MIXED) return isNumericValue(value);
+  if (isGeneralFormat(format)) return isNumericValue(value);
+  if (format === NF_TEXT) return false;
+  const parsed = parseNumberFormat(format);
+  if (parsed.kind === 'date' || parsed.kind === 'duration') return false;
+  return parsed.sections.some((sec) => sec.hasDigits);
+}
+
+/**
+ * 获取单元格当前有效小数位数：
+ * - 常规（含值为数值的常规）→ 0；文本/日期类 → -1（不支持）
+ * - 数值类 → 第一个含数字占位符区段的 decimals（最大允许小数位）
+ */
+export function getEffectiveDecimals(
+  format: string | undefined | null,
+  value: string,
+): number {
+  if (!isDecimalsAdjustable(format, value)) return -1;
+  if (format == null || format === NF_MIXED || isGeneralFormat(format)) return 0;
+  const parsed = parseNumberFormat(format);
+  const sec = parsed.sections.find((s) => s.hasDigits);
+  return sec ? sec.decimals : -1;
+}
+
+/**
+ * 在原始区段字符串上调整小数占位符数量，保留前后缀、颜色区段、千分位、科学计数等结构。
+ * 无数字占位符的纯文本区段（如会计的 ¥"-"）原样返回。
+ */
+function adjustSectionDecimals(raw: string, target: number): string {
+  // 跳过括号修饰部分（颜色 [Red] / 条件 [>100] / 货币 [$¥-409]），只在其后的占位符核心上操作，
+  // 避免把条件表达式中的数字误当作占位符。
+  let coreStart = 0;
+  const bracketRe = /\[[^\]]*\]/g;
+  let bm: RegExpExecArray | null;
+  while ((bm = bracketRe.exec(raw)) !== null) {
+    if (/^\[(h|mm|ss)\]$/i.test(bm[0])) break; // 持续时间标记不属于数值格式，停止跳过
+    coreStart = bm.index + bm[0].length;
+  }
+  const bracketPart = raw.slice(0, coreStart);
+  const rest = raw.slice(coreStart);
+
+  const firstIdx = rest.search(/[0#?]/);
+  if (firstIdx === -1) return raw;
+  let lastIdx = -1;
+  for (let i = rest.length - 1; i >= 0; i--) {
+    const ch = rest[i]!;
+    if (ch === '0' || ch === '#' || ch === '?' || ch === 'E') {
+      lastIdx = i;
+      break;
+    }
+  }
+  if (lastIdx < firstIdx) return raw;
+
+  const core = rest.slice(firstIdx, lastIdx + 1);
+  // 科学计数：只调整尾数部分（E 之前），指数占位符不动
+  const eIdx = core.search(/E[+-]/i);
+  const mantissa = eIdx >= 0 ? core.slice(0, eIdx) : core;
+  const dotIdx = mantissa.indexOf('.');
+  const fracPlaceholders = dotIdx >= 0 ? (mantissa.slice(dotIdx + 1).match(/[0#?]/g) || []).length : 0;
+
+  if (fracPlaceholders === target) return raw;
+
+  let newMantissa: string;
+  if (dotIdx < 0) {
+    // 无小数点：目标 > 0 时补充 ".000..."；目标 = 0 时保持原样（实际不会进入此分支，因 frac=0=target 已提前返回）
+    newMantissa = target > 0 ? mantissa + '.' + '0'.repeat(target) : mantissa;
+  } else if (target > fracPlaceholders) {
+    // 增加：在现有小数占位符后追加 '0'
+    newMantissa = mantissa + '0'.repeat(target - fracPlaceholders);
+  } else {
+    // 减少：从尾部移除多余的小数占位符（0/#/?）
+    let remove = fracPlaceholders - target;
+    const chars = mantissa.split('');
+    for (let i = chars.length - 1; i >= 0 && remove > 0; i--) {
+      const ch = chars[i];
+      if (ch === '0' || ch === '#' || ch === '?') {
+        chars.splice(i, 1);
+        remove--;
+      }
+    }
+    newMantissa = chars.join('');
+    // 小数位归零时移除悬空的小数点（兼容 "." 前无整数占位符的罕见形式则不处理）
+    if (target === 0 && newMantissa.endsWith('.')) {
+      newMantissa = newMantissa.slice(0, -1);
+    }
+  }
+
+  const newCore = newMantissa + (eIdx >= 0 ? core.slice(eIdx) : '');
+  return bracketPart + rest.slice(0, firstIdx) + newCore + rest.slice(lastIdx + 1);
+}
+
+/**
+ * 将格式代码调整为指定的小数位数，返回新代码；不支持或越界时返回 null。
+ * - 常规格式：生成纯数值格式（'0' 或 '0.000...'）
+ * - 文本 / 日期 / 时间 / 持续时间：不支持 → null
+ * - 数值类（含百分比/货币/会计/财务/科学计数/多区段自定义）：逐区段调整，纯文本区段保留
+ */
+export function adjustNumberFormatDecimals(
+  format: string | undefined | null,
+  target: number,
+): string | null {
+  if (!Number.isInteger(target) || target < NF_MIN_DECIMALS || target > NF_MAX_DECIMALS) return null;
+  if (format === NF_MIXED) return null;
+  if (format == null || isGeneralFormat(format)) {
+    return target > 0 ? '0.' + '0'.repeat(target) : '0';
+  }
+  if (format === NF_TEXT) return null;
+  const parsed = parseNumberFormat(format);
+  if (parsed.kind === 'date' || parsed.kind === 'duration') return null;
+  if (!parsed.sections.some((sec) => sec.hasDigits)) return null;
+  return format.split(';').map((sec) => adjustSectionDecimals(sec, target)).join(';');
+}
+
+/** 常见货币符号集（与对话框一致） */
+const NF_CURRENCY_SYMBOLS = ['¥', '$', '€', '£'];
+
+/**
+ * 将任意格式代码归类映射为工具栏下拉的预设值，用于回显：
+ * 增减小数位、对话框改符号/日期/自定义代码等产生的代码不在预设列表中，
+ * 按分类归到对应预设（分类规则与对话框 detectFromCode 一致），无法识别时返回 NF_CUSTOM。
+ * 注意：仅用于显示，不得用于替代真实格式代码存储。
+ */
+export function normalizeNumberFormatForDisplay(
+  format: string | undefined | null,
+  locale: string,
+): string {
+  if (format == null || format === NF_MIXED) return format ?? NF_GENERAL;
+  if (isGeneralFormat(format)) return NF_GENERAL;
+  if (format === NF_TEXT || format === '@') return NF_TEXT;
+
+  const sym = getCurrencySymbol(locale);
+  const datePreset = locale === 'zh-CN' ? 'yyyy"年"m"月"d"日"' : 'm/d/yyyy';
+  const dateTimePreset = locale === 'zh-CN' ? 'yyyy"年"m"月"d"日" h:mm:ss' : 'm/d/yyyy h:mm:ss';
+  const accountingPreset = `${sym}#,##0.00;(${sym}#,##0.00);${sym}"-"`;
+  const financialPreset = '#,##0.00;[Red](#,##0.00)';
+
+  // 精确命中预设 → 原样返回（下拉高亮对应项）
+  const presets = buildNumberFormatPresets(locale);
+  if (presets.some((o) => o.value === format)) return format;
+
+  // 持续时间/日期判定前先移除 [Red]/[>100] 等修饰符（其内含 d 等字母，避免日期误判），仅保留 [h]/[mm]/[ss]
+  const stripped = format.replace(/\[[^\]]*\]/gi, (m) => (/^\[(h|mm|ss)\]$/i.test(m) ? m : ''));
+  if (/\[(h|mm|ss)\]/i.test(stripped) && !/[yd]/i.test(stripped)) return '[h]:mm:ss';
+  const hasDateMark = /[yd]/i.test(stripped);
+  const hasTimeMark = /h|s|AM\/PM/i.test(stripped);
+  if (hasDateMark && hasTimeMark) return dateTimePreset;
+  if (hasDateMark || /AM\/PM/i.test(stripped)) return datePreset;
+  if (hasTimeMark) return 'h:mm:ss';
+  if (format.includes('%')) return '0.00%';
+  if (/E[+-]/i.test(format)) return '0.00E+00';
+  if (format.includes('[Red](')) return financialPreset;
+  const curSym = NF_CURRENCY_SYMBOLS.find((c) => format.startsWith(c));
+  if (curSym) {
+    if (format.includes('(')) return accountingPreset;
+    return /\.\d/.test(format.slice(curSym.length)) ? sym + '#,##0.00' : sym + '#,##0';
+  }
+  // 含数字占位符的数值类（含非默认小数位）→ 数值预设；其余无法识别 → 自定义
+  const parsed = parseNumberFormat(format);
+  if (parsed.kind === 'number' && parsed.sections.some((sec) => sec.hasDigits)) return '#,##0.00';
+  return NF_CUSTOM;
+}
+
+// ============ 日期/时间字符串自动识别（常规单元格） ============
+
+/** 日期/时间字符串解析结果：Excel 序列号 + 建议套用的格式代码 */
+export interface DateTimeParseResult {
+  serial: number;
+  format: string;
+}
+
+/** 某年某月的天数（UTC 构造，不受本地时区影响） */
+function daysInMonth(y: number, m: number): number {
+  return new Date(Date.UTC(y, m, 0)).getUTCDate();
+}
+
+/**
+ * 日期 → Excel 1900 系统序列号（与 serialToDate 互逆）。
+ * 1900-01-01 ~ 02-28 区间减 1，对齐 Excel 的 1900 虚构闰年（1900-02-29 = 60）。
+ */
+function dateToSerial(y: number, m: number, d: number): number {
+  const days = Date.UTC(y, m - 1, d) / 86400000 + 25569;
+  return days <= 60 ? days - 1 : days;
+}
+
+/**
+ * 对常规单元格的输入做常见日期/时间/日期时间字符串自动识别（对齐 Excel 输入语义）：
+ * - 日期：yyyy-m-d、yyyy/m/d、yyyy年m月d日、m-d / m/d（年份补当前年）
+ * - 时间：h:mm、h:mm:ss
+ * - 日期时间：上述日期 + 空格或 T + 时间
+ * 识别成功返回序列号 + 建议格式代码（跟随 locale）；不识别返回 null。
+ * 纯数字与公式不会命中；月/日/时/分/秒越界、日期不存在（如 2023-2-29）均不识别。
+ */
+export function parseDateTimeInput(
+  input: string,
+  locale: string,
+  now: Date = new Date(),
+): DateTimeParseResult | null {
+  const str = input.trim();
+  if (!str || str.startsWith('=') || isNumericValue(str)) return null;
+
+  const dateFmt = locale === 'zh-CN' ? 'yyyy"年"m"月"d"日"' : 'm/d/yyyy';
+  const dateTimeFmt = locale === 'zh-CN' ? 'yyyy"年"m"月"d"日" h:mm:ss' : 'm/d/yyyy h:mm:ss';
+  const timeFmt = 'h:mm:ss';
+
+  // 时间部分：h:mm(:ss)，时 0-23、分/秒 0-59 → 天的小数部分
+  function parseTime(t: string): number | null {
+    const m = /^(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?$/.exec(t);
+    if (!m) return null;
+    const h = Number(m[1]);
+    const mi = Number(m[2]);
+    const sec = m[3] !== undefined ? Number(m[3]) : 0;
+    if (h > 23 || mi > 59 || sec > 59) return null;
+    return (h * 3600 + mi * 60 + sec) / 86400;
+  }
+
+  // 日期部分 → 整数序列号；不识别/越界返回 null
+  function parseDate(ds: string): number | null {
+    let m = /^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/.exec(ds);
+    let y: number;
+    let mo: number;
+    let d: number;
+    if (m) {
+      y = Number(m[1]);
+      mo = Number(m[2]);
+      d = Number(m[3]);
+    } else if ((m = /^(\d{4})年(\d{1,2})月(\d{1,2})日$/.exec(ds))) {
+      y = Number(m[1]);
+      mo = Number(m[2]);
+      d = Number(m[3]);
+    } else if ((m = /^(\d{1,2})[-/](\d{1,2})$/.exec(ds))) {
+      y = now.getUTCFullYear();
+      mo = Number(m[1]);
+      d = Number(m[2]);
+    } else {
+      return null;
+    }
+    if (y < 1900 || y > 9999 || mo < 1 || mo > 12 || d < 1 || d > daysInMonth(y, mo)) return null;
+    const serial = dateToSerial(y, mo, d);
+    return serial >= EXCEL_DATE_MIN_SERIAL && serial <= EXCEL_DATE_MAX_SERIAL ? serial : null;
+  }
+
+  // 1) 纯时间：12:30 / 12:30:45
+  const tf = parseTime(str);
+  if (tf !== null) return { serial: tf, format: timeFmt };
+
+  // 2) 日期 + 时间（空格或 T 分隔）：2026-08-25 12:30 / 2026年8月25日 12:30:45 等
+  const dtm = /^(.+?)[T ](\d{1,2}:\d{1,2}(?::\d{1,2})?)$/.exec(str);
+  if (dtm) {
+    const dSerial = parseDate(dtm[1]!.trim());
+    const frac = parseTime(dtm[2]!);
+    if (dSerial !== null && frac !== null) {
+      return { serial: dSerial + frac, format: dateTimeFmt };
+    }
+  }
+
+  // 3) 纯日期：2026-08-25 / 2026年8月25日 / 8-25（补当前年）
+  const dSerial = parseDate(str);
+  if (dSerial !== null) return { serial: dSerial, format: dateFmt };
+
+  return null;
 }
 
 /** 根据分类 + 小数位数 + 千位分隔符生成格式代码 */

@@ -19,12 +19,15 @@ const props = withDefaults(defineProps<{
   locale?: string;
   /** 当前选区格式（混合时由父组件传入空串，从常规开始） */
   currentFormat?: string;
+  /** 选区数字格式带自定义分类标记（常规单元格经小数位按钮生成）：打开时分类直接显示为「自定义」 */
+  isCustom?: boolean;
   /** 预览样例值（默认 1234.5） */
   sampleValue?: string;
 }>(), {
   modelOpen: false,
   locale: 'zh-CN',
   currentFormat: '',
+  isCustom: false,
   sampleValue: '1234.5',
 });
 
@@ -152,22 +155,24 @@ function detectFromCode(code: string): void {
     category.value = 'text';
     return;
   }
-  // 持续时间：含 [h] 且不含 y/d 等日期字符
-  if (/\[h\]/i.test(code) && !/[yd]/i.test(code)) {
+  // 持续时间：含 [h] 且不含 y/d 等日期字符。
+  // 日期/时间判定前先移除 [Red]/[>100] 等修饰符（其内含 d 等字母，会触发日期误判），仅保留 [h]
+  const stripped = code.replace(/\[[^\]]*\]/gi, (m) => (/\[h\]/i.test(m) ? m : ''));
+  if (/\[h\]/i.test(stripped) && !/[yd]/i.test(stripped)) {
     category.value = 'duration';
     if ((DURATION_FORMATS as readonly string[]).includes(code)) durationFmt.value = code;
     // 若 code 不在候选：保持 initFormatDefaultsByLocale 写入的首个候选，下拉不为空
     return;
   }
   // 日期 + 时间：同时含日期标记(y/d/m)与时间标记(h/s 或 AM/PM)
-  const hasDateMark = /[yd]/i.test(code);
-  const hasTimeMark = /h|s|AM\/PM/i.test(code);
+  const hasDateMark = /[yd]/i.test(stripped);
+  const hasTimeMark = /h|s|AM\/PM/i.test(stripped);
   if (hasDateMark && hasTimeMark) {
     category.value = 'dateTime';
     if ((DATETIME_FORMATS.value as readonly string[]).includes(code)) dateTimeFmt.value = code;
     return;
   }
-  if (hasDateMark || /AM\/PM/i.test(code)) {
+  if (hasDateMark || /AM\/PM/i.test(stripped)) {
     if (hasTimeMark && !hasDateMark) {
       category.value = 'time';
       if ((TIME_FORMATS as readonly string[]).includes(code)) timeFmt.value = code;
@@ -251,6 +256,8 @@ function openDialog() {
   if (props.modelOpen !== undefined) emit('update:modelOpen', true);
   initFormatDefaultsByLocale();
   detectFromCode(props.currentFormat ?? '');
+  // 带自定义分类标记：不按代码反推分类，直接显示为「自定义」（代码已写入 customCode）
+  if (props.isCustom) category.value = 'custom';
   nextTick(() => customCodeRef.value?.focus());
 }
 
