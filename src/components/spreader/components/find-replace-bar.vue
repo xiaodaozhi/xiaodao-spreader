@@ -19,16 +19,10 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  (e: 'update:findText', v: string): void;
-  (e: 'update:replaceText', v: string): void;
+  (e: 'update:findText' | 'update:replaceText', v: string): void;
   (e: 'update:scope', v: FindScope): void;
-  (e: 'update:matchCase', v: boolean): void;
-  (e: 'update:matchEntireCell', v: boolean): void;
-  (e: 'prev'): void;
-  (e: 'next'): void;
-  (e: 'replace'): void;
-  (e: 'replace-all'): void;
-  (e: 'close'): void;
+  (e: 'update:matchCase' | 'update:matchEntireCell', v: boolean): void;
+  (e: 'prev' | 'next' | 'replace' | 'replace-all' | 'close'): void;
 }>();
 
 const findInputRef = ref<HTMLInputElement | null>(null);
@@ -89,9 +83,15 @@ function onScopeChange(e: Event) {
       :title="t(locale, 'findScope')"
       @change="onScopeChange"
     >
-      <option value="sheet">{{ t(locale, 'scopeSheet') }}</option>
-      <option value="workbook">{{ t(locale, 'scopeWorkbook') }}</option>
-      <option value="selection">{{ t(locale, 'scopeSelection') }}</option>
+      <option value="sheet">
+        {{ t(locale, 'scopeSheet') }}
+      </option>
+      <option value="workbook">
+        {{ t(locale, 'scopeWorkbook') }}
+      </option>
+      <option value="selection">
+        {{ t(locale, 'scopeSelection') }}
+      </option>
     </select>
     <label class="find-bar__chk">
       <input

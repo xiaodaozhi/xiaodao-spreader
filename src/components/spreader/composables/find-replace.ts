@@ -203,8 +203,8 @@ export function createFindReplace(
   }
 
   // ===== 防抖重算（合并批量 cells 变更 / 连续输入）=====
-  const raf: (cb: () => void) => void =
-    typeof requestAnimationFrame === 'function'
+  const raf: (cb: () => void) => void
+    = typeof requestAnimationFrame === 'function'
       ? requestAnimationFrame
       : (cb) => setTimeout(cb, 16);
   let recomputePending = false;

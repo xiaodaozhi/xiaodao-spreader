@@ -177,7 +177,7 @@ function evalCondition(
   depth: number,
 ): boolean {
   const e = expr.trim();
-  const ops = ['<=', '>=', '<>'];
+  const cmpOps = ['<=', '>=', '<>'];
   let foundOp: string | null = null;
   let idx = -1;
   let inStr: string | null = null;
@@ -186,22 +186,29 @@ function evalCondition(
     const ch = e[i]!;
     if (inStr) {
       if (ch === inStr) {
-        if (e[i + 1] === inStr) i++;
-        else inStr = null;
+        if (e[i + 1] === inStr) {
+          i++;
+        } else {
+          inStr = null;
+        }
       }
       continue;
     }
-    if (ch === '"' || ch === "'") { inStr = ch; continue; }
-    if (ch === '(') depthP++;
-    if (ch === ')') depthP--;
+    if (ch === '"' || ch === '\'') {
+      inStr = ch;
+      continue;
+    }
+    if (ch === '(') {
+      depthP++;
+    }
+    if (ch === ')') {
+      depthP--;
+    }
     if (depthP === 0 && (ch === '<' || ch === '>' || ch === '=')) {
-      let op: string | null = null;
       const two = e.slice(i, i + 2);
-      if (two === '<=' || two === '>=' || two === '<>') op = two;
-      else op = ch;
+      const op = cmpOps.includes(two) ? two : ch;
       foundOp = op;
       idx = i;
-      if (op.length === 2) i++; // 跳过第二个字符
       break;
     }
   }
@@ -227,15 +234,31 @@ function splitTopLevelArgs(inner: string): string[] {
     if (inStr) {
       cur += ch;
       if (ch === inStr) {
-        if (inner[i + 1] === inStr) { i++; cur += inStr; }
-        else inStr = null;
+        if (inner[i + 1] === inStr) {
+          i++;
+          cur += inStr;
+        } else {
+          inStr = null;
+        }
       }
       continue;
     }
-    if (ch === '"' || ch === "'") { inStr = ch; cur += ch; continue; }
-    if (ch === '(') depth++;
-    if (ch === ')') depth--;
-    if (ch === ',' && depth === 0) { args.push(cur); cur = ''; continue; }
+    if (ch === '"' || ch === '\'') {
+      inStr = ch;
+      cur += ch;
+      continue;
+    }
+    if (ch === '(') {
+      depth++;
+    }
+    if (ch === ')') {
+      depth--;
+    }
+    if (ch === ',' && depth === 0) {
+      args.push(cur);
+      cur = '';
+      continue;
+    }
     cur += ch;
   }
   args.push(cur);
@@ -299,19 +322,33 @@ function evalExpr(
   };
   const parseUnary = (): FormulaValue => {
     const t = toks[pos];
-    if (t && t.type === 'op' && t.val === '-') { pos++; return applyArith(0, parseUnary(), '-'); }
-    if (t && t.type === 'op' && t.val === '+') { pos++; return parseUnary(); }
+    if (t && t.type === 'op' && t.val === '-') {
+      pos++;
+      return applyArith(0, parseUnary(), '-');
+    }
+    if (t && t.type === 'op' && t.val === '+') {
+      pos++;
+      return parseUnary();
+    }
     return parsePrimary();
   };
   const parsePrimary = (): FormulaValue => {
     const t = toks[pos];
     if (!t) return null;
-    if (t.type === 'num') { pos++; return Number(t.val); }
-    if (t.type === 'str') { pos++; return t.val; }
+    if (t.type === 'num') {
+      pos++;
+      return Number(t.val);
+    }
+    if (t.type === 'str') {
+      pos++;
+      return t.val;
+    }
     if (t.type === 'lp') {
       pos++;
       const v = parseAdd();
-      if (toks[pos] && toks[pos]!.type === 'rp') pos++;
+      if (toks[pos] && toks[pos]!.type === 'rp') {
+        pos++;
+      }
       return v;
     }
     if (t.type === 'ref') {
@@ -329,10 +366,14 @@ function evalExpr(
         let rpTok: Tok | null = null;
         let k = pos;
         for (; k < toks.length; k++) {
-          if (toks[k]!.type === 'lp') d++;
-          else if (toks[k]!.type === 'rp') {
+          if (toks[k]!.type === 'lp') {
+            d++;
+          } else if (toks[k]!.type === 'rp') {
             d--;
-            if (d === 0) { rpTok = toks[k]!; break; }
+            if (d === 0) {
+              rpTok = toks[k]!;
+              break;
+            }
           }
         }
         if (rpTok) {
@@ -362,18 +403,27 @@ function tokenize(s: string): Tok[] {
   let i = 0;
   while (i < s.length) {
     const ch = s[i]!;
-    if (/\s/.test(ch)) { i++; continue; }
-    if (ch === '"' || ch === "'") {
+    if (/\s/.test(ch)) {
+      i++;
+      continue;
+    }
+    if (ch === '"' || ch === '\'') {
       const q = ch;
       const start = i;
       i++;
       let str = '';
       while (i < s.length) {
         if (s[i] === q) {
-          if (s[i + 1] === q) { str += q; i += 2; continue; }
-          i++; break;
+          if (s[i + 1] === q) {
+            str += q;
+            i += 2;
+            continue;
+          }
+          i++;
+          break;
         }
-        str += s[i]; i++;
+        str += s[i];
+        i++;
       }
       toks.push({ type: 'str', val: str, start });
       continue;
@@ -381,16 +431,33 @@ function tokenize(s: string): Tok[] {
     if (/[0-9]/.test(ch) || ch === '.') {
       const start = i;
       let num = '';
-      if (ch === '.') { num += '.'; i++; }
-      while (i < s.length && /[0-9]/.test(s[i]!)) { num += s[i]; i++; }
+      if (ch === '.') {
+        num += '.';
+        i++;
+      }
+      while (i < s.length && /[0-9]/.test(s[i]!)) {
+        num += s[i];
+        i++;
+      }
       if (s[i] === '.') {
-        num += '.'; i++;
-        while (i < s.length && /[0-9]/.test(s[i]!)) { num += s[i]; i++; }
+        num += '.';
+        i++;
+        while (i < s.length && /[0-9]/.test(s[i]!)) {
+          num += s[i];
+          i++;
+        }
       }
       if (s[i] === 'e' || s[i] === 'E') {
-        num += s[i]; i++;
-        if (s[i] === '+' || s[i] === '-') { num += s[i]; i++; }
-        while (i < s.length && /[0-9]/.test(s[i]!)) { num += s[i]; i++; }
+        num += s[i];
+        i++;
+        if (s[i] === '+' || s[i] === '-') {
+          num += s[i];
+          i++;
+        }
+        while (i < s.length && /[0-9]/.test(s[i]!)) {
+          num += s[i];
+          i++;
+        }
       }
       toks.push({ type: 'num', val: num, start });
       continue;
@@ -398,16 +465,36 @@ function tokenize(s: string): Tok[] {
     if (/[A-Za-z_]/.test(ch)) {
       const start = i;
       let name = '';
-      while (i < s.length && /[A-Za-z0-9_]/.test(s[i]!)) { name += s[i]; i++; }
-      if (s[i] === '(') toks.push({ type: 'func', val: name, start });
-      else toks.push({ type: 'ref', val: name, start });
+      while (i < s.length && /[A-Za-z0-9_]/.test(s[i]!)) {
+        name += s[i];
+        i++;
+      }
+      if (s[i] === '(') {
+        toks.push({ type: 'func', val: name, start });
+      } else {
+        toks.push({ type: 'ref', val: name, start });
+      }
       continue;
     }
-    if (ch === '(') { toks.push({ type: 'lp', val: ch, start: i }); i++; continue; }
-    if (ch === ')') { toks.push({ type: 'rp', val: ch, start: i }); i++; continue; }
-    if (ch === ',') { toks.push({ type: 'comma', val: ch, start: i }); i++; continue; }
+    if (ch === '(') {
+      toks.push({ type: 'lp', val: ch, start: i });
+      i++;
+      continue;
+    }
+    if (ch === ')') {
+      toks.push({ type: 'rp', val: ch, start: i });
+      i++;
+      continue;
+    }
+    if (ch === ',') {
+      toks.push({ type: 'comma', val: ch, start: i });
+      i++;
+      continue;
+    }
     if (ch === '+' || ch === '-' || ch === '*' || ch === '/') {
-      toks.push({ type: 'op', val: ch, start: i }); i++; continue;
+      toks.push({ type: 'op', val: ch, start: i });
+      i++;
+      continue;
     }
     i++; // 跳过未知符号（如区域引用的 ":"）
   }
