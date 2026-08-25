@@ -90,12 +90,6 @@ export function createSheetsOps(
     }
     // 写入新的 merges 并迁移 anchor cell 数据（此时新坐标对应的 cells 已经就位）
     applyAdjustedMerges(rebuiltMerges);
-    if (rS > 0) {
-      for (let c = 0; c < s.colCount; c++) {
-        s.syncCellBorders?.(c, rS - 1);
-        s.syncCellBorders?.(c, rS);
-      }
-    }
   }
 
   function insertRows(rS: number, rE: number) {
@@ -159,12 +153,6 @@ export function createSheetsOps(
       s.colWidths.value[c] = DEFAULT_COL_WIDTH;
     }
     applyAdjustedMerges(rebuiltMerges);
-    if (cS > 0) {
-      for (let r = 0; r < s.rowCount; r++) {
-        s.syncCellBorders?.(cS - 1, r);
-        s.syncCellBorders?.(cS, r);
-      }
-    }
   }
 
   // ============ 合并单元格在 插入/删除 行列时的调整 ============
@@ -364,6 +352,7 @@ export function createSheetsOps(
     return {
       id: nid(), name, cells: {}, merges: {},
       styles: [{}],
+      borders: [{}],
       selection: { startCol: 0, startRow: 0, endCol: 0, endRow: 0 },
       activeCell: { col: 0, row: 0 },
       scrollX: 0, scrollY: 0,
@@ -386,6 +375,7 @@ export function createSheetsOps(
     sh.colWidths = [...s.colWidths.value];
     sh.rowHeights = [...s.rowHeights.value];
     sh.styles = [...s.styles];
+    sh.borders = [...s.borders];
   }
 
   function loadSheet(i: number) {
@@ -402,6 +392,7 @@ export function createSheetsOps(
     s.colWidths.value = [...sh.colWidths];
     s.rowHeights.value = [...sh.rowHeights];
     s.syncStyles(sh.styles);
+    s.syncBorders(sh.borders ?? [{}]);
     activeSheetIndex.value = i;
   }
 
@@ -457,6 +448,7 @@ export function createSheetsOps(
       id: nid(), name: nn, cells: { ...src.cells },
       merges: src.merges ? { ...src.merges } : {},
       styles: [...src.styles],
+      borders: src.borders ? [...src.borders] : [{}],
       selection: src.selection ? { ...src.selection } : null,
       activeCell: src.activeCell ? { ...src.activeCell } : { col: 0, row: 0 },
       scrollX: src.scrollX, scrollY: src.scrollY,
@@ -498,6 +490,9 @@ export function createSheetsOps(
       // 输出样式池（styles[0] 始终为默认空样式 {}）
       if (sh.styles && sh.styles.length > 1) {
         smd.styles = [...sh.styles];
+      }
+      if (sh.borders && sh.borders.length > 1) {
+        smd.borders = [...sh.borders];
       }
       if (sh.merges && Object.keys(sh.merges).length) {
         smd.merges = { ...sh.merges };

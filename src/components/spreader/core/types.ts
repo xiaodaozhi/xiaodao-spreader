@@ -11,6 +11,25 @@ export interface SelectionRange {
   endRow: number;
 }
 
+// ============ 边框类型 ============
+/** 单边边框 */
+export interface BorderSide {
+  width?: number;
+  color?: string;
+  style?: string;  // 预留：solid/dashed/dotted 等
+}
+
+/** 四边边框组合 */
+export interface BorderStyle {
+  top?: BorderSide;
+  right?: BorderSide;
+  bottom?: BorderSide;
+  left?: BorderSide;
+}
+
+/** 边框来源标识 */
+export type BorderSource = 'cell' | 'merge';
+
 /** 单元格样式：所有属性均为可选，方便后续扩展数字格式、边框、字体、填充、对齐等 */
 export interface CellStyle {
   // 字体
@@ -27,11 +46,17 @@ export interface CellStyle {
   textAlign?: string;
   verticalAlign?: string;
   wrap?: string;
-  // 边框
+  // 边框（新机制：通过 borderId 引用 BorderPool）
+  borderId?: number;
+  /** @deprecated 旧版边框属性，兼容历史数据使用，新代码请通过 borderId 访问 */
   borderTopWidth?: number;
+  /** @deprecated 旧版边框属性，兼容历史数据使用，新代码请通过 borderId 访问 */
   borderBottomWidth?: number;
+  /** @deprecated 旧版边框属性，兼容历史数据使用，新代码请通过 borderId 访问 */
   borderLeftWidth?: number;
+  /** @deprecated 旧版边框属性，兼容历史数据使用，新代码请通过 borderId 访问 */
   borderRightWidth?: number;
+  /** @deprecated 旧版边框颜色，兼容历史数据使用，新代码请通过 BorderStyle.color 访问 */
   borderColor?: string;
   // 数字格式
   numberFormat?: string;
@@ -76,6 +101,8 @@ export interface SheetModelData {
   name: string;
   /** 表格级样式池：styles[0] 始终为默认空样式 {} */
   styles?: CellStyle[];
+  /** 表格级边框池：borders[0] 始终为默认空边框 {} */
+  borders?: BorderStyle[];
   cells: Record<string, { value: string; styleId?: number; style?: CellStyle }>;
   merges?: Record<string, SelectionRange>;
   colWidths?: Record<number, number>;
@@ -88,6 +115,8 @@ export interface SheetState {
   cells: Record<string, CellData>;
   /** 表格级样式池：styles[0] 始终为默认空样式 {} */
   styles: CellStyle[];
+  /** 表格级边框池：borders[0] 始终为默认空边框 {} */
+  borders: BorderStyle[];
   merges: Record<string, SelectionRange>;
   selection: SelectionRange | null;
   activeCell: CellCoord;
@@ -100,6 +129,7 @@ export interface SheetState {
 export interface UndoSnapshot {
   cells: Record<string, CellData>;
   styles: CellStyle[];
+  borders: BorderStyle[];
   colWidths: number[];
   rowHeights: (number | undefined)[];
 }

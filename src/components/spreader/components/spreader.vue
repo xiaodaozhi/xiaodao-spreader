@@ -58,6 +58,7 @@ const sheetsCtx: {
     cells: {},
     merges: {},
     styles: [{}],
+    borders: [{}],
     selection: null,
     activeCell: { col: 0, row: 0 },
     scrollX: 0,

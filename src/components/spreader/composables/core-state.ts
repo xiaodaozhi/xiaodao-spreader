@@ -2,8 +2,9 @@ import { ref, reactive, computed, watchEffect, type ComputedRef, type Ref } from
 import { HEADER_HEIGHT, HEADER_WIDTH, SB_SIZE, DEFAULT_COL_WIDTH, DEFAULT_ROW_HEIGHT, MAX_ROW_HEIGHT, DEFAULT_FONT_FAMILY, DEFAULT_FONT_SIZE } from '../core/constants';
 import { FormulaDeps, clearEvalCache, computeCellValue, parseFormulaRefs } from '../core/formula';
 import { formatNumber } from '../core/number-format';
-import type { CellCoord, CellData, CellStyle, SelectionRange } from '../core/types';
+import type { CellCoord, CellData, CellStyle, SelectionRange, BorderStyle, BorderSide } from '../core/types';
 import { resolveStyle as _resolveStyle, type StylePool } from '../core/style-pool';
+import { BorderPool, getCellBorderSide as _getCellBorderSide } from '../core/border-pool';
 
 /** 选区触发方式，影响「合并单元格是否扩大选区」。
  *  - 'cell'：单元格点击/拖动（默认）→ 保持现有 expandSelectionForMerges 行为
@@ -32,6 +33,8 @@ export interface CoreState {
   cells: Record<string, CellData>;
   /** 表格级样式池（reactive 数组），styles[0] 始终为默认空样式 */
   styles: CellStyle[];
+  /** 表格级边框池（reactive 数组），borders[0] 始终为默认空边框 */
+  borders: BorderStyle[];
   merges: Record<string, SelectionRange>;
   formulaDeps: FormulaDeps;
   selection: Ref<SelectionRange | null>;
@@ -96,7 +99,6 @@ export interface CoreState {
   hitCol: (x: number) => number;
   hitRow: (y: number) => number;
 
-  // ===== 后续模块注入的占位函数 =====
   // StylePool 运行时辅助
   /** 注册样式到池中，返回 styleId（去重） */
   registerStyle: (style: CellStyle) => number;
@@ -107,10 +109,27 @@ export interface CoreState {
   /** 同步 styles 数组内容（用于 sheet 切换/加载） */
   syncStyles: (newStyles: CellStyle[]) => void;
 
+  // BorderPool 运行时辅助
+  /** 注册边框到池中，返回 borderId（去重） */
+  registerBorder: (border: BorderStyle) => number;
+  /** 解析边框（通过 borderId 查 borders 数组） */
+  resolveBorder: (borderId: number) => BorderStyle;
+  /** 重建 borderIndex（从当前 borders 数组） */
+  rebuildBorderIndex: () => void;
+  /** 同步 borders 数组内容（用于 sheet 切换/加载） */
+  syncBorders: (newBorders: BorderStyle[]) => void;
+  /** 获取单元格的某一侧 BorderSide */
+  getCellBorderSide: (cell: CellData | undefined, side: 'top' | 'right' | 'bottom' | 'left') => BorderSide | undefined;
+
+  // Merge 边框辅助
+  /** 获取某 grid cell 所属 merge 的 owner key（左上角），不属于 merge 返回 null */
+  getMergeOwner: (c: number, r: number) => string | null;
+  /** 判断两个 grid cell 是否属于同一 merge 内部 */
+  isSameMergeInternal: (c1: number, r1: number, c2: number, r2: number) => boolean;
+
   saveUndo?: () => void;
   scheduleRender?: () => void;
   emitModelData?: () => void;
-  syncCellBorders?: (col: number, row: number) => void;
   viewSize?: { w: number; h: number };
   clampScroll?: (sx: number | null, sy: number | null) => void;
   /** 查找高亮钩子：返回某单元格当前的高亮类型（由 find-replace 模块注入） */
@@ -156,15 +175,37 @@ export function createCoreState(
   const cells = reactive<Record<string, CellData>>({});
   // 样式池：styles[0] 始终为默认空样式，reactive 保证渲染时 Vue 能跟踪属性访问
   const styles = reactive<CellStyle[]>([{}]);
+  // 边框池：borders[0] 始终为默认空边框，reactive 保证渲染时 Vue 能跟踪属性访问
+  const borders = reactive<BorderStyle[]>([{}]);
   // 运行时去重索引：stableKey → styleId，不参与持久化
   let styleIndex = new Map<string, number>();
   styleIndex.set('{}', 0);
+  // 边框运行时去重索引：stableKey → borderId，不参与持久化
+  let borderIndex = new Map<string, number>();
+  borderIndex.set('{}', 0);
 
   /** 生成稳定的样式 key（属性排序后 JSON.stringify） */
   function stableStyleKey(style: CellStyle): string {
     const keys = Object.keys(style).sort();
     const obj: Record<string, unknown> = {};
     for (const k of keys) obj[k] = style[k];
+    return JSON.stringify(obj);
+  }
+
+  /** 生成稳定的边框 key */
+  function stableBorderKey(border: BorderStyle): string {
+    const sides: (keyof BorderStyle)[] = ['top', 'right', 'bottom', 'left'];
+    const obj: Record<string, unknown> = {};
+    for (const side of sides) {
+      const s = border[side];
+      if (s && (s.width !== undefined || s.color !== undefined || s.style !== undefined)) {
+        const sideObj: Record<string, unknown> = {};
+        if (s.width !== undefined) sideObj.width = s.width;
+        if (s.color !== undefined) sideObj.color = s.color;
+        if (s.style !== undefined) sideObj.style = s.style;
+        obj[side] = sideObj;
+      }
+    }
     return JSON.stringify(obj);
   }
 
@@ -197,6 +238,61 @@ export function createCoreState(
   function syncStyles(newStyles: CellStyle[]): void {
     styles.splice(0, styles.length, ...newStyles);
     rebuildStyleIndex();
+  }
+
+  /** 注册边框到池中，返回 borderId（去重） */
+  function registerBorder(border: BorderStyle): number {
+    if (!border || (!border.top && !border.right && !border.bottom && !border.left)) return 0;
+    const key = stableBorderKey(border);
+    const existing = borderIndex.get(key);
+    if (existing !== undefined) return existing;
+    const id = borders.length;
+    borders.push(Object.freeze({
+      top: border.top ? Object.freeze({ ...border.top }) : undefined,
+      right: border.right ? Object.freeze({ ...border.right }) : undefined,
+      bottom: border.bottom ? Object.freeze({ ...border.bottom }) : undefined,
+      left: border.left ? Object.freeze({ ...border.left }) : undefined,
+    }) as BorderStyle);
+    borderIndex.set(key, id);
+    return id;
+  }
+
+  /** 解析边框（通过 borderId 查 borders 数组） */
+  function resolveBorderFn(borderId: number): BorderStyle {
+    return borders[borderId] ?? {};
+  }
+
+  /** 重建 borderIndex（从当前 borders 数组） */
+  function rebuildBorderIndex(): void {
+    borderIndex = new Map();
+    for (let i = 0; i < borders.length; i++) {
+      borderIndex.set(stableBorderKey(borders[i]!), i);
+    }
+  }
+
+  /** 同步 borders 数组内容（用于 sheet 切换/加载） */
+  function syncBorders(newBorders: BorderStyle[]): void {
+    borders.splice(0, borders.length, ...newBorders);
+    rebuildBorderIndex();
+  }
+
+  /** 获取单元格的某一侧 BorderSide */
+  function getCellBorderSideFn(cell: CellData | undefined, side: 'top' | 'right' | 'bottom' | 'left'): BorderSide | undefined {
+    return _getCellBorderSide(cell, side, styles, { get: (id: number) => borders[id] ?? {} } as BorderPool);
+  }
+
+  /** 获取某 grid cell 所属 merge 的 owner key */
+  function getMergeOwner(c: number, r: number): string | null {
+    const m = findMergeFn(c, r);
+    return m ? m.anchor : null;
+  }
+
+  /** 判断两个 grid cell 是否属于同一 merge 内部 */
+  function isSameMergeInternal(c1: number, r1: number, c2: number, r2: number): boolean {
+    const m1 = findMergeFn(c1, r1);
+    const m2 = findMergeFn(c2, r2);
+    if (!m1 || !m2) return false;
+    return m1.anchor === m2.anchor;
   }
 
   const merges = reactive<Record<string, SelectionRange>>({});
@@ -521,8 +617,6 @@ export function createCoreState(
   expandSelectionForMergesFn = expandSelectionForMerges;
 
   // ============ 单元格读写 ============
-  // 先占位，后续 syncCellBorders 由其他模块注入
-  let syncCellBordersFn: (col: number, row: number) => void = () => {};
 
   function getCellRaw(c: number, r: number) {
     return cells[cellKey(c, r)]?.value ?? '';
@@ -567,7 +661,6 @@ export function createCoreState(
         formulaDeps.clear(k);
         delCell(k);
         formulaDeps.markDirty(k);
-        syncCellBordersFn(c, r);
       }
     }
   }
@@ -673,6 +766,7 @@ export function createCoreState(
 
     cells,
     styles,
+    borders,
     merges,
     formulaDeps,
     selection,
@@ -734,6 +828,17 @@ export function createCoreState(
     rebuildStyleIndex,
     syncStyles,
 
+    // BorderPool 运行时辅助
+    registerBorder,
+    resolveBorder: resolveBorderFn,
+    rebuildBorderIndex,
+    syncBorders,
+    getCellBorderSide: getCellBorderSideFn,
+
+    // Merge 边框辅助
+    getMergeOwner,
+    isSameMergeInternal,
+
     // viewSize 引用
     viewSize: viewSizeProxy,
 
@@ -743,7 +848,6 @@ export function createCoreState(
 
   // 设置内部函数对 state 的反向引用
   saveUndoFn = () => state.saveUndo?.();
-  syncCellBordersFn = (c, r) => state.syncCellBorders?.(c, r);
   clampScrollFn = (sx, sy) => state.clampScroll?.(sx, sy);
 
   return state;

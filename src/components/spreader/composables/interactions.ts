@@ -5,9 +5,11 @@ import type { CoreState } from './core-state';
 import type { UndoStylesState } from './undo-styles';
 import { formatNumber, shouldAlignRightByDefault, NF_INVALID_VALUE, isFormatOverflowsToHashes, isInvalidDisplayValue } from '../core/number-format';
 import { migrateCells } from '../core/style-pool';
+import { migrateBordersInStyles } from '../core/border-pool';
 import type { BordersMergeState } from './borders-merge';
 import type { SheetsOpsState } from './sheets-ops';
-import type { ContextMenuItem } from '../core/types';
+import type { ContextMenuItem, BorderSide } from '../core/types';
+import { resolveSharedBorder } from '../core/border-resolve';
 
 export interface InteractionsState {
   // 渲染器
@@ -348,110 +350,22 @@ export function createInteractions(
       }
     }
 
-    // 第二步：绘制边框
-    for (let row = iterR; row <= eR; row++) {
-      for (let col = iterC; col <= eC; col++) {
-        const mergeInfo = s.findMerge(col, row);
-        if (mergeInfo && !(col === mergeInfo.range.startCol && row === mergeInfo.range.startRow)) continue;
-        const x = HW + cP[col]! - sx;
-        const y = HH + rP[row]! - sy;
-        let cw = cW[col]!;
-        let rh = rH[row]!;
-        if (mergeInfo) {
-          cw = cP[mergeInfo.range.endCol + 1]! - cP[col]!;
-          rh = rP[mergeInfo.range.endRow + 1]! - rP[row]!;
-        }
-        if (x + cw < HW || y + rh < HH || x > W || y > H) continue;
-
-        const cst = s.resolveStyle(s.cells[s.cellKey(col, row)]);
-        const ownT = (cst?.borderTopWidth as number) || 0;
-        const ownL = (cst?.borderLeftWidth as number) || 0;
-        const ownB = (cst?.borderBottomWidth as number) || 0;
-        const ownR = (cst?.borderRightWidth as number) || 0;
-
-        rCtx.fillStyle = BORDER_COLOR;
-        if (mergeInfo) {
-          // =======================================================【双 BUG 修复 · 渲染端合并格边绘制】========================================================
-          // 背景：之前做法是「对合并格 4 条边分别取全局 max(ownSide, max(邻居列/行各边)) 得到 wT/wL/wB/wR，然后用 1 个 fillRect(合并总宽/总高) 画整条边」，
-          //       但这会造成 BUG 1 等价复发：B2.Top=2 只应该让 B 列对应的合并底变粗，结果整条 A1:C1 底都变成 2 粗，和写入端直接污染 anchor.borderBottomWidth 视觉无差别。
-          //
-          // 修复：参考 Excel，合并格横边（Top/Bottom）按列分段绘制，竖边（Left/Right）按行分段绘制。
-          //       对每一列 cc ∈ [sC..eC]，独立计算 wTseg/wBseg = max(ownX（anchor 全局边宽）, 该列上方/下方邻居单元格的对侧边宽)，然后只在这一列的 cW[cc] 像素带绘制。
-          //       竖边同理：每一行 rr ∈ [sR..eR] 独立计算 wLseg/wRseg = max(ownX, 该行左/右邻居的对侧边宽)，只在这一行的 rH[rr] 像素带绘制。
-          //
-          // BUG 1 保证：由于每列/行独立取 max，B2.Top=2 只提升第 cc=1（B 列）的 wBseg = 2，第 0/2 列段仍保持 ownB=0 → A/C 列段不变粗 ✅
-          // BUG 2 保证：B2 自己是普通单元格，走 else 分支用原方法绘制 Top=2；而合并底 B 列段恰好也是 wBseg=2 → 两条同宽度 2 像素线在 B 列几何上紧邻（合并底最末像素行 == B2.Top 起始像素行-1），
-          //            用户视觉上看到是一条无缝连续的 2 像素分界线，不再产生「A1:C1 底 1 像素细线看起来像 B2 的细上边」的错觉 ✅
-          // ========================================================================================================================================================
-          const sR = mergeInfo.range.startRow, eR = mergeInfo.range.endRow;
-          const sC = mergeInfo.range.startCol, eC = mergeInfo.range.endCol;
-
-          // 横边 · Top：沿合并上沿逐列分段绘制
-          //   cc          = 当前段的列号（sC..eC）
-          //   sxSeg/swSeg = 该列段在视口裁剪坐标系下的 x 起点和段宽度
-          //   wTseg       = max(anchor.borderTopWidth（整条合并顶全局宽度，0/1/2）,
-          //                    bm.cellBorderWidth(cc, sR-1, 'Bottom') → 该列正上方单元格的 Bottom 宽度（跨合并顶那条线））
-          //   绘制位置：y = 合并 rect 顶部 y；高度 = wTseg；覆盖该列段顶部的 wTseg 像素带
-          for (let cc = sC; cc <= eC; cc++) {
-            const sxSeg = HW + cP[cc]! - sx;                 // 本列段视口 x
-            const swSeg = cW[cc]!;                           // 本列段宽度（逐列独立，cW[cc]）
-            const wTseg = Math.max(ownT, bm.cellBorderWidth(cc, sR - 1, 'Bottom'));
-            if (wTseg > 0) rCtx.fillRect(sxSeg, y, swSeg, wTseg);
-          }
-
-          // 横边 · Bottom：沿合并下沿逐列分段绘制
-          //   wBseg = max(anchor.borderBottomWidth（全局）, cellBorderWidth(cc, eR+1, 'Top') → 该列正下方单元格的 Top 宽度）
-          //   绘制位置：合并底 y+rh 之上，从 y+rh-wBseg 往下画 wBseg 像素
-          for (let cc = sC; cc <= eC; cc++) {
-            const sxSeg = HW + cP[cc]! - sx;
-            const swSeg = cW[cc]!;
-            const wBseg = Math.max(ownB, bm.cellBorderWidth(cc, eR + 1, 'Top'));
-            if (wBseg > 0) rCtx.fillRect(sxSeg, y + rh - wBseg, swSeg, wBseg);
-          }
-
-          // 竖边 · Left：沿合并左沿逐行分段绘制
-          //   rr          = 当前段的行号（sR..eR）
-          //   sySeg/shSeg = 该行段在视口裁剪坐标系下的 y 起点和段高度
-          //   wLseg       = max(anchor.borderLeftWidth（全局）, cellBorderWidth(sC-1, rr, 'Right') → 该行正左方单元格的 Right 宽度）
-          //   绘制位置：合并左 x，宽度 wLseg，覆盖该行段高度 shSeg
-          for (let rr = sR; rr <= eR; rr++) {
-            const sySeg = HH + rP[rr]! - sy;                 // 本行段视口 y
-            const shSeg = rH[rr]!;                           // 本行段高度（逐行独立，rH[rr]）
-            const wLseg = Math.max(ownL, bm.cellBorderWidth(sC - 1, rr, 'Right'));
-            if (wLseg > 0) rCtx.fillRect(x, sySeg, wLseg, shSeg);
-          }
-
-          // 竖边 · Right：沿合并右沿逐行分段绘制
-          //   wRseg = max(anchor.borderRightWidth（全局）, cellBorderWidth(eC+1, rr, 'Left') → 该行正右方单元格的 Left 宽度）
-          //   绘制位置：x+cw 之左、从 x+cw-wRseg 开始画 wRseg 宽竖段
-          for (let rr = sR; rr <= eR; rr++) {
-            const sySeg = HH + rP[rr]! - sy;
-            const shSeg = rH[rr]!;
-            const wRseg = Math.max(ownR, bm.cellBorderWidth(eC + 1, rr, 'Left'));
-            if (wRseg > 0) rCtx.fillRect(x + cw - wRseg, sySeg, wRseg, shSeg);
-          }
-        } else {
-          // 普通单格：4 条边各自对相邻单元格取 Math.max（上面单元格.Bottom / 左边单元格.Right / 下面单元格.Top / 右边单元格.Left），
-          // 然后 1 个 fillRect 画整段。这是经典的电子表格边框叠加画法（Excel 同），无需改动。
-          const wT = Math.max(ownT, bm.cellBorderWidth(col, row - 1, 'Bottom'));
-          const wL = Math.max(ownL, bm.cellBorderWidth(col - 1, row, 'Right'));
-          const wB = Math.max(ownB, bm.cellBorderWidth(col, row + 1, 'Top'));
-          const wR = Math.max(ownR, bm.cellBorderWidth(col + 1, row, 'Left'));
-          if (wT > 0 || wL > 0 || wB > 0 || wR > 0) {
-            if (wT > 0) rCtx.fillRect(x, y, cw, wT);
-            if (wB > 0) rCtx.fillRect(x, y + rh - wB, cw, wB);
-            if (wL > 0) rCtx.fillRect(x, y, wL, rh);
-            if (wR > 0) rCtx.fillRect(x + cw - wR, y, wR, rh);
-          }
-        }
+    // 第二步 + 第三步：绘制边框 + 角方块（基于 resolveSharedBorder 统一冲突解析）
+    // 辅助：获取某位置的边框侧（考虑 merge，从 anchor 读取）
+    const getBorderSideAt = (col: number, row: number, side: 'top' | 'right' | 'bottom' | 'left'): BorderSide | undefined => {
+      const m = s.findMerge(col, row);
+      if (m) {
+        return s.getCellBorderSide(s.cells[m.anchor], side);
       }
-    }
-
-    // 第三步：绘制角方块
+      return s.getCellBorderSide(s.cells[s.cellKey(col, row)], side);
+    };
+    rCtx.fillStyle = BORDER_COLOR;
     for (let row = iterR; row <= eR; row++) {
       for (let col = iterC; col <= eC; col++) {
         const mergeInfo = s.findMerge(col, row);
+        // 跳过 merge 内部 cell（非 anchor）
         if (mergeInfo && !(col === mergeInfo.range.startCol && row === mergeInfo.range.startRow)) continue;
+    
         const x = HW + cP[col]! - sx;
         const y = HH + rP[row]! - sy;
         let cw = cW[col]!;
@@ -461,68 +375,153 @@ export function createInteractions(
           rh = rP[mergeInfo.range.endRow + 1]! - rP[row]!;
         }
         if (x + cw < HW || y + rh < HH || x > W || y > H) continue;
-
-        const resolvedCorner = s.resolveStyle(s.cells[s.cellKey(col, row)]);
-        const ownT = (resolvedCorner?.borderTopWidth as number) || 0;
-        const ownL = (resolvedCorner?.borderLeftWidth as number) || 0;
-        const ownB = (resolvedCorner?.borderBottomWidth as number) || 0;
-        const ownR = (resolvedCorner?.borderRightWidth as number) || 0;
-
-        rCtx.fillStyle = BORDER_COLOR;
+    
+        const cell = s.cells[s.cellKey(col, row)];
+        const ownBorder: Record<string, BorderSide | undefined> = {
+          top: s.getCellBorderSide(cell, 'top'),
+          right: s.getCellBorderSide(cell, 'right'),
+          bottom: s.getCellBorderSide(cell, 'bottom'),
+          left: s.getCellBorderSide(cell, 'left'),
+        };
+    
         if (mergeInfo) {
-          // ================================================【双 BUG 修复 · 合并格四角方块绘制】================================================
-          // 背景：如果沿用「统一 wT/wL/wB/wR + 一个尺寸画 4 个角方块」，会导致：
-          //       例：B2.Top=2 → 旧方案中 wT=max over sC..eC 的 nbT=2（来自 B1.上方邻居？不，nbT 是上沿邻居），
-          //       即使只有某个角落实际有粗边叠加，所有 4 个角都画 2x2 粗方块，出现"右上角也画粗方块但右边和上边都没粗"的视觉污点。
-          //
-          // 修复：合并格 4 个角**独立计算**各自角点周围的「局部段宽度」，与第二步 4 条边的分段绘制严格对应。
-          //       变量命名 w<角落 2 字母>_<边>：角落 = TL/TR/BL/BR；边 = T(Top) / L(Left) / R(Right) / B(Bottom)。
-          //       例如 wTL_T = "左上角方块的 Top 段宽" = max(ownT（全局）, cellBorderWidth(sC, sR-1, 'Bottom') → 左上顶点 (sC,sR) 正上方邻居的 Bottom 宽度）。
-          //
-          // 每个角的 fillRect 覆盖范围（按第二步的段宽/段高坐标系）：
-          //   左上角 TL：在 (x, y) 的左上象限外，宽 = wTL_L（Left 段在 sR 行的宽度），高 = wTL_T（Top 段在 sC 列的高度）
-          //   右上角 TR：在 (x+cw, y) 的右上象限外，宽 = wTR_R（Right 段在 sR 行的宽度），高 = wTR_T（Top 段在 eC 列的高度）
-          //   左下角 BL：在 (x, y+rh) 的左下象限外，宽 = wBL_L（Left 段在 eR 行的宽度），高 = wBL_B（Bottom 段在 sC 列的高度）
-          //   右下角 BR：在 (x+cw, y+rh) 的右下象限外，宽 = wBR_R（Right 段在 eR 行的宽度），高 = wBR_B（Bottom 段在 eC 列的高度）
-          // ======================================================================================================================================
-          const sR = mergeInfo.range.startRow, eR = mergeInfo.range.endRow;
-          const sC = mergeInfo.range.startCol, eC = mergeInfo.range.endCol;
-
-          // ┌─ 左上角 (sC,sR)：合并且左顶点
-          // │  Top 段取"最左列 sC"的上邻居 Bottom 叠加值；Left 段取"最上行 sR"的左邻居 Right 叠加值。
-          // │  x-wTL_L : 方块左边界（向左越过 Left 段宽）；y-wTL_T : 方块上边界（向上越过 Top 段高）
-          const wTL_T = Math.max(ownT, bm.cellBorderWidth(sC, sR - 1, 'Bottom'));  // 左上角 Top 方向段高
-          const wTL_L = Math.max(ownL, bm.cellBorderWidth(sC - 1, sR, 'Right'));    // 左上角 Left 方向段宽
-          if (wTL_T > 0 && wTL_L > 0) rCtx.fillRect(x - wTL_L, y - wTL_T, wTL_L, wTL_T);
-
-          // ─ 右上角 (eC,sR)：合并矩形右顶点
-          //   Top 段取"最右列 eC"的上邻居 Bottom 叠加值；Right 段取"最上行 sR"的右邻居 Left 叠加值。
-          //   x+cw : 合并矩形右边；方块的水平起点 = x+cw（向右延伸 Right 段宽 wTR_R）
-          const wTR_T = Math.max(ownT, bm.cellBorderWidth(eC, sR - 1, 'Bottom'));   // 右上角 Top 方向段高
-          const wTR_R = Math.max(ownR, bm.cellBorderWidth(eC + 1, sR, 'Left'));     // 右上角 Right 方向段宽
-          if (wTR_T > 0 && wTR_R > 0) rCtx.fillRect(x + cw, y - wTR_T, wTR_R, wTR_T);
-
-          // └─ 左下角 (sC,eR)：合并矩形左下顶点
-          //    Bottom 段取"最左列 sC"的下邻居 Top 叠加值；Left 段取"最下行 eR"的左邻居 Right 叠加值。
-          //    y+rh : 合并矩形底边；方块的垂直起点 = y+rh（向下延伸 Bottom 段高 wBL_B）
-          const wBL_B = Math.max(ownB, bm.cellBorderWidth(sC, eR + 1, 'Top'));     // 左下角 Bottom 方向段高
-          const wBL_L = Math.max(ownL, bm.cellBorderWidth(sC - 1, eR, 'Right'));   // 左下角 Left 方向段宽
-          if (wBL_B > 0 && wBL_L > 0) rCtx.fillRect(x - wBL_L, y + rh, wBL_L, wBL_B);
-
-          // ┘- 右下角 (eC,eR)：合并矩形右下顶点
-          //    Bottom 段取"最右列 eC"的下邻居 Top 叠加值；Right 段取"最下行 eR"的右邻居 Left 叠加值。
-          const wBR_B = Math.max(ownB, bm.cellBorderWidth(eC, eR + 1, 'Top'));     // 右下角 Bottom 方向段高
-          const wBR_R = Math.max(ownR, bm.cellBorderWidth(eC + 1, eR, 'Left'));    // 右下角 Right 方向段宽
-          if (wBR_B > 0 && wBR_R > 0) rCtx.fillRect(x + cw, y + rh, wBR_R, wBR_B);
+          const sR = mergeInfo.range.startRow, eRm = mergeInfo.range.endRow;
+          const sC = mergeInfo.range.startCol, eCm = mergeInfo.range.endCol;
+    
+          // ── 横边 · Top：沿合并上沿逐列分段绘制 ──
+          for (let cc = sC; cc <= eCm; cc++) {
+            if (s.isSameMergeInternal(cc, sR - 1, cc, sR)) continue;
+            const neighborBottom = getBorderSideAt(cc, sR - 1, 'bottom');
+            const resolved = resolveSharedBorder(neighborBottom, ownBorder.top, 'cell', 'merge');
+            if (resolved && resolved.width && resolved.width > 0) {
+              const sxSeg = HW + cP[cc]! - sx;
+              rCtx.fillStyle = resolved.color || BORDER_COLOR;
+              rCtx.fillRect(sxSeg, y, cW[cc]!, resolved.width);
+            }
+          }
+    
+          // ── 横边 · Bottom：沿合并下沿逐列分段绘制 ──
+          for (let cc = sC; cc <= eCm; cc++) {
+            if (s.isSameMergeInternal(cc, eRm, cc, eRm + 1)) continue;
+            const neighborTop = getBorderSideAt(cc, eRm + 1, 'top');
+            const resolved = resolveSharedBorder(ownBorder.bottom, neighborTop, 'merge', 'cell');
+            if (resolved && resolved.width && resolved.width > 0) {
+              const sxSeg = HW + cP[cc]! - sx;
+              rCtx.fillStyle = resolved.color || BORDER_COLOR;
+              rCtx.fillRect(sxSeg, y + rh - resolved.width, cW[cc]!, resolved.width);
+            }
+          }
+    
+          // ── 竖边 · Left：沿合并左沿逐行分段绘制 ──
+          for (let rr = sR; rr <= eRm; rr++) {
+            if (s.isSameMergeInternal(sC - 1, rr, sC, rr)) continue;
+            const neighborRight = getBorderSideAt(sC - 1, rr, 'right');
+            const resolved = resolveSharedBorder(neighborRight, ownBorder.left, 'cell', 'merge');
+            if (resolved && resolved.width && resolved.width > 0) {
+              const sySeg = HH + rP[rr]! - sy;
+              rCtx.fillStyle = resolved.color || BORDER_COLOR;
+              rCtx.fillRect(x, sySeg, resolved.width, rH[rr]!);
+            }
+          }
+    
+          // ── 竖边 · Right：沿合并右沿逐行分段绘制 ──
+          for (let rr = sR; rr <= eRm; rr++) {
+            if (s.isSameMergeInternal(eCm, rr, eCm + 1, rr)) continue;
+            const neighborLeft = getBorderSideAt(eCm + 1, rr, 'left');
+            const resolved = resolveSharedBorder(ownBorder.right, neighborLeft, 'merge', 'cell');
+            if (resolved && resolved.width && resolved.width > 0) {
+              const sySeg = HH + rP[rr]! - sy;
+              rCtx.fillStyle = resolved.color || BORDER_COLOR;
+              rCtx.fillRect(x + cw - resolved.width, sySeg, resolved.width, rH[rr]!);
+            }
+          }
+    
+          // ── 第三步：合并格角方块 ──
+          // 左上角 (sC, sR)
+          {
+            const topSeg = !s.isSameMergeInternal(sC, sR - 1, sC, sR)
+              ? resolveSharedBorder(getBorderSideAt(sC, sR - 1, 'bottom'), ownBorder.top, 'cell', 'merge')
+              : ownBorder.top;
+            const leftSeg = !s.isSameMergeInternal(sC - 1, sR, sC, sR)
+              ? resolveSharedBorder(getBorderSideAt(sC - 1, sR, 'right'), ownBorder.left, 'cell', 'merge')
+              : ownBorder.left;
+            const wT = topSeg?.width ?? 0;
+            const wL = leftSeg?.width ?? 0;
+            if (wT > 0 && wL > 0) {
+              rCtx.fillStyle = topSeg?.color || leftSeg?.color || BORDER_COLOR;
+              rCtx.fillRect(x - wL, y - wT, wL, wT);
+            }
+          }
+          // 右上角 (eC, sR)
+          {
+            const topSeg = !s.isSameMergeInternal(eCm, sR - 1, eCm, sR)
+              ? resolveSharedBorder(getBorderSideAt(eCm, sR - 1, 'bottom'), ownBorder.top, 'cell', 'merge')
+              : ownBorder.top;
+            const rightSeg = !s.isSameMergeInternal(eCm, sR, eCm + 1, sR)
+              ? resolveSharedBorder(ownBorder.right, getBorderSideAt(eCm + 1, sR, 'left'), 'merge', 'cell')
+              : ownBorder.right;
+            const wT = topSeg?.width ?? 0;
+            const wR = rightSeg?.width ?? 0;
+            if (wT > 0 && wR > 0) {
+              rCtx.fillStyle = topSeg?.color || rightSeg?.color || BORDER_COLOR;
+              rCtx.fillRect(x + cw, y - wT, wR, wT);
+            }
+          }
+          // 左下角 (sC, eR)
+          {
+            const bottomSeg = !s.isSameMergeInternal(sC, eRm, sC, eRm + 1)
+              ? resolveSharedBorder(ownBorder.bottom, getBorderSideAt(sC, eRm + 1, 'top'), 'merge', 'cell')
+              : ownBorder.bottom;
+            const leftSeg = !s.isSameMergeInternal(sC - 1, eRm, sC, eRm)
+              ? resolveSharedBorder(getBorderSideAt(sC - 1, eRm, 'right'), ownBorder.left, 'cell', 'merge')
+              : ownBorder.left;
+            const wB = bottomSeg?.width ?? 0;
+            const wL = leftSeg?.width ?? 0;
+            if (wB > 0 && wL > 0) {
+              rCtx.fillStyle = bottomSeg?.color || leftSeg?.color || BORDER_COLOR;
+              rCtx.fillRect(x - wL, y + rh, wL, wB);
+            }
+          }
+          // 右下角 (eC, eR)
+          {
+            const bottomSeg = !s.isSameMergeInternal(eCm, eRm, eCm, eRm + 1)
+              ? resolveSharedBorder(ownBorder.bottom, getBorderSideAt(eCm, eRm + 1, 'top'), 'merge', 'cell')
+              : ownBorder.bottom;
+            const rightSeg = !s.isSameMergeInternal(eCm, eRm, eCm + 1, eRm)
+              ? resolveSharedBorder(ownBorder.right, getBorderSideAt(eCm + 1, eRm, 'left'), 'merge', 'cell')
+              : ownBorder.right;
+            const wB = bottomSeg?.width ?? 0;
+            const wR = rightSeg?.width ?? 0;
+            if (wB > 0 && wR > 0) {
+              rCtx.fillStyle = bottomSeg?.color || rightSeg?.color || BORDER_COLOR;
+              rCtx.fillRect(x + cw, y + rh, wR, wB);
+            }
+          }
         } else {
-          const wT = Math.max(ownT, bm.cellBorderWidth(col, row - 1, 'Bottom'));
-          const wL = Math.max(ownL, bm.cellBorderWidth(col - 1, row, 'Right'));
-          const wB = Math.max(ownB, bm.cellBorderWidth(col, row + 1, 'Top'));
-          const wR = Math.max(ownR, bm.cellBorderWidth(col + 1, row, 'Left'));
-          if (wT > 0 && wL > 0) rCtx.fillRect(x - wL, y - wT, wL, wT);
-          if (wT > 0 && wR > 0) rCtx.fillRect(x + cw, y - wT, wR, wT);
-          if (wB > 0 && wL > 0) rCtx.fillRect(x - wL, y + rh, wL, wB);
-          if (wB > 0 && wR > 0) rCtx.fillRect(x + cw, y + rh, wR, wB);
+          // ── 普通单格：4 条边各自用 resolveSharedBorder 解析 ──
+          const neighbors = {
+            top: getBorderSideAt(col, row - 1, 'bottom'),
+            left: getBorderSideAt(col - 1, row, 'right'),
+            bottom: getBorderSideAt(col, row + 1, 'top'),
+            right: getBorderSideAt(col + 1, row, 'left'),
+          };
+          const rT = resolveSharedBorder(neighbors.top, ownBorder.top);
+          const rL = resolveSharedBorder(neighbors.left, ownBorder.left);
+          const rB = resolveSharedBorder(ownBorder.bottom, neighbors.bottom);
+          const rR = resolveSharedBorder(ownBorder.right, neighbors.right);
+          const wT = rT?.width ?? 0;
+          const wL = rL?.width ?? 0;
+          const wB = rB?.width ?? 0;
+          const wR = rR?.width ?? 0;
+          if (wT > 0) { rCtx.fillStyle = rT?.color || BORDER_COLOR; rCtx.fillRect(x, y, cw, wT); }
+          if (wB > 0) { rCtx.fillStyle = rB?.color || BORDER_COLOR; rCtx.fillRect(x, y + rh - wB, cw, wB); }
+          if (wL > 0) { rCtx.fillStyle = rL?.color || BORDER_COLOR; rCtx.fillRect(x, y, wL, rh); }
+          if (wR > 0) { rCtx.fillStyle = rR?.color || BORDER_COLOR; rCtx.fillRect(x + cw - wR, y, wR, rh); }
+          // 角方块
+          if (wT > 0 && wL > 0) { rCtx.fillStyle = rT?.color || rL?.color || BORDER_COLOR; rCtx.fillRect(x - wL, y - wT, wL, wT); }
+          if (wT > 0 && wR > 0) { rCtx.fillStyle = rT?.color || rR?.color || BORDER_COLOR; rCtx.fillRect(x + cw, y - wT, wR, wT); }
+          if (wB > 0 && wL > 0) { rCtx.fillStyle = rB?.color || rL?.color || BORDER_COLOR; rCtx.fillRect(x - wL, y + rh, wL, wB); }
+          if (wB > 0 && wR > 0) { rCtx.fillStyle = rB?.color || rR?.color || BORDER_COLOR; rCtx.fillRect(x + cw, y + rh, wR, wB); }
         }
       }
     }
@@ -2016,6 +2015,14 @@ export function createInteractions(
           const { cells: migratedCells, styles: migratedStyles } = migrateCells(smd.cells);
           Object.assign(sh.cells, migratedCells);
           sh.styles = smd.styles ?? migratedStyles;
+          // 边框迁移：将旧版内联边框属性迁移到 BorderPool 机制
+          if (smd.borders) {
+            sh.borders = smd.borders;
+          } else {
+            const migrated = migrateBordersInStyles(sh.styles);
+            sh.styles = migrated.styles;
+            sh.borders = migrated.borders;
+          }
           if (smd.colWidths) {
             for (const [c, w] of Object.entries(smd.colWidths)) {
               const ci = Number(c);
@@ -2072,6 +2079,14 @@ export function createInteractions(
         const { cells: migratedCells, styles: migratedStyles } = migrateCells(smd.cells);
         Object.assign(sh.cells, migratedCells);
         sh.styles = smd.styles ?? migratedStyles;
+        // 边框迁移：将旧版内联边框属性迁移到 BorderPool 机制
+        if (smd.borders) {
+          sh.borders = smd.borders;
+        } else {
+          const migrated = migrateBordersInStyles(sh.styles);
+          sh.styles = migrated.styles;
+          sh.borders = migrated.borders;
+        }
         if (smd.colWidths) {
           for (const [c, w] of Object.entries(smd.colWidths)) {
             const ci = Number(c);

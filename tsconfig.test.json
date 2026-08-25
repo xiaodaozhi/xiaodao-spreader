@@ -15,6 +15,9 @@
   },
   "include": [
     "src/components/spreader/core/find-replace-core.ts",
+    "src/components/spreader/core/border-pool.ts",
+    "src/components/spreader/core/border-resolve.ts",
+    "src/components/spreader/core/style-pool.ts",
     "test/**/*.ts"
   ]
 }

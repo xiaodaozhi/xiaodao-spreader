@@ -127,6 +127,7 @@ export function createUndoStyles(
         id: sh.id, name: sh.name,
         cells: cloneCells(sh.cells),
         styles: [...sh.styles],
+        borders: sh.borders ? [...sh.borders] : [{}],
         merges: sh.merges ? { ...sh.merges } : {},
         selection: sh.selection ? { ...sh.selection } : null,
         activeCell: sh.activeCell ? { ...sh.activeCell } : { col: 0, row: 0 },
@@ -143,6 +144,7 @@ export function createUndoStyles(
       ...x,
       cells: cloneCells(x.cells),
       styles: [...x.styles],
+      borders: x.borders ? [...x.borders] : [{}],
     }));
     sheetsCtx.loadSheet(Math.max(0, Math.min(snap.activeSheetIndex, sheetsCtx.sheets.value.length - 1)));
     s.formulaDeps.rebuild(s.cells, s.colCount, s.rowCount);
@@ -212,7 +214,6 @@ export function createUndoStyles(
           if (sid > 0) cell.styleId = sid;
           s.cells[k] = cell;
         }
-        s.syncCellBorders?.(c, r);
       }
     }
     paintFmt.value = null;
@@ -232,7 +233,6 @@ export function createUndoStyles(
         const val = s.cells[k]?.value ?? '';
         if (val === '') s.delCell(k);
         else s.cells[k] = { value: val }; // styleId 省略 = 默认样式
-        s.syncCellBorders?.(c, r);
       }
     }
     s.scheduleRender?.();

@@ -31,7 +31,7 @@
     "build:demo": "vite build --mode demo",
     "preview": "vite preview",
     "type-check": "vue-tsc --noEmit",
-    "test": "tsc -p tsconfig.test.json && node -e \"require('fs').writeFileSync('dist-test/package.json','{\\\"type\\\":\\\"commonjs\\\"}')\" && node --test dist-test/test/find-replace-core.test.js",
+    "test": "tsc -p tsconfig.test.json && node -e \"require('fs').writeFileSync('dist-test/package.json','{\\\"type\\\":\\\"commonjs\\\"}')\" && node --test \"dist-test/test/*.test.js\"",
     "prepublishOnly": "npm run build"
   },
   "peerDependencies": {
