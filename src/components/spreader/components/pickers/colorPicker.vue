@@ -268,7 +268,7 @@ defineExpose({ open, openMenu, close });
             right: pos.right !== undefined ? pos.right + 'px' : undefined,
             top: pos.top + 'px',
           }"
-          @mousedown.stop
+          @mousedown.stop.prevent
         >
           <div
             v-for="(row, ri) in groups"

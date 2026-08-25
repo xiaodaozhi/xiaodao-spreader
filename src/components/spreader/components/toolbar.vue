@@ -300,6 +300,7 @@ const nfFallbackLabel = computed(() =>
   <div
     ref="rootEl"
     class="toolbar"
+    @mousedown.prevent
   >
     <Teleport
       :disabled="teleportDisabled('undo')"
@@ -459,6 +460,7 @@ const nfFallbackLabel = computed(() =>
             step="1"
             :value="fontSizeInput"
             :title="t(locale, 'fontSize')"
+            @mousedown.stop
             @input="emit('font-size-input', ($event.target as HTMLInputElement).value)"
             @blur="emit('font-size-blur')"
             @keydown="emit('font-size-keydown', $event)"
@@ -1082,6 +1084,7 @@ const nfFallbackLabel = computed(() =>
         class="overflow-menu"
         :class="{ 'no-anim': skipCloseAnim }"
         :style="menuStyle"
+        @mousedown.prevent
       />
     </Transition>
   </Teleport>

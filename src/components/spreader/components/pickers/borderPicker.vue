@@ -147,7 +147,7 @@ defineExpose({ open, openMenu, close });
           ref="menuRef"
           class="border-picker__menu"
           :style="{ left: pos.left !== undefined ? pos.left + 'px' : undefined, right: pos.right !== undefined ? pos.right + 'px' : undefined, top: pos.top + 'px' }"
-          @mousedown.stop
+          @mousedown.stop.prevent
         >
           <button
             v-for="opt in BORDER_OPTIONS"

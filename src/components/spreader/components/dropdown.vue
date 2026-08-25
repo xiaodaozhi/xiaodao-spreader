@@ -121,15 +121,24 @@ function onWheel(e: WheelEvent) {
 }
 
 // Vue 将 @wheel 默认注册为 passive，无法 preventDefault，需手动挂载非 passive 监听
+// 菜单使用 @mousedown.prevent 阻止按钮抢焦，导致菜单 div 无法通过子元素获焦接收 keydown，
+// 需在 document 上监听 Escape 以支持键盘关闭
 watch(open, (v) => {
   nextTick(() => {
     if (v) {
       listRef.value?.addEventListener('wheel', onWheel, { passive: false });
+      document.addEventListener('keydown', onDocKeydown);
     } else {
       listRef.value?.removeEventListener('wheel', onWheel);
+      document.removeEventListener('keydown', onDocKeydown);
     }
   });
 });
+
+function onDocKeydown(e: KeyboardEvent) {
+  if (!open.value) return;
+  if (e.key === 'Escape') close();
+}
 
 watch(() => props.modelOpen, (v) => {
   if (v !== undefined && v !== open.value) {
@@ -172,6 +181,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   document.removeEventListener('pointerdown', onDocDown);
+  document.removeEventListener('keydown', onDocKeydown);
   window.removeEventListener('resize', close);
   window.removeEventListener('scroll', close, true);
 });
@@ -219,6 +229,7 @@ onBeforeUnmount(() => {
           :class="{ 'sp-dropdown__menu--up': pos.up }"
           :style="{ left: pos.left !== undefined ? pos.left + 'px' : undefined, right: pos.right !== undefined ? pos.right + 'px' : undefined, top: pos.top + 'px', minWidth: effMenuWidth !== undefined ? (typeof effMenuWidth === 'number' ? effMenuWidth + 'px' : effMenuWidth) : undefined }"
           @keydown="onKeydown"
+          @mousedown.prevent
         >
           <button
             v-if="scrollable"
