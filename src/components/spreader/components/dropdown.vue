@@ -281,7 +281,7 @@ onBeforeUnmount(() => {
             type="text"
             :placeholder="searchPlaceholder"
             @mousedown.stop
-          />
+          >
           <div
             ref="listRef"
             class="sp-dropdown__list"

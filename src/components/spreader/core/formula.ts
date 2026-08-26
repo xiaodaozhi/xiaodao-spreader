@@ -62,9 +62,16 @@ function parensBalanced(s: string): boolean {
       }
       continue;
     }
-    if (ch === '"' || ch === '\'') { inStr = ch; continue; }
-    if (ch === '(') depth++;
-    else if (ch === ')') { depth--; if (depth < 0) return false; }
+    if (ch === '"' || ch === '\'') {
+      inStr = ch;
+      continue;
+    }
+    if (ch === '(') {
+      depth++;
+    } else if (ch === ')') {
+      depth--;
+      if (depth < 0) return false;
+    }
   }
   return depth === 0;
 }
@@ -86,7 +93,7 @@ export function checkFormulaStructure(text: string): FormulaCheck {
   const args = splitTopLevelArgs(inner);
   const count = args.length === 1 && args[0]!.trim() === '' ? 0 : args.length;
   if (count < spec.min || count > spec.max) return { ok: false, name };
-  if (args.some(a => a.trim() === '')) return { ok: false, name };
+  if (args.some((a) => a.trim() === '')) return { ok: false, name };
   return { ok: true, name };
 }
 
@@ -246,12 +253,12 @@ function compareValues(l: FormulaValue, r: FormulaValue, op: string): boolean {
 /** 将 SUMIF 的条件值字面量转为标量：带引号字符串去引号、可解析数字转 number、其余按字面字符串 */
 function evalCriteriaScalar(
   s: string,
-  cells: Record<string, CellData>,
-  colCount: number,
-  rowCount: number,
+  _cells: Record<string, CellData>,
+  _colCount: number,
+  _rowCount: number,
 ): FormulaValue {
   const t = s.trim();
-  if (t.length >= 2 && ((t[0] === '"' && t[t.length - 1] === '"') || (t[0] === "'" && t[t.length - 1] === "'"))) {
+  if (t.length >= 2 && ((t[0] === '"' && t[t.length - 1] === '"') || (t[0] === '\'' && t[t.length - 1] === '\''))) {
     return t.slice(1, -1);
   }
   const n = Number(t);
@@ -268,24 +275,24 @@ function evalCriteriaScalar(
 function matchCriteria(
   cellVal: FormulaValue,
   criteriaExpr: string,
-  cells: Record<string, CellData>,
-  colCount: number,
-  rowCount: number,
-  depth: number,
+  _cells: Record<string, CellData>,
+  _colCount: number,
+  _rowCount: number,
+  _depth: number,
 ): boolean {
   const c = criteriaExpr.trim();
   // 先剥离可能的外层引号（如 ">1" / '>1' 整体被引号包裹，运算符也在其中）
   let inner = c;
-  if (inner.length >= 2 && ((inner[0] === '"' && inner[inner.length - 1] === '"') || (inner[0] === "'" && inner[inner.length - 1] === "'"))) {
+  if (inner.length >= 2 && ((inner[0] === '"' && inner[inner.length - 1] === '"') || (inner[0] === '\'' && inner[inner.length - 1] === '\''))) {
     inner = inner.slice(1, -1);
   }
   const m = /^([<>=]+)([\s\S]*)$/.exec(inner);
   if (m) {
     const op = m[1]!;
-    const rhs = evalCriteriaScalar(m[2]!, cells, colCount, rowCount);
+    const rhs = evalCriteriaScalar(m[2]!, _cells, _colCount, _rowCount);
     return compareValues(cellVal, rhs, op);
   }
-  const rhs = evalCriteriaScalar(inner, cells, colCount, rowCount);
+  const rhs = evalCriteriaScalar(inner, _cells, _colCount, _rowCount);
   return valuesEqual(cellVal, rhs);
 }
 

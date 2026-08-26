@@ -109,17 +109,17 @@ const CATEGORY_LABELS: Record<NFDialogCategory, string> = {
 
 // SpDropdown 选项（将各类格式列表转换为 FontOption[]）
 const categoryOptions = computed<FontOption[]>(() =>
-  NF_DIALOG_CATEGORIES.map(cat => ({ label: t(props.locale, CATEGORY_LABELS[cat]), value: cat })),
+  NF_DIALOG_CATEGORIES.map((cat) => ({ label: t(props.locale, CATEGORY_LABELS[cat]), value: cat })),
 );
-const symbolOptions: FontOption[] = SYMBOLS.map(s => ({ label: s.label, value: s.value }));
+const symbolOptions: FontOption[] = SYMBOLS.map((s) => ({ label: s.label, value: s.value }));
 const dateFormatOptions = computed<FontOption[]>(() =>
-  DATE_FORMATS.value.map(f => ({ label: f, value: f })),
+  DATE_FORMATS.value.map((f) => ({ label: f, value: f })),
 );
-const timeFormatOptions: FontOption[] = (TIME_FORMATS as readonly string[]).map(f => ({ label: f, value: f }));
+const timeFormatOptions: FontOption[] = (TIME_FORMATS as readonly string[]).map((f) => ({ label: f, value: f }));
 const dateTimeFormatOptions = computed<FontOption[]>(() =>
-  DATETIME_FORMATS.value.map(f => ({ label: f, value: f })),
+  DATETIME_FORMATS.value.map((f) => ({ label: f, value: f })),
 );
-const durationFormatOptions: FontOption[] = (DURATION_FORMATS as readonly string[]).map(f => ({ label: f, value: f }));
+const durationFormatOptions: FontOption[] = (DURATION_FORMATS as readonly string[]).map((f) => ({ label: f, value: f }));
 
 // 控制项是否展示
 const showThousands = computed(() =>

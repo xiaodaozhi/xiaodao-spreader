@@ -964,9 +964,9 @@ export function parseNumericText(
   if (!body) return null;
 
   // 千分位组（至少一组逗号）或普通数字，可选小数，可选百分号（允许百分号前有一个空格）
-  const m =
-    /^([+-]?)(\d{1,3}(?:,\d{3})+)(?:\.(\d+))?(%?)$/.exec(body)
-    || /^([+-]?)(\d+)(?:\.(\d+))?(%?)$/.exec(body);
+  const m
+    = /^([+-]?)(\d{1,3}(?:,\d{3})+)(?:\.(\d+))?(%?)$/.exec(body)
+      || /^([+-]?)(\d+)(?:\.(\d+))?(%?)$/.exec(body);
   if (!m) return null;
 
   const sign = m[1] === '-' ? -1 : 1;

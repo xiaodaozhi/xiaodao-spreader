@@ -108,10 +108,10 @@ export function createSheetsOps(
     }
 
     // 删除范围内的单元格
-    for (const k of keysToDelete) delete s.cells[k];
+    for (const k of keysToDelete) Reflect.deleteProperty(s.cells, k);
     // 移动范围内的单元格到新位置
     for (const sh of shifts) {
-      delete s.cells[sh.oldKey];
+      Reflect.deleteProperty(s.cells, sh.oldKey);
       s.cells[sh.newKey] = sh.cell;
     }
 
@@ -152,7 +152,7 @@ export function createSheetsOps(
     }
     shifts.sort((a, b) => b.oldRow - a.oldRow);
     for (const sh of shifts) {
-      delete s.cells[sh.oldKey];
+      Reflect.deleteProperty(s.cells, sh.oldKey);
       s.cells[sh.newKey] = sh.cell;
     }
 
@@ -161,7 +161,7 @@ export function createSheetsOps(
       const commaIdx = key.indexOf(',');
       if (commaIdx < 0) continue;
       const r = parseInt(key.substring(commaIdx + 1), 10);
-      if (r >= rS && r <= rE) delete s.cells[key];
+      if (r >= rS && r <= rE) Reflect.deleteProperty(s.cells, key);
     }
 
     // 重建 rowHeights：上半部不变，中间插入空行，下半部下移
@@ -200,7 +200,7 @@ export function createSheetsOps(
     }
     shifts.sort((a, b) => b.oldCol - a.oldCol);
     for (const sh of shifts) {
-      delete s.cells[sh.oldKey];
+      Reflect.deleteProperty(s.cells, sh.oldKey);
       s.cells[sh.newKey] = sh.cell;
     }
 
@@ -209,7 +209,7 @@ export function createSheetsOps(
       const commaIdx = key.indexOf(',');
       if (commaIdx < 0) continue;
       const c = parseInt(key.substring(0, commaIdx), 10);
-      if (c >= cS && c <= cE) delete s.cells[key];
+      if (c >= cS && c <= cE) Reflect.deleteProperty(s.cells, key);
     }
 
     // 重建 colWidths：左半部不变，中间插入默认列宽，右半部右移
@@ -245,10 +245,10 @@ export function createSheetsOps(
     }
 
     // 删除范围内的单元格
-    for (const k of keysToDelete) delete s.cells[k];
+    for (const k of keysToDelete) Reflect.deleteProperty(s.cells, k);
     // 移动范围外的单元格到新位置
     for (const sh of shifts) {
-      delete s.cells[sh.oldKey];
+      Reflect.deleteProperty(s.cells, sh.oldKey);
       s.cells[sh.newKey] = sh.cell;
     }
 
@@ -355,7 +355,10 @@ export function createSheetsOps(
     for (let r = rStart; r <= rEnd; r++) {
       let has = false;
       for (let c = sC; c <= eC; c++) {
-        if (s.getCellRaw(c, r).trim() !== '') { has = true; break; }
+        if (s.getCellRaw(c, r).trim() !== '') {
+          has = true;
+          break;
+        }
       }
       if (has) {
         if (firstRow < 0) firstRow = r;
@@ -375,7 +378,10 @@ export function createSheetsOps(
     for (let r = firstRow; r <= lastRow && !blocked; r++) {
       for (let c = sC; c <= eC; c++) {
         const cell = s.cells[s.cellKey(c, r)];
-        if (cell && cell.value.startsWith('=')) { blocked = true; break; }
+        if (cell && cell.value.startsWith('=')) {
+          blocked = true;
+          break;
+        }
       }
     }
     // 阻断：合并单元格与排序行范围相交（列已重叠）
@@ -422,7 +428,10 @@ export function createSheetsOps(
     // 置换结果与当前顺序一致 → 不产生无意义的撤销记录
     let changed = false;
     for (let i = 0; i < nRows; i++) {
-      if (perm[i] !== i) { changed = true; break; }
+      if (perm[i] !== i) {
+        changed = true;
+        break;
+      }
     }
     if (!changed) return;
     us.saveUndo();
@@ -946,8 +955,8 @@ export function createSheetsOps(
     const maxX = Math.max(0, s.totalWidth.value - gw);
     const maxY = Math.max(0, s.totalHeight.value - gh);
     if (
-      (newX >= maxX - nearMargin && newX > s.scrollX.value) ||
-      (newY >= maxY - nearMargin && newY > s.scrollY.value)
+      (newX >= maxX - nearMargin && newX > s.scrollX.value)
+      || (newY >= maxY - nearMargin && newY > s.scrollY.value)
     ) {
       const approxCol = Math.max(0, Math.ceil((newX + gw) / 100) + 2);
       const approxRow = Math.max(0, Math.ceil((newY + gh) / 24) + 2);

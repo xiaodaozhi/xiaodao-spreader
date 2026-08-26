@@ -43,7 +43,7 @@ const DESC_KEYS: Record<string, string> = {
 };
 
 const functionOptions = computed<FontOption[]>(() =>
-  FORMULA_PRESETS.map(p => ({
+  FORMULA_PRESETS.map((p) => ({
     label: p.name,
     value: p.name,
   })),
@@ -104,7 +104,7 @@ function close() {
 /** 下拉选择/切换函数：先清空 textarea，再插入该函数的骨架（空内容自动补前导 '='） */
 function onFunctionChange(v: string | number) {
   selected.value = v;
-  const preset = FORMULA_PRESETS.find(p => p.name === String(v));
+  const preset = FORMULA_PRESETS.find((p) => p.name === String(v));
   if (!preset) return;
   formulaText.value = '';
   insertSnippet(preset.snippet);

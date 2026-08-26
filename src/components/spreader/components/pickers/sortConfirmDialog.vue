@@ -11,8 +11,7 @@ const props = withDefaults(defineProps<{
 });
 
 const emit = defineEmits<{
-  (e: 'update:modelOpen', v: boolean): void;
-  (e: 'confirm', expand: boolean): void;
+  (e: 'update:modelOpen' | 'confirm', v: boolean): void;
   (e: 'cancel'): void;
 }>();
 
