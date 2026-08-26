@@ -19,6 +19,12 @@ export const FORMULA_PRESETS: { name: string; snippet: string }[] = [
   { name: 'IF', snippet: 'IF(A1>0, B1, C1)' },
   { name: 'VLOOKUP', snippet: 'VLOOKUP(A1, B1:C10, 2, FALSE)' },
   { name: 'CONCATENATE', snippet: 'CONCATENATE(A1, B1)' },
+  { name: 'MAX', snippet: 'MAX(A1:A10)' },
+  { name: 'MIN', snippet: 'MIN(A1:A10)' },
+  { name: 'SIN', snippet: 'SIN(A1)' },
+  { name: 'SUMIF', snippet: 'SUMIF(A1:A10, ">0", B1:B10)' },
+  { name: 'PMT', snippet: 'PMT(0.05/12, 360, 100000)' },
+  { name: 'STDEV', snippet: 'STDEV(A1:A10)' },
 ];
 
 /** 公式结构校验结果：ok=结构合法可求值；name=顶层函数名（大写），无法识别结构时为 null */
@@ -35,6 +41,12 @@ const FN_ARG_COUNTS: Record<string, { min: number; max: number }> = {
   IF: { min: 3, max: 3 },
   VLOOKUP: { min: 3, max: 4 },
   CONCATENATE: { min: 1, max: Infinity },
+  MAX: { min: 1, max: 1 },
+  MIN: { min: 1, max: 1 },
+  SIN: { min: 1, max: 1 },
+  SUMIF: { min: 2, max: 3 },
+  PMT: { min: 3, max: 5 },
+  STDEV: { min: 1, max: 1 },
 };
 
 /** 判断字符串中括号是否配平（跳过引号字符串内的括号） */
@@ -187,7 +199,7 @@ function _evalFormula(
       const fm = /^([A-Za-z_][A-Za-z0-9_]*)\s*\(([\s\S]*)\)$/.exec(formula);
       result = fm
         ? dispatch(fm[1]!.toUpperCase(), fm[2]!, cells, colCount, rowCount, depth + 1)
-        : null;
+        : evalExpr(formula, cells, colCount, rowCount, depth + 1);
     }
   }
   inProgress.delete(key);
@@ -229,6 +241,52 @@ function compareValues(l: FormulaValue, r: FormulaValue, op: string): boolean {
     case '>=': return cmp >= 0;
   }
   return false;
+}
+
+/** 将 SUMIF 的条件值字面量转为标量：带引号字符串去引号、可解析数字转 number、其余按字面字符串 */
+function evalCriteriaScalar(
+  s: string,
+  cells: Record<string, CellData>,
+  colCount: number,
+  rowCount: number,
+): FormulaValue {
+  const t = s.trim();
+  if (t.length >= 2 && ((t[0] === '"' && t[t.length - 1] === '"') || (t[0] === "'" && t[t.length - 1] === "'"))) {
+    return t.slice(1, -1);
+  }
+  const n = Number(t);
+  if (!isNaN(n) && /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(t)) return n;
+  // 未加引号的文本条件按字面字符串处理（如 apple）
+  return t;
+}
+
+/**
+ * 判断单元格标量是否符合 SUMIF 的条件表达式：
+ * - 以 < <= > >= = <> 开头：按比较运算符（右侧经 evalCriteriaScalar 解析）判定
+ * - 否则：按相等判定（右侧经 evalCriteriaScalar 解析）
+ */
+function matchCriteria(
+  cellVal: FormulaValue,
+  criteriaExpr: string,
+  cells: Record<string, CellData>,
+  colCount: number,
+  rowCount: number,
+  depth: number,
+): boolean {
+  const c = criteriaExpr.trim();
+  // 先剥离可能的外层引号（如 ">1" / '>1' 整体被引号包裹，运算符也在其中）
+  let inner = c;
+  if (inner.length >= 2 && ((inner[0] === '"' && inner[inner.length - 1] === '"') || (inner[0] === "'" && inner[inner.length - 1] === "'"))) {
+    inner = inner.slice(1, -1);
+  }
+  const m = /^([<>=]+)([\s\S]*)$/.exec(inner);
+  if (m) {
+    const op = m[1]!;
+    const rhs = evalCriteriaScalar(m[2]!, cells, colCount, rowCount);
+    return compareValues(cellVal, rhs, op);
+  }
+  const rhs = evalCriteriaScalar(inner, cells, colCount, rowCount);
+  return valuesEqual(cellVal, rhs);
 }
 
 /**
@@ -678,6 +736,90 @@ function dispatch(
         out += v === null ? '' : (typeof v === 'number' ? String(v) : v);
       }
       return out;
+    }
+
+    case 'MAX':
+    case 'MIN': {
+      const range = parseRangeRef(inner.trim(), colCount, rowCount);
+      if (!range) return null;
+      const nums: number[] = [];
+      for (let c = range.sc; c <= range.ec; c++) {
+        for (let r = range.sr; r <= range.er; r++) {
+          const v = getCellScalar(c, r, cells, colCount, rowCount);
+          if (typeof v === 'number') nums.push(v);
+        }
+      }
+      if (nums.length === 0) return null;
+      return name === 'MAX' ? Math.max(...nums) : Math.min(...nums);
+    }
+
+    case 'STDEV': {
+      const range = parseRangeRef(inner.trim(), colCount, rowCount);
+      if (!range) return null;
+      const nums: number[] = [];
+      for (let c = range.sc; c <= range.ec; c++) {
+        for (let r = range.sr; r <= range.er; r++) {
+          const v = getCellScalar(c, r, cells, colCount, rowCount);
+          if (typeof v === 'number') nums.push(v);
+        }
+      }
+      const n = nums.length;
+      if (n < 2) return null;
+      const mean = nums.reduce((a, b) => a + b, 0) / n;
+      const variance = nums.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / (n - 1);
+      return Math.sqrt(variance);
+    }
+
+    case 'SIN': {
+      const args = splitTopLevelArgs(inner);
+      if (args.length !== 1) return null;
+      const v = evalExpr(args[0]!, cells, colCount, rowCount, depth);
+      if (typeof v !== 'number') return null;
+      return Math.sin(v);
+    }
+
+    case 'SUMIF': {
+      const args = splitTopLevelArgs(inner);
+      if (args.length < 2 || args.length > 3) return null;
+      const range = parseRangeRef(args[0]!.trim(), colCount, rowCount);
+      if (!range) return null;
+      const sumRange = args.length === 3
+        ? parseRangeRef(args[2]!.trim(), colCount, rowCount)
+        : range;
+      if (!sumRange) return null;
+      let sum = 0;
+      for (let r = range.sr; r <= range.er; r++) {
+        for (let c = range.sc; c <= range.ec; c++) {
+          const cellVal = getCellScalar(c, r, cells, colCount, rowCount);
+          if (matchCriteria(cellVal, args[1]!, cells, colCount, rowCount, depth)) {
+            sum += getNumericValue(
+              sumRange.sc + (c - range.sc),
+              sumRange.sr + (r - range.sr),
+              cells, colCount, rowCount,
+            );
+          }
+        }
+      }
+      return sum;
+    }
+
+    case 'PMT': {
+      const args = splitTopLevelArgs(inner);
+      if (args.length < 3 || args.length > 5) return null;
+      const rate = evalExpr(args[0]!, cells, colCount, rowCount, depth);
+      const nper = evalExpr(args[1]!, cells, colCount, rowCount, depth);
+      const pv = evalExpr(args[2]!, cells, colCount, rowCount, depth);
+      if (typeof rate !== 'number' || typeof nper !== 'number' || typeof pv !== 'number') return null;
+      const fvRaw = args.length >= 4 ? evalExpr(args[3]!, cells, colCount, rowCount, depth) : 0;
+      const fv = typeof fvRaw === 'number' ? fvRaw : 0;
+      const typeRaw = args.length >= 5 ? evalExpr(args[4]!, cells, colCount, rowCount, depth) : 0;
+      const type = truthy(typeRaw) ? 1 : 0;
+      if (rate === 0) {
+        if (nper === 0) return null;
+        return -(pv + fv) / nper;
+      }
+      const pow = Math.pow(1 + rate, nper);
+      return -(fv + pv * pow) * rate / ((1 + rate * type) * (pow - 1));
     }
 
     default:

@@ -5,6 +5,7 @@ import type { CoreState } from './core-state';
 import type { CellData, CellStyle, SheetState } from '../core/types';
 import { cloneCells as _cloneCellsFromPool } from '../core/style-pool';
 import { buildNumberFormatPresets, NF_CUSTOM, NF_MIXED, NF_GENERAL, NF_MAX_DECIMALS, NF_MIN_DECIMALS, isGeneralFormat, isDecimalsAdjustable, getEffectiveDecimals, adjustNumberFormatDecimals, normalizeNumberFormatForDisplay, type NFOption } from '../core/number-format';
+import { computeCellValue } from '../core/formula';
 
 // ============ 共享 UndoStyles 接口 ============
 export interface UndoStylesState {
@@ -682,8 +683,13 @@ export function createUndoStyles(
         const st = s.resolveStyle(cell);
         const nf = typeof st?.numberFormat === 'string' ? st.numberFormat : NF_GENERAL;
         const value = cell?.value ?? '';
-        if (!isDecimalsAdjustable(nf, value)) continue;
-        out.push({ key: k, nf, decimals: getEffectiveDecimals(nf, value) });
+        // 公式单元格：用计算结果判定是否为数值（与单元格显示/对齐一致）；
+        // 否则 raw 是公式串，isNumericValue 判为 false 会被误判为不可调整。
+        const effectiveValue = value.startsWith('=')
+          ? computeCellValue(c, r, s.cells, s.colCount, s.rowCount)
+          : value;
+        if (!isDecimalsAdjustable(nf, effectiveValue)) continue;
+        out.push({ key: k, nf, decimals: getEffectiveDecimals(nf, effectiveValue) });
       }
     }
     return out;

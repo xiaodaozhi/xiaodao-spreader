@@ -662,9 +662,21 @@ export function isDecimalsAdjustable(
   return parsed.sections.some((sec) => sec.hasDigits);
 }
 
+/** 统计一个数值字符串（常规格式实际显示值）的小数位数；非数值/科学计数法 → 0 */
+function countValueDecimals(value: string): number {
+  if (!isNumericValue(value)) return 0;
+  const s = String(Number(value));
+  if (s.indexOf('.') < 0) return 0;
+  if (/e/i.test(s)) return 0; // 科学计数法的有效小数位与显示不符，按 0 处理避免误判
+  const frac = s.slice(s.indexOf('.') + 1);
+  return frac.length;
+}
+
 /**
  * 获取单元格当前有效小数位数：
- * - 常规（含值为数值的常规）→ 0；文本/日期类 → -1（不支持）
+ * - 常规（含值为数值的常规）→ 实际显示值的小数位数（如 =PMT(...) 结果有 11 位小数即 11；
+ *   整数 100 即为 0），用于让增减小数位按钮按"当前显示"而非恒为 0 处理；
+ *   文本/日期类 → -1（不支持）
  * - 数值类 → 第一个含数字占位符区段的 decimals（最大允许小数位）
  */
 export function getEffectiveDecimals(
@@ -672,7 +684,7 @@ export function getEffectiveDecimals(
   value: string,
 ): number {
   if (!isDecimalsAdjustable(format, value)) return -1;
-  if (format == null || format === NF_MIXED || isGeneralFormat(format)) return 0;
+  if (format == null || format === NF_MIXED || isGeneralFormat(format)) return countValueDecimals(value);
   const parsed = parseNumberFormat(format);
   const sec = parsed.sections.find((s) => s.hasDigits);
   return sec ? sec.decimals : -1;

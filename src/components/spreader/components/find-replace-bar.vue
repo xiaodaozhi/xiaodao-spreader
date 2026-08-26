@@ -90,17 +90,33 @@ function onInputKd(e: KeyboardEvent) {
     />
     <label class="find-bar__chk">
       <input
+        class="find-bar__chk-input"
         type="checkbox"
         :checked="matchCase"
         @change="emit('update:matchCase', ($event.target as HTMLInputElement).checked)"
-      >{{ t(locale, 'matchCase') }}
+      >
+      <span class="find-bar__chk-box">
+        <svg
+          class="find-bar__chk-tick"
+          viewBox="0 0 1024 1024"
+          fill="currentColor"
+        ><path d="M405 697L195 487l58-58 152 152 304-304 58 58z" /></svg>
+      </span>{{ t(locale, 'matchCase') }}
     </label>
     <label class="find-bar__chk">
       <input
+        class="find-bar__chk-input"
         type="checkbox"
         :checked="matchEntireCell"
         @change="emit('update:matchEntireCell', ($event.target as HTMLInputElement).checked)"
-      >{{ t(locale, 'matchEntireCell') }}
+      >
+      <span class="find-bar__chk-box">
+        <svg
+          class="find-bar__chk-tick"
+          viewBox="0 0 1024 1024"
+          fill="currentColor"
+        ><path d="M405 697L195 487l58-58 152 152 304-304 58 58z" /></svg>
+      </span>{{ t(locale, 'matchEntireCell') }}
     </label>
     <span class="find-bar__count">{{ countText }}</span>
     <button
@@ -147,7 +163,7 @@ function onInputKd(e: KeyboardEvent) {
       <svg
         viewBox="0 0 1024 1024"
         fill="currentColor"
-      ><path d="M512 451.669L369.664 294.336a32 32 0 0 0-45.312 45.312L466.688 497 309.355 654.336a32 32 0 0 0 45.312 45.312L512 542.688l157.333 157.334a32 32 0 0 0 45.312-45.312L557.312 497 714.645 339.664a32 32 0 0 0-45.312-45.312z" /></svg>
+      ><path d="M571.733333 512l288.533334-288.533333c17.066667-17.066667 17.066667-42.666667 0-59.733334-17.066667-17.066667-42.666667-17.066667-59.733334 0L512 452.266667 223.466667 164.266667c-17.066667-17.066667-42.666667-17.066667-59.733334 0-17.066667 17.066667-17.066667 42.666667 0 59.733333L452.266667 512 164.266667 800c-17.066667 17.066667-17.066667 42.666667 0 59.733333 8.533333 8.533333 19.2 12.8 29.866666 12.8 10.666667 0 21.333333-4.266667 29.866667-12.8L512 571.733333l288.533333 288.533334c8.533333 8.533333 19.2 12.8 29.866667 12.8 10.666667 0 21.333333-4.266667 29.866667-12.8 17.066667-17.066667 17.066667-42.666667 0-59.733334L571.733333 512z" /></svg>
     </button>
   </div>
 </template>
@@ -197,15 +213,56 @@ function onInputKd(e: KeyboardEvent) {
 .find-bar__chk {
   display: flex;
   align-items: center;
-  gap: 3px;
+  gap: 5px;
   flex: 0 0 auto;
   font-size: 12px;
   color: var(--sp-toolbar-btn-color);
   white-space: nowrap;
   cursor: pointer;
+  user-select: none;
 }
-.find-bar__chk input {
+/* 原生 input 仅保留状态/可访问性，视觉由自定义 box 呈现 */
+.find-bar__chk-input {
+  position: absolute;
+  width: 0;
+  height: 0;
   margin: 0;
+  padding: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+.find-bar__chk-box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  border: 1px solid var(--sp-toolbar-border);
+  border-radius: 3px;
+  background: #fff;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.find-bar__chk-tick {
+  width: 12px;
+  height: 12px;
+  color: #fff;
+  opacity: 0;
+  transform: scale(0.5);
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+.find-bar__chk-input:checked + .find-bar__chk-box {
+  background: #0078d7;
+  border-color: #0078d7;
+}
+.find-bar__chk-input:checked + .find-bar__chk-box .find-bar__chk-tick {
+  opacity: 1;
+  transform: scale(1);
+}
+.find-bar__chk-input:focus-visible + .find-bar__chk-box {
+  outline: 2px solid rgba(0, 120, 215, 0.4);
+  outline-offset: 1px;
 }
 .find-bar__count {
   flex: 0 0 auto;
@@ -248,6 +305,7 @@ function onInputKd(e: KeyboardEvent) {
   width: 26px;
   padding: 0;
   margin-left: auto;
+  border: none;
 }
 .find-bar__btn--close svg {
   width: 14px;

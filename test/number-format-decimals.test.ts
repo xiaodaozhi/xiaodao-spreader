@@ -11,6 +11,7 @@ import {
   adjustNumberFormatDecimals,
   normalizeNumberFormatForDisplay,
 } from '../src/components/spreader/core/number-format';
+import { computeCellValue } from '../src/components/spreader/core/formula';
 
 // ============ isNumericValue ============
 
@@ -44,6 +45,27 @@ test('常规格式：值为数字时可调整，否则不可', () => {
   assert.equal(isDecimalsAdjustable('General', '42'), true);
 });
 
+// 公式单元格：原始 raw 是 "=..." 串，isNumericValue 判为 false；
+// 但小数位按钮需用【计算结果】判定，否则公式数值单元格无法调整小数位
+// （cell 显示已识别为数字并右对齐，按钮却误判不可调整）。
+test('公式单元格应使用计算结果判定小数位可调整（而非原始公式串）', () => {
+  const cells = {
+    '0,0': { value: '1' },
+    '0,1': { value: '2' },
+    '0,2': { value: '3' },
+    '1,0': { value: '=SUM(A1:A3)' },
+  };
+  const raw = cells['1,0']!.value;
+  // 原始公式串本身不可识别为数值
+  assert.equal(isDecimalsAdjustable('', raw), false);
+  // 计算结果可识别为数值 → 按钮应可用
+  const result = computeCellValue(1, 0, cells as any, 10, 10);
+  assert.equal(result, '6');
+  assert.equal(isDecimalsAdjustable('', result), true);
+  // 计算结果的小数位（常规 → 0，可增减）
+  assert.equal(getEffectiveDecimals('', result), 0);
+});
+
 test('文本/日期/时间/持续时间不可调整', () => {
   assert.equal(isDecimalsAdjustable('@', '123'), false);
   assert.equal(isDecimalsAdjustable('yyyy"年"m"月"d"日"', '45000'), false);
@@ -62,8 +84,12 @@ test('getEffectiveDecimals 数值类取首个含占位符区段的小数位', ()
   assert.equal(getEffectiveDecimals('0.000E+00', ''), 3);
 });
 
-test('getEffectiveDecimals 常规数值 → 0；不支持 → -1', () => {
-  assert.equal(getEffectiveDecimals('', '1.5'), 0);
+test('getEffectiveDecimals 常规数值 → 实际小数位；不支持 → -1', () => {
+  assert.equal(getEffectiveDecimals('', '1.5'), 1);
+  assert.equal(getEffectiveDecimals('', '100'), 0);
+  assert.equal(getEffectiveDecimals('', '536.81952291356'), 11);
+  // 公式结果（常规格式，长小数）应反映实际小数位，而非恒为 0
+  assert.equal(getEffectiveDecimals('', '-536.81952291356'), 11);
   assert.equal(getEffectiveDecimals('', 'abc'), -1);
   assert.equal(getEffectiveDecimals('@', '1'), -1);
   assert.equal(getEffectiveDecimals('h:mm:ss', '0.5'), -1);

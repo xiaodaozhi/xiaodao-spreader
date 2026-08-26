@@ -34,6 +34,12 @@ const DESC_KEYS: Record<string, string> = {
   IF: 'fnDescIf',
   VLOOKUP: 'fnDescVlookup',
   CONCATENATE: 'fnDescConcatenate',
+  MAX: 'fnDescMax',
+  MIN: 'fnDescMin',
+  SIN: 'fnDescSin',
+  SUMIF: 'fnDescSumif',
+  PMT: 'fnDescPmt',
+  STDEV: 'fnDescStdev',
 };
 
 const functionOptions = computed<FontOption[]>(() =>
@@ -303,7 +309,7 @@ function onKeydown(e: KeyboardEvent) {
   outline: none;
   box-sizing: border-box;
   font-family: Consolas, Menlo, monospace;
-  resize: vertical;
+  resize: none;
   user-select: text;
 }
 .ifn-dialog__textarea:focus {
