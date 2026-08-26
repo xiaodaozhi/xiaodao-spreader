@@ -19,6 +19,7 @@
     "src/components/spreader/core/border-resolve.ts",
     "src/components/spreader/core/style-pool.ts",
     "src/components/spreader/core/number-format.ts",
+    "src/components/spreader/core/sort-core.ts",
     "test/**/*.ts"
   ]
 }

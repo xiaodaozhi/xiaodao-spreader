@@ -988,6 +988,10 @@ export function createInteractions(
   }
   const ctxSubmenuLeft = ref(false);
   function onCtxItemEnter(e: MouseEvent, item: ContextMenuItem) {
+    if (item.disabled) {
+      ctxSubmenuLeft.value = false;
+      return;
+    }
     if (!item.children) {
       ctxSubmenuLeft.value = false;
       return;
@@ -1111,6 +1115,7 @@ export function createInteractions(
       scheduleRender();
     }
     const s2 = s.selection.value!;
+    const sortDisabled = !so.canSortColumns(s2.startCol, s2.endCol);
     showCtx(e.clientX, e.clientY, [
       { label: t(s.locale.value, 'insert'), action: () => {
         us.saveUndo();
@@ -1139,6 +1144,14 @@ export function createInteractions(
         scheduleRender();
         so.emitModelData();
       } },
+      { label: t(s.locale.value, 'sort'), disabled: sortDisabled, children: [
+        { label: t(s.locale.value, 'sortAsc'), action: () => {
+          so.sortSelectedColumns('asc');
+        }, disabled: sortDisabled },
+        { label: t(s.locale.value, 'sortDesc'), action: () => {
+          so.sortSelectedColumns('desc');
+        }, disabled: sortDisabled },
+      ] },
       { label: `${t(s.locale.value, 'colWidth')}...`, action: () => openDimPanel('col', mx, my) },
       { label: t(s.locale.value, 'defaultColWidth'), action: () => so.resetColWidth() },
     ]);

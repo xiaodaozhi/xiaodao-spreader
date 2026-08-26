@@ -915,6 +915,68 @@ export function parseDateTimeInput(
   return null;
 }
 
+// ============ 数字文本自动识别（常规单元格） ============
+
+/** 数字文本（带千分位/百分比/货币符号）解析结果：数值 + 建议套用的格式代码 */
+export interface NumericTextParseResult {
+  /** 解析后的数值（百分比已 ÷100，使其作为序列值正确显示百分比） */
+  num: number;
+  /** 建议套用的格式代码，如 '0.00%' / '#,##0' / '¥#,##0.00' */
+  format: string;
+}
+
+/**
+ * 对常规单元格输入做常见"数字文本"自动识别（对齐 Excel 输入语义）：
+ * - 带半角千分位逗号的数字：1,234 / 1,234.56 → 数值并套用 #,##0[.00] 格式
+ * - 百分比：100% / 3.14% / 1,234.5% → 数值（÷100）并套用 0[.00]% 格式
+ * - 货币符号前缀：$1,234.56 / ¥1,234 → 数值并套用「符号#,##0[.00]」格式
+ * 仅当字符串含有逗号 / 百分号 / 货币符号时才识别；纯数字（如 "3.14"）不命中，保持常规，
+ * 避免覆盖用户无需格式的普通数值。公式、日期/时间文本、无法解析的内容均不命中。
+ */
+export function parseNumericText(
+  input: string,
+  locale: string,
+): NumericTextParseResult | null {
+  const str = input.trim();
+  if (!str || str.startsWith('=')) return null;
+  const hasSpecial = str.includes(',') || str.includes('%')
+    || NF_CURRENCY_SYMBOLS.some((c) => str.startsWith(c));
+  if (!hasSpecial) return null;
+  // 日期/时间文本优先（避免 "1,2" 之类被误判时与日期逻辑冲突；此处与 setCellValue 调用顺序一致再保险）
+  if (parseDateTimeInput(str, locale)) return null;
+
+  // 剥离货币符号前缀
+  const cur = NF_CURRENCY_SYMBOLS.find((c) => str.startsWith(c));
+  const body = cur ? str.slice(cur.length).trim() : str;
+  if (!body) return null;
+
+  // 千分位组（至少一组逗号）或普通数字，可选小数，可选百分号（允许百分号前有一个空格）
+  const m =
+    /^([+-]?)(\d{1,3}(?:,\d{3})+)(?:\.(\d+))?(%?)$/.exec(body)
+    || /^([+-]?)(\d+)(?:\.(\d+))?(%?)$/.exec(body);
+  if (!m) return null;
+
+  const sign = m[1] === '-' ? -1 : 1;
+  const intStr = m[2]!.replace(/,/g, '');
+  const frac = m[3];
+  const isPercent = (m[4] ?? '') === '%';
+  const decimals = frac ? frac.length : 0;
+  const magnitude = Number(intStr + (frac ? '.' + frac : ''));
+  if (!Number.isFinite(magnitude)) return null;
+
+  const hasComma = body.includes(',');
+  const intPart = hasComma ? '#,##0' : '0';
+  const fracPart = decimals > 0 ? '.' + '0'.repeat(decimals) : '';
+  const format = (cur ?? '') + intPart + fracPart + (isPercent ? '%' : '');
+
+  let num = magnitude * sign;
+  if (isPercent) num = num / 100;
+  // 去除浮点噪声（如 3.14/100 = 0.031400000000000004），保持存储值整洁且展示不受影响
+  num = Math.round(num * 1e12) / 1e12;
+
+  return { num, format };
+}
+
 /** 根据分类 + 小数位数 + 千位分隔符生成格式代码 */
 export function buildNumberFormatCode(
   locale: string,

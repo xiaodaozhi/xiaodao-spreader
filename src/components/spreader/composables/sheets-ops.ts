@@ -1,8 +1,10 @@
 import { ref, reactive, computed, watch, nextTick, type Ref, type ComputedRef } from 'vue';
 import { DEFAULT_COL_WIDTH, lightTheme, darkTheme } from '../core/constants';
-import type { ThemeColors, SheetState, SheetModelData } from '../core/types';
+import type { ThemeColors, SheetState, SheetModelData, CellData } from '../core/types';
 import { resolveSize } from '../core/utils';
 import { buildOuterStyle } from '../core/theme';
+import { clearEvalCache } from '../core/formula';
+import { parseSortKeyByDisplay, buildSortedRowOrder, looksLikeHeader, type SortOrder, type SortKey } from '../core/sort-core';
 import type { CoreState } from './core-state';
 import type { UndoStylesState } from './undo-styles';
 
@@ -12,6 +14,18 @@ export interface SheetsOpsState {
   insertRows: (rS: number, rE: number) => void;
   insertCols: (cS: number, cE: number) => void;
   deleteCols: (cS: number, cE: number) => void;
+
+  // 列排序（以整行为移动单位，依据选中列范围的第一列）
+  sortSelectedColumns: (order: SortOrder) => void;
+  canSortColumns: (sC: number, eC: number) => boolean;
+
+  // 工具栏排序下拉框（分体式，与边框下拉框交互一致）
+  sortMenuOpen: Ref<boolean>;
+  /** 上一次使用的排序方向：功能按钮默认升序，从下拉选择后记忆该项 */
+  cachedSortOrder: Ref<SortOrder>;
+  onSortMenuToggle: (v: boolean) => void;
+  onSortChange: (order: SortOrder) => void;
+  applyCachedSort: () => void;
 
   // 多 Sheet 管理
   sheets: Ref<SheetState[]>;
@@ -153,6 +167,152 @@ export function createSheetsOps(
       s.colWidths.value[c] = DEFAULT_COL_WIDTH;
     }
     applyAdjustedMerges(rebuiltMerges);
+  }
+
+  // ============ 列排序 ============
+  // 以「整行」为移动单位：按第一列 sC 对选中列范围 [sC..eC] 的数据行排序，
+  // CellData（含 styleId → 字体/填充/边框/数字格式）随单元格整体移动，不改变 Cell.value。
+  // 阻断条件（对齐 Excel）：区域内存在公式单元格或相交的合并单元格 → 不可排序。
+  interface SortRangeInfo {
+    firstRow: number;
+    lastRow: number;
+    /** 实际参与排序的起始行（识别出表头时为首个数据行） */
+    sortStart: number;
+    blocked: boolean;
+  }
+
+  /** 扫描选中列的数据行范围、启发式识别表头并判断可排序性；无数据返回 null */
+  /** 取单元格（原始）数字格式代码，供排序按展示内容解析比较键 */
+  function getCellNF(c: number, r: number): string {
+    const st = s.resolveStyle(s.cells[s.cellKey(c, r)]);
+    return typeof st?.numberFormat === 'string' ? st.numberFormat : '';
+  }
+
+  function analyzeSortRange(sC: number, eC: number): SortRangeInfo | null {
+    let firstRow = -1, lastRow = -1;
+    for (let r = 0; r < s.rowCount; r++) {
+      let has = false;
+      for (let c = sC; c <= eC; c++) {
+        if (s.getCellRaw(c, r).trim() !== '') { has = true; break; }
+      }
+      if (has) {
+        if (firstRow < 0) firstRow = r;
+        lastRow = r;
+      }
+    }
+    if (firstRow < 0) return null;
+    // 表头启发式识别（基于关键列 sC，按展示内容解析比较键）
+    const keys: SortKey[] = [];
+    for (let r = firstRow; r <= lastRow; r++) {
+      const raw = s.getCellRaw(sC, r);
+      keys.push(parseSortKeyByDisplay(raw, getCellNF(sC, r), s.locale.value));
+    }
+    const sortStart = looksLikeHeader(keys) ? firstRow + 1 : firstRow;
+    // 阻断：范围内存在公式单元格（排序会造成引用错位，现有公式架构不支持置换重写）
+    let blocked = false;
+    for (let r = firstRow; r <= lastRow && !blocked; r++) {
+      for (let c = sC; c <= eC; c++) {
+        const cell = s.cells[s.cellKey(c, r)];
+        if (cell && cell.value.startsWith('=')) { blocked = true; break; }
+      }
+    }
+    // 阻断：存在与选中列相交、且起始行位于数据区域范围内或上方的合并单元格
+    // （避免跨列合并的标题行/表头行位于 sortStart 之上时被漏检，见 issue 复现截图）
+    if (!blocked) {
+      for (const k in s.merges) {
+        const m = s.merges[k];
+        if (!m) continue;
+        if (m.startCol <= eC && m.endCol >= sC && m.startRow <= lastRow) {
+          blocked = true;
+          break;
+        }
+      }
+    }
+    return { firstRow, lastRow, sortStart, blocked };
+  }
+
+  function canSortColumns(sC: number, eC: number): boolean {
+    const info = analyzeSortRange(sC, eC);
+    return !!info && !info.blocked && info.sortStart < info.lastRow;
+  }
+
+  function sortSelectedColumns(order: SortOrder) {
+    const sel = s.selection.value;
+    if (!sel) return;
+    const sC = sel.startCol, eC = sel.endCol;
+    const info = analyzeSortRange(sC, eC);
+    if (!info || info.blocked || info.sortStart >= info.lastRow) return;
+    const nCols = eC - sC + 1;
+    const nRows = info.lastRow - info.sortStart + 1;
+    // 快照每行 CellData 引用（不克隆、不新建 Cell 对象）与关键列比较键
+    const rows: (CellData | null)[][] = [];
+    const keys: SortKey[] = [];
+    for (let r = info.sortStart; r <= info.lastRow; r++) {
+      const row: (CellData | null)[] = new Array(nCols);
+      for (let c = sC; c <= eC; c++) {
+        row[c - sC] = s.cells[s.cellKey(c, r)] ?? null;
+      }
+      rows.push(row);
+      const raw = s.getCellRaw(sC, r);
+      keys.push(parseSortKeyByDisplay(raw, getCellNF(sC, r), s.locale.value));
+    }
+    const perm = buildSortedRowOrder(keys, order, s.locale.value);
+    // 置换结果与当前顺序一致 → 不产生无意义的撤销记录
+    let changed = false;
+    for (let i = 0; i < nRows; i++) {
+      if (perm[i] !== i) { changed = true; break; }
+    }
+    if (!changed) return;
+    us.saveUndo();
+    // 一次性按置换写回：仅移动 value（数据），styleId 留在原地不随行重排，
+    // 使排序只改变内容、不改变各单元格样式（边框/背景/字体/数字格式）。
+    for (let i = 0; i < nRows; i++) {
+      const src = rows[perm[i]!]!;
+      const r = info.sortStart + i;
+      for (let c = sC; c <= eC; c++) {
+        const k = s.cellKey(c, r);
+        const srcCell = src[c - sC];
+        const val = srcCell ? srcCell.value : '';
+        const destStyleId = s.cells[k]?.styleId; // 目标位置原有样式（保持不动）
+        if (val !== '' || destStyleId !== undefined) {
+          s.cells[k] = { value: val, styleId: destStyleId };
+        } else {
+          s.delCell(k);
+        }
+      }
+    }
+    // 失效求值缓存并标记外部公式依赖为脏（范围外引用坐标不变，与 Excel 语义一致）
+    clearEvalCache();
+    for (let r = info.sortStart; r <= info.lastRow; r++) {
+      for (let c = sC; c <= eC; c++) s.formulaDeps.markDirty(s.cellKey(c, r));
+    }
+    s.scheduleRender?.();
+    emitModelData();
+  }
+
+  // ============ 工具栏排序下拉框（分体式，与边框下拉框交互一致） ============
+  const sortMenuOpen = ref(false);
+  // 上一次使用的排序方向：功能按钮默认升序，从下拉菜单选择后记忆该项
+  const cachedSortOrder = ref<SortOrder>('asc');
+
+  function onSortMenuToggle(v: boolean) {
+    sortMenuOpen.value = v;
+    if (v) {
+      us.textColorMenuOpen.value = false;
+      us.fillColorMenuOpen.value = false;
+      us.fontSizeMenuOpen.value = false;
+    }
+  }
+
+  /** 下拉菜单选中：记忆选项并立即对当前选区执行排序（同 onBorderChange） */
+  function onSortChange(order: SortOrder) {
+    cachedSortOrder.value = order;
+    sortSelectedColumns(order);
+  }
+
+  /** 功能按钮：应用上一次从下拉菜单使用的排序项（默认升序） */
+  function applyCachedSort() {
+    sortSelectedColumns(cachedSortOrder.value);
   }
 
   // ============ 合并单元格在 插入/删除 行列时的调整 ============
@@ -619,6 +779,15 @@ export function createSheetsOps(
     insertRows,
     insertCols,
     deleteCols,
+
+    sortSelectedColumns,
+    canSortColumns,
+
+    sortMenuOpen,
+    cachedSortOrder,
+    onSortMenuToggle,
+    onSortChange,
+    applyCachedSort,
 
     sheets,
     activeSheetIndex,

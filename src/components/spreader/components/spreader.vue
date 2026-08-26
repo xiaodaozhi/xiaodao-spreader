@@ -120,6 +120,8 @@ const sheetsOps = reactive(sheetsOpsRaw) as unknown as UnwrapRef<SheetsOpsState>
 // 直接用 sheetsOpsRaw 的顶层 ref 暴露给模板，避免 reactive 嵌套属性在 prop 传递时丢失响应式追踪
 const sheets = sheetsOpsRaw.sheets;
 const activeSheetIndex = sheetsOpsRaw.activeSheetIndex;
+const sortMenuOpen = sheetsOpsRaw.sortMenuOpen;
+const cachedSortOrder = sheetsOpsRaw.cachedSortOrder;
 const interactions = reactive(interactionsRaw) as unknown as UnwrapRef<InteractionsState>;
 const findReplace = reactive(findReplaceRaw) as unknown as UnwrapRef<FindReplaceState>;
 
@@ -210,6 +212,8 @@ const setDimInputRef = (el: unknown) => {
       :cached-fill-color="undoStyles.cachedFillColor"
       :border-menu-open="bordersMerge.borderMenuOpen"
       :cached-border="bordersMerge.cachedBorder"
+      :sort-menu-open="sortMenuOpen"
+      :cached-sort-order="cachedSortOrder"
       :h-align-options="undoStyles.hAlignOptions"
       :v-align-options="undoStyles.vAlignOptions"
       :sel-h-align="undoStyles.selHAlign"
@@ -252,6 +256,9 @@ const setDimInputRef = (el: unknown) => {
       @update:border-menu-open="undoStyles.onBorderMenuToggle($event)"
       @border-change="bordersMerge.onBorderChange($event)"
       @apply-border="bordersMerge.applyCachedBorder"
+      @update:sort-menu-open="sheetsOps.onSortMenuToggle($event)"
+      @sort-change="sheetsOps.onSortChange($event)"
+      @apply-sort="sheetsOps.applyCachedSort"
       @h-align-change="undoStyles.onHAlignChange($event)"
       @v-align-change="undoStyles.onVAlignChange($event)"
       @wrap-toggle="undoStyles.onWrapToggle"
@@ -550,10 +557,16 @@ const setDimInputRef = (el: unknown) => {
               @mouseenter="interactions.onCtxItemEnter($event, item)"
             >
               <span class="context-menu__label">{{ item.label }}</span>
-              <span
+              <svg
                 v-if="item.children"
                 class="context-menu__arrow"
-              />
+                viewBox="0 0 1024 1024"
+                version="1.1"
+                xmlns="http://www.w3.org/2000/svg"
+                p-id="22869"
+              >
+                <path d="M361.386667 180.053333a32 32 0 0 0 0 45.226667L648.106667 512l-286.72 286.72a32 32 0 1 0 45.226666 45.226667l309.333334-309.333334a32 32 0 0 0 0-45.226666L406.613333 180.053333a32 32 0 0 0-45.226666 0z" p-id="22870" />
+              </svg>
               <div
                 v-if="item.children"
                 class="context-submenu"
@@ -602,7 +615,6 @@ const setDimInputRef = (el: unknown) => {
               @keydown="interactions.onDimKeydown"
               @blur="interactions.onDimBlur"
             >
-            <span class="dim-panel__unit">px</span>
           </div>
           <div
             v-if="interactions.dimPanel.error"
@@ -672,14 +684,14 @@ const setDimInputRef = (el: unknown) => {
 
 <style>
 .context-menu { position: fixed; z-index: 10000; background: #fff; border: 1px solid #ccc; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); padding: 4px 0; min-width: 120px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; font-size: 13px; transform-origin: top left; }
-.context-menu__item { padding: 6px 20px; cursor: pointer; color: #333; white-space: nowrap; position: relative; display: flex; align-items: center; justify-content: space-between; }
+.context-menu__item { padding: 6px 12px; cursor: pointer; color: #333; white-space: nowrap; position: relative; display: flex; align-items: center; justify-content: space-between; }
 .context-menu__item:hover { background: #e8f0fe; }
 .context-menu__item--disabled { color: #bbb; cursor: default; }
 .context-menu__item--disabled:hover { background: transparent; }
-.context-menu__arrow { margin-left: 16px; margin-right: -5px; width: 0; height: 0; border-top: 3px solid transparent; border-bottom: 3px solid transparent; border-left: 4px solid #888; }
+.context-menu__arrow { margin-left: 8px; margin-right: -2px; width: 12px; height: 12px; fill: #888; flex: none; }
 .context-submenu { display: none; position: absolute; left: 100%; top: -4px; background: #fff; border: 1px solid #ccc; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); padding: 4px 0; min-width: 100px; z-index: 10001; }
 .context-submenu--left { left: auto; right: 100%; }
-.context-menu__item:hover > .context-submenu { display: block; }
+.context-menu__item:not(.context-menu__item--disabled):hover > .context-submenu { display: block; }
 .context-submenu .context-menu__item { justify-content: flex-start; }
 .menu-pop-enter-active, .menu-pop-leave-active { transition: opacity 0.12s ease-out, transform 0.12s ease-out; }
 .menu-pop-enter-from, .menu-pop-leave-to { opacity: 0; transform: scale(0.9); }
@@ -691,7 +703,6 @@ const setDimInputRef = (el: unknown) => {
 .dim-panel__input { flex: 1; height: 26px; border: 1px solid #c0c0c0; border-radius: 3px; outline: none; padding: 0 6px; font-size: 13px; color: #1a1a1a; background: #fff; box-sizing: border-box; }
 .dim-panel__input:focus { border-color: #0078d7; box-shadow: 0 0 0 1px rgba(0, 120, 215, 0.3); }
 .dim-panel__input--error { border-color: #d93025; box-shadow: 0 0 0 1px rgba(217, 48, 37, 0.3); }
-.dim-panel__unit { font-size: 12px; color: #888; }
 .dim-panel__error { margin-top: 6px; font-size: 12px; color: #d93025; line-height: 1.4; }
 .dim-panel__footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
 .dim-panel__btn { height: 26px; padding: 0 14px; border: 1px solid #ccc; border-radius: 3px; background: #fff; color: #333; font-size: 13px; cursor: pointer; }

@@ -6,8 +6,10 @@ import { NF_MIXED, type NFOption } from '../core/number-format';
 import SpDropdown from './dropdown.vue';
 import ColorPicker from './pickers/colorPicker.vue';
 import BorderPicker, { type BorderType } from './pickers/borderPicker.vue';
+import SortPicker from './pickers/sortPicker.vue';
 import MergePicker from './pickers/mergePicker.vue';
 import CalcPicker from './pickers/calcPicker.vue';
+import type { SortOrder } from '../core/sort-core';
 
 // 田字型边框按钮图标：4 个外边 + 1 条竖中线 + 1 条横中线（与 borderPicker.vue 保持一致）
 interface BorderSeg { name: string; x1: number; y1: number; x2: number; y2: number }
@@ -45,11 +47,23 @@ function segRole(bt: BorderType, name: string): 'solid' | 'dashed' | 'thick' {
   return 'dashed';
 }
 
+// 排序按钮图标：左侧三条渐宽横线 + 右侧方向箭头（与 sortPicker.vue 保持一致）
+interface SortBar { name: string; x1: number; y1: number; x2: number; y2: number }
+const SORT_BARS: SortBar[] = [
+  { name: 'bar1', x1: 96, y1: 224, x2: 352, y2: 224 },
+  { name: 'bar2', x1: 96, y1: 512, x2: 512, y2: 512 },
+  { name: 'bar3', x1: 96, y1: 800, x2: 672, y2: 800 },
+];
+const SORT_ARROW_PATHS: Record<SortOrder, string> = {
+  asc: 'M832 800V288M672 448l160-160 160 160',
+  desc: 'M832 224v512M672 576l160 160 160-160',
+};
+
 // ============ 工具栏溢出 → 「更多」菜单 ============
 // 工具项顺序与 data-key 一一对应
 const TOOL_KEYS = [
   'undo', 'redo', 'paint', 'clear', 'sep1', 'font', 'fontSize', 'sep2',
-  'bold', 'italic', 'underline', 'strike', 'sep3', 'textColor', 'fillColor', 'border',
+  'bold', 'italic', 'underline', 'strike', 'sep3', 'textColor', 'fillColor', 'border', 'sort',
   'sep4', 'hAlign', 'vAlign', 'wrap', 'merge', 'sep6', 'numFmt', 'sep7', 'calc', 'find',
 ] as const;
 
@@ -59,6 +73,7 @@ const moreBtnEl = ref<HTMLElement | null>(null);
 const textColorArrowRef = ref<HTMLElement | null>(null);
 const fillColorArrowRef = ref<HTMLElement | null>(null);
 const borderArrowRef = ref<HTMLElement | null>(null);
+const sortArrowRef = ref<HTMLElement | null>(null);
 const mergeArrowRef = ref<HTMLElement | null>(null);
 const calcArrowRef = ref<HTMLElement | null>(null);
 const fontSizeArrowRef = ref<HTMLElement | null>(null);
@@ -266,6 +281,8 @@ const props = defineProps<{
   cachedFillColor: string;
   borderMenuOpen: boolean;
   cachedBorder: BorderType;
+  sortMenuOpen: boolean;
+  cachedSortOrder: SortOrder;
   selHAlign: string;
   selVAlign: string;
   selWrap: boolean;
@@ -283,12 +300,13 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  (e: 'undo' | 'redo' | 'paint-format' | 'clear-format' | 'font-size-blur' | 'font-size-toggle' | 'font-size-step-up' | 'font-size-step-down' | 'bold-toggle' | 'italic-toggle' | 'underline-toggle' | 'strikethrough-toggle' | 'apply-text-color' | 'apply-fill-color' | 'apply-border' | 'wrap-toggle' | 'apply-merge' | 'calc-sum' | 'calc-avg' | 'calc-count' | 'find' | 'increase-decimals' | 'decrease-decimals'): void;
+  (e: 'undo' | 'redo' | 'paint-format' | 'clear-format' | 'font-size-blur' | 'font-size-toggle' | 'font-size-step-up' | 'font-size-step-down' | 'bold-toggle' | 'italic-toggle' | 'underline-toggle' | 'strikethrough-toggle' | 'apply-text-color' | 'apply-fill-color' | 'apply-border' | 'apply-sort' | 'wrap-toggle' | 'apply-merge' | 'calc-sum' | 'calc-avg' | 'calc-count' | 'find' | 'increase-decimals' | 'decrease-decimals'): void;
   (e: 'font-family-change' | 'font-size-change' | 'h-align-change' | 'v-align-change', v: string | number): void;
   (e: 'font-size-input' | 'text-color-change' | 'fill-color-change' | 'number-format-change', v: string): void;
   (e: 'font-size-keydown', ev: KeyboardEvent): void;
-  (e: 'update:font-size-menu-open' | 'update:text-color-menu-open' | 'update:fill-color-menu-open' | 'update:border-menu-open' | 'update:merge-menu-open' | 'update:calc-menu-open', v: boolean): void;
+  (e: 'update:font-size-menu-open' | 'update:text-color-menu-open' | 'update:fill-color-menu-open' | 'update:border-menu-open' | 'update:sort-menu-open' | 'update:merge-menu-open' | 'update:calc-menu-open', v: boolean): void;
   (e: 'border-change', v: BorderType): void;
+  (e: 'sort-change', v: SortOrder): void;
   (e: 'merge-change', v: MergeType): void;
 }>();
 
@@ -800,6 +818,65 @@ const nfFallbackLabel = computed(() =>
             :trigger-el="borderArrowRef"
             @update:model-open="emit('update:border-menu-open', $event)"
             @change="emit('border-change', $event)"
+          />
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- 排序 -->
+    <Teleport
+      :disabled="teleportDisabled('sort')"
+      :to="overflowMenuTarget"
+    >
+      <div
+        class="tb-item"
+        data-key="sort"
+      >
+        <div class="toolbar-split">
+          <button
+            class="toolbar-btn toolbar-split__main"
+            :title="cachedSortOrder === 'asc' ? t(locale, 'sortAsc') : t(locale, 'sortDesc')"
+            :disabled="!hasSelection"
+            @click="emit('apply-sort')"
+          >
+            <svg
+              viewBox="0 0 1024 1024"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="64"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <line
+                v-for="b in SORT_BARS"
+                :key="b.name"
+                :x1="b.x1"
+                :y1="b.y1"
+                :x2="b.x2"
+                :y2="b.y2"
+              />
+              <path :d="SORT_ARROW_PATHS[cachedSortOrder]" />
+            </svg>
+          </button>
+          <button
+            ref="sortArrowRef"
+            class="toolbar-btn toolbar-split__arrow"
+            :title="t(locale, 'sort')"
+            :disabled="!hasSelection"
+            @click="emit('update:sort-menu-open', !sortMenuOpen)"
+          >
+            <svg
+              viewBox="0 0 1024 1024"
+              fill="currentColor"
+            ><path d="M180.053 361.387a32 32 0 0 1 45.227 0L512 648.107l286.72-286.72a32 32 0 1 1 45.227 45.227l-309.334 309.333a32 32 0 0 1-45.226 0L180.053 406.613a32 32 0 0 1 0-45.226z" /></svg>
+          </button>
+          <SortPicker
+            :model-open="sortMenuOpen"
+            :locale="locale"
+            :current-sort="cachedSortOrder"
+            :trigger-el="sortArrowRef"
+            @update:model-open="emit('update:sort-menu-open', $event)"
+            @change="emit('sort-change', $event)"
           />
         </div>
       </div>
