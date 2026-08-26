@@ -27,6 +27,7 @@ export interface InteractionsState {
   onFormulaBarBlur: () => void;
   acceptFormulaBarEdit: () => void;      // 接受（✔/Enter/blur）：将 draft → s.editValue → commit → Cell.value
   cancelFormulaBarEdit: () => void;      // 取消（✖/Esc）：丢弃 draft，回到进入编辑前的单元格值
+  insertFunctionIntoCell: (text: string) => void; // 插入函数对话框「插入」：将公式直接写入目标单元格（落盘）
 
   // Tab 栏
   renTab: Ref<number | null>;
@@ -693,11 +694,41 @@ export function createInteractions(
    */
   function onFormulaBarInput(e: Event) {
     const v = (e.target as HTMLTextAreaElement).value;
+    if (!s.editingCell.value) {
+      // 首次输入即进入编辑态：必须把已输入内容作为 startEdit 初值，
+      // 否则 startEdit() 无参时编辑缓冲 = 单元格原值，随后 editingCell watcher
+      // 会用「原值」覆盖 formulaBarDraft，把用户刚敲入的字符瞬间抹掉（首键丢失 BUG）。
+      s.startEdit(v);
+    } else {
+      // 已处于编辑态（如首键已进入）：行内编辑器 textarea 的 :value = s.editValue，
+      // 单元格实时显示靠它。必须同步 editValue，否则后续输入只更新草稿、画布单元格停在首字符。
+      // 注意：落盘仍由 acceptFormulaBarEdit 按 fbDirty 走 formulaBarDraft，这里只影响实时显示，不破坏数据源判定。
+      s.editValue.value = v;
+    }
+    // 兜底：无论何种路径，草稿都必须是用户输入的当前文本（防止被 watcher 用原值覆盖）。
     formulaBarDraft.value = v;
     fbDirty = true; // 用户在公式栏输入了，即使输入为空（删除全部）也算用户意图
-    if (!s.editingCell.value) {
-      s.startEdit();
+  }
+
+  /**
+   * 插入函数对话框「插入」入口：将对话框中编辑好的公式直接写入目标单元格（立即落盘）。
+   *  - 编辑态：写入 s.editValue 后 commitEdit（与行内编辑器「接受」一致）
+   *  - 非编辑态：saveUndo + setCellValue（与公式栏「接受」落盘一致）
+   *  - 不依赖公式栏草稿流程，插入后单元格即为最终结果
+   */
+  function insertFunctionIntoCell(text: string) {
+    const ac = { ...s.activeCell.value };
+    if (s.editingCell.value) {
+      s.editValue.value = text;
+      s.commitEdit();
+    } else {
+      s.saveUndo?.();
+      s.setCellValue(ac.col, ac.row, text);
     }
+    formulaBarDraft.value = '';
+    fbDirty = false;
+    scheduleRender();
+    so.emitModelData?.();
   }
 
   // 幂等保护：blur → accept → blur → cancel 这种链式异步重入时，只允许结束一次
@@ -2170,6 +2201,7 @@ export function createInteractions(
     onFormulaBarBlur,
     acceptFormulaBarEdit,
     cancelFormulaBarEdit,
+    insertFunctionIntoCell,
 
     renTab,
     renTabVal,

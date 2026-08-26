@@ -11,6 +11,73 @@ import { cellKey, labelToCol, parseCellRef as utilParseCellRef } from './utils';
  */
 export type FormulaValue = string | number | null;
 
+/** 插入函数对话框可选的公式预设（与 dispatch 支持的函数保持一致） */
+export const FORMULA_PRESETS: { name: string; snippet: string }[] = [
+  { name: 'SUM', snippet: 'SUM(A1:A10)' },
+  { name: 'AVERAGE', snippet: 'AVERAGE(A1:A10)' },
+  { name: 'COUNT', snippet: 'COUNT(A1:A10)' },
+  { name: 'IF', snippet: 'IF(A1>0, B1, C1)' },
+  { name: 'VLOOKUP', snippet: 'VLOOKUP(A1, B1:C10, 2, FALSE)' },
+  { name: 'CONCATENATE', snippet: 'CONCATENATE(A1, B1)' },
+];
+
+/** 公式结构校验结果：ok=结构合法可求值；name=顶层函数名（大写），无法识别结构时为 null */
+export interface FormulaCheck {
+  ok: boolean;
+  name: string | null;
+}
+
+/** 各函数的顶层参数数量约束（与 dispatch 的实际要求一致） */
+const FN_ARG_COUNTS: Record<string, { min: number; max: number }> = {
+  SUM: { min: 1, max: 1 },
+  AVERAGE: { min: 1, max: 1 },
+  COUNT: { min: 1, max: 1 },
+  IF: { min: 3, max: 3 },
+  VLOOKUP: { min: 3, max: 4 },
+  CONCATENATE: { min: 1, max: Infinity },
+};
+
+/** 判断字符串中括号是否配平（跳过引号字符串内的括号） */
+function parensBalanced(s: string): boolean {
+  let depth = 0;
+  let inStr: string | null = null;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i]!;
+    if (inStr) {
+      if (ch === inStr) {
+        if (s[i + 1] === inStr) i++;
+        else inStr = null;
+      }
+      continue;
+    }
+    if (ch === '"' || ch === '\'') { inStr = ch; continue; }
+    if (ch === '(') depth++;
+    else if (ch === ')') { depth--; if (depth < 0) return false; }
+  }
+  return depth === 0;
+}
+
+/**
+ * 校验公式文本结构：以 = 开头、=FUNC(args) 顶层结构、FUNC 受支持、
+ * 括号配平、顶层参数数量合规且非空。用于插入函数对话框「插入」按钮的可用性判断。
+ */
+export function checkFormulaStructure(text: string): FormulaCheck {
+  const s = text.trim();
+  if (!s.startsWith('=')) return { ok: false, name: null };
+  const fm = /^([A-Za-z_][A-Za-z0-9_]*)\s*\(([\s\S]*)\)$/.exec(s.slice(1).trim());
+  if (!fm) return { ok: false, name: null };
+  const name = fm[1]!.toUpperCase();
+  const spec = FN_ARG_COUNTS[name];
+  if (!spec) return { ok: false, name };
+  const inner = fm[2]!;
+  if (!parensBalanced(inner)) return { ok: false, name };
+  const args = splitTopLevelArgs(inner);
+  const count = args.length === 1 && args[0]!.trim() === '' ? 0 : args.length;
+  if (count < spec.min || count > spec.max) return { ok: false, name };
+  if (args.some(a => a.trim() === '')) return { ok: false, name };
+  return { ok: true, name };
+}
+
 /** 解析区域引用（如 "A1:B5" → {sc, sr, ec, er}） */
 export function parseRangeRef(
   rangeRef: string,

@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { ref, reactive, computed, type Ref, type UnwrapRef } from 'vue';
-import { HEADER_HEIGHT, HEADER_WIDTH, SB_SIZE } from '../core/constants';
+import { HEADER_HEIGHT, HEADER_WIDTH, SB_SIZE, t } from '../core/constants';
 import Toolbar from './toolbar.vue';
 import Tabbar from './tabbar.vue';
 import FindReplaceBar from './find-replace-bar.vue';
 import NumberFormatDialog from './pickers/numberFormatDialog.vue';
 import SortConfirmDialog from './pickers/sortConfirmDialog.vue';
+import InsertFunctionDialog from './pickers/insertFunctionDialog.vue';
 import type { SheetModelData, SheetState } from '../core/types';
 
 import { createCoreState, type CoreState } from '../composables/core-state';
@@ -150,6 +151,18 @@ const nfDialogCurrentFormat = computed(() => {
 
 function setNfDialogOpen(v: boolean) {
   undoStylesRaw.nfDialogOpen.value = v;
+}
+
+// ============ 插入函数对话框 ============
+const insertFuncOpen = ref(false);
+function openInsertFunctionDialog() {
+  insertFuncOpen.value = true;
+}
+function setInsertFuncOpen(v: boolean) {
+  insertFuncOpen.value = v;
+}
+function onInsertFunction(text: string) {
+  interactionsRaw.insertFunctionIntoCell(text);
 }
 
 // ============ 模板赋值辅助函数（用于 @update:xxx 事件）============
@@ -326,6 +339,14 @@ const setDimInputRef = (el: unknown) => {
       @cancel="sheetsOps.cancelSortConfirmation()"
     />
 
+    <!-- 插入函数对话框 -->
+    <InsertFunctionDialog
+      :model-open="insertFuncOpen"
+      :locale="coreState.locale"
+      @update:model-open="setInsertFuncOpen($event)"
+      @insert="onInsertFunction($event)"
+    />
+
     <!-- 编辑栏 -->
     <div
       class="formula-bar"
@@ -381,6 +402,16 @@ const setDimInputRef = (el: unknown) => {
               stroke-linejoin="round"
             />
           </svg>
+        </button>
+        <button
+          type="button"
+          class="formula-bar__btn formula-bar__btn--fx"
+          :title="t(coreState.locale, 'insertFunctionTitle')"
+          :aria-label="t(coreState.locale, 'insertFunctionTitle')"
+          @mousedown.prevent
+          @click.stop="openInsertFunctionDialog"
+        >
+          <span class="formula-bar__fx-label">fx</span>
         </button>
       </div>
       <textarea
@@ -671,6 +702,15 @@ const setDimInputRef = (el: unknown) => {
 .formula-bar__btn:hover { background: var(--sp-scroll-btn-hover-bg, #f0f0f0); }
 .formula-bar__btn--cancel:hover { color: #e53935; background: #fdecea; }
 .formula-bar__btn--accept:hover { color: #2e7d32; background: #e8f5e9; }
+.formula-bar__fx-label {
+  font-family: Georgia, "Times New Roman", serif;
+  font-style: italic;
+  font-weight: 600;
+  font-size: 13px;
+  line-height: 1;
+  user-select: none;
+}
+.formula-bar__btn--fx:hover { background: var(--sp-scroll-btn-hover-bg, #f0f0f0); }
 .formula-bar__input { flex: 1; min-height: 28px; height: 28px; line-height: 20px; margin-top: 4px; border: 1px solid var(--sp-formula-bar-input-border); border-radius: 2px; outline: none; padding: 3px 6px; margin-left: 4px; font-size: 13px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; color: var(--sp-formula-bar-input-color); background: var(--sp-formula-bar-input-bg); resize: none; overflow: hidden; box-sizing: border-box; }
 .formula-bar__input--expanded { height: 68px; overflow: auto; }
 .formula-bar__input:focus { border-color: var(--sp-formula-bar-input-focus-border); box-shadow: 0 0 0 1px var(--sp-formula-bar-input-focus-shadow); }

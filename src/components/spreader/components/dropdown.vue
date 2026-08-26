@@ -15,6 +15,10 @@ const props = withDefaults(defineProps<{
   triggerEl?: HTMLElement | null;
   /** 当前值未命中任何选项时触发器显示的占位文本（如选区格式不一致时的「混合」） */
   fallbackLabel?: string;
+  /** 是否启用菜单内搜索框（仅按 label 实时过滤，不改变选中，须点击菜单项才算数） */
+  searchable?: boolean;
+  /** 搜索框占位文本 */
+  searchPlaceholder?: string;
 }>(), {
   width: 'auto',
   menuWidth: undefined,
@@ -25,6 +29,8 @@ const props = withDefaults(defineProps<{
   align: 'left',
   triggerEl: null,
   fallbackLabel: '',
+  searchable: false,
+  searchPlaceholder: '',
 });
 
 const emit = defineEmits<{
@@ -41,24 +47,35 @@ const pos = ref<{ left?: number; right?: number; top: number; up: boolean }>({ t
 const triggerWidth = ref<number | undefined>(undefined);
 const tY = ref(0);
 const tDrag = ref(false);
+/** 菜单内搜索框的输入值（仅 searchable 时使用） */
+const query = ref('');
+const searchInputRef = ref<HTMLInputElement | null>(null);
 
 const current = computed(() => props.options.find((o) => String(o.value) === String(props.modelValue)));
 const effMenuWidth = computed(() => {
   if (props.menuWidth !== undefined) return props.menuWidth;
   return triggerWidth.value;
 });
-const vc = computed(() => Math.min(props.visibleCount, props.options.length));
-const list = computed(() => props.options.slice(viewStart.value, viewStart.value + vc.value));
+/** 实际参与展示/分页的列表：searchable 时按 query 过滤，否则为全部选项 */
+const baseOptions = computed(() => {
+  if (!props.searchable || !query.value.trim()) return props.options;
+  const q = query.value.trim().toLowerCase();
+  return props.options.filter((o) => String(o.label ?? '').toLowerCase().includes(q));
+});
+const hasMatch = computed(() => baseOptions.value.length > 0);
+const vc = computed(() => Math.min(props.visibleCount, baseOptions.value.length));
+const list = computed(() => baseOptions.value.slice(viewStart.value, viewStart.value + vc.value));
 const canUp = computed(() => viewStart.value > 0);
-const canDown = computed(() => viewStart.value + vc.value < props.options.length);
-const scrollable = computed(() => props.options.length > vc.value);
+const canDown = computed(() => viewStart.value + vc.value < baseOptions.value.length);
+const scrollable = computed(() => baseOptions.value.length > vc.value);
 
 function scrollBy(d: number) {
-  viewStart.value = Math.max(0, Math.min(props.options.length - vc.value, viewStart.value + d));
+  viewStart.value = Math.max(0, Math.min(baseOptions.value.length - vc.value, viewStart.value + d));
 }
 
 function openMenu() {
   open.value = true;
+  if (props.searchable) query.value = '';
   if (props.modelOpen !== undefined) {
     emit('update:modelOpen', true);
   }
@@ -66,7 +83,7 @@ function openMenu() {
   if (!el) return;
   const r = el.getBoundingClientRect();
   triggerWidth.value = r.width;
-  const menuH = vc.value * 22 + (scrollable.value ? 2 * 15 : 0) + 8;
+  const menuH = vc.value * 22 + (scrollable.value ? 2 * 15 : 0) + 8 + (props.searchable ? 34 : 0);
   const spaceBelow = window.innerHeight - r.bottom - 4;
   const up = spaceBelow < menuH && r.top - 4 > menuH;
   if (props.align === 'right') {
@@ -82,14 +99,18 @@ function openMenu() {
       up,
     };
   }
-  const idx = props.options.findIndex((o) => String(o.value) === String(props.modelValue));
+  const idx = baseOptions.value.findIndex((o) => String(o.value) === String(props.modelValue));
   viewStart.value = idx >= 0
-    ? Math.max(0, Math.min(idx - Math.floor(vc.value / 2), props.options.length - vc.value))
+    ? Math.max(0, Math.min(idx - Math.floor(vc.value / 2), baseOptions.value.length - vc.value))
     : 0;
+  if (props.searchable) {
+    nextTick(() => searchInputRef.value?.focus());
+  }
 }
 
 function close() {
   open.value = false;
+  query.value = '';
   if (props.modelOpen !== undefined) {
     emit('update:modelOpen', false);
   }
@@ -175,7 +196,10 @@ function onTe() {
 }
 
 function onKeydown(e: KeyboardEvent) {
-  if (e.key === 'Escape') close();
+  if (e.key === 'Escape') {
+    e.stopPropagation();
+    close();
+  }
 }
 
 onMounted(() => {
@@ -249,6 +273,15 @@ onBeforeUnmount(() => {
               fill="currentColor"
             ><path d="M180.053333 662.613333a32 32 0 0 0 45.226667 0L512 375.893333l286.72 286.72a32 32 0 1 0 45.226667-45.226666l-309.333334-309.333334a32 32 0 0 0-45.226666 0l-309.333334 309.333334a32 32 0 0 0 0 45.226666z" /></svg>
           </button>
+          <input
+            v-if="searchable"
+            ref="searchInputRef"
+            v-model="query"
+            class="sp-dropdown__search"
+            type="text"
+            :placeholder="searchPlaceholder"
+            @mousedown.stop
+          />
           <div
             ref="listRef"
             class="sp-dropdown__list"
@@ -273,6 +306,12 @@ onBeforeUnmount(() => {
               <!-- eslint-enable vue/no-v-html -->
               <span class="sp-dropdown__item-label">{{ o.label }}</span>
             </button>
+          </div>
+          <div
+            v-if="searchable && !hasMatch"
+            class="sp-dropdown__empty"
+          >
+            无匹配
           </div>
           <button
             v-if="scrollable"
@@ -373,6 +412,29 @@ onBeforeUnmount(() => {
   flex-direction: column;
   overflow: hidden;
   touch-action: none;
+}
+.sp-dropdown__search {
+  flex: 0 0 auto;
+  height: 26px;
+  margin-bottom: 4px;
+  padding: 0 8px;
+  border: 1px solid var(--sp-toolbar-border, #d0d0d0);
+  border-radius: 3px;
+  font-size: 12px;
+  font-family: inherit;
+  color: #1a1a1a;
+  outline: none;
+  box-sizing: border-box;
+}
+.sp-dropdown__search:focus {
+  border-color: #0078d7;
+  box-shadow: 0 0 0 1px rgba(0, 120, 215, 0.3);
+}
+.sp-dropdown__empty {
+  padding: 6px 8px;
+  font-size: 12px;
+  color: #999;
+  text-align: center;
 }
 .sp-dropdown__icon { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; }
 .sp-dropdown__icon :deep(svg) { width: 18px; height: 18px; display: block; }
