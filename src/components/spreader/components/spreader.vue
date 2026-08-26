@@ -5,6 +5,7 @@ import Toolbar from './toolbar.vue';
 import Tabbar from './tabbar.vue';
 import FindReplaceBar from './find-replace-bar.vue';
 import NumberFormatDialog from './pickers/numberFormatDialog.vue';
+import SortConfirmDialog from './pickers/sortConfirmDialog.vue';
 import type { SheetModelData, SheetState } from '../core/types';
 
 import { createCoreState, type CoreState } from '../composables/core-state';
@@ -131,6 +132,13 @@ const isSingleCell = computed(() => {
   return !!sel && sel.startCol === sel.endCol && sel.startRow === sel.endRow;
 });
 
+// 排序可用条件：与列右键菜单「排序」子项一致（合并单元格/公式阻断、需有可排数据）
+const canSort = computed(() => {
+  const sel = coreState.selection;
+  if (!sel) return false;
+  return sheetsOpsRaw.canSortColumns(sel.startCol, sel.endCol);
+});
+
 // 数字格式对话框初始格式：选区一致时用该格式；混合或自定义标记（NF_CUSTOM）时回退到活动单元格的真实格式代码，再不行则常规
 const nfDialogCurrentFormat = computed(() => {
   const sel = undoStyles.selNumberFormat;
@@ -214,6 +222,7 @@ const setDimInputRef = (el: unknown) => {
       :cached-border="bordersMerge.cachedBorder"
       :sort-menu-open="sortMenuOpen"
       :cached-sort-order="cachedSortOrder"
+      :can-sort="canSort"
       :h-align-options="undoStyles.hAlignOptions"
       :v-align-options="undoStyles.vAlignOptions"
       :sel-h-align="undoStyles.selHAlign"
@@ -306,6 +315,15 @@ const setDimInputRef = (el: unknown) => {
       :is-custom="undoStyles.selNumberFormat === NF_CUSTOM"
       @update:model-open="setNfDialogOpen($event)"
       @apply="undoStyles.applyNumberFormatCode($event)"
+    />
+
+    <!-- 排序提醒对话框 -->
+    <SortConfirmDialog
+      :model-open="sheetsOps.sortConfirmOpen"
+      :locale="coreState.locale"
+      @update:model-open="sheetsOps.sortConfirmOpen = $event"
+      @confirm="sheetsOps.confirmSort($event)"
+      @cancel="sheetsOps.cancelSortConfirmation()"
     />
 
     <!-- 编辑栏 -->

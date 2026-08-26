@@ -63,8 +63,8 @@ const SORT_ARROW_PATHS: Record<SortOrder, string> = {
 // 工具项顺序与 data-key 一一对应
 const TOOL_KEYS = [
   'undo', 'redo', 'paint', 'clear', 'sep1', 'font', 'fontSize', 'sep2',
-  'bold', 'italic', 'underline', 'strike', 'sep3', 'textColor', 'fillColor', 'border', 'sort',
-  'sep4', 'hAlign', 'vAlign', 'wrap', 'merge', 'sep6', 'numFmt', 'sep7', 'calc', 'find',
+  'bold', 'italic', 'underline', 'strike', 'sep3', 'textColor', 'fillColor', 'border',
+  'sep4', 'hAlign', 'vAlign', 'wrap', 'merge', 'sep6', 'numFmt', 'sep7', 'calc', 'sort', 'find',
 ] as const;
 
 const rootEl = ref<HTMLElement | null>(null);
@@ -283,6 +283,7 @@ const props = defineProps<{
   cachedBorder: BorderType;
   sortMenuOpen: boolean;
   cachedSortOrder: SortOrder;
+  canSort: boolean;
   selHAlign: string;
   selVAlign: string;
   selWrap: boolean;
@@ -823,65 +824,6 @@ const nfFallbackLabel = computed(() =>
       </div>
     </Teleport>
 
-    <!-- 排序 -->
-    <Teleport
-      :disabled="teleportDisabled('sort')"
-      :to="overflowMenuTarget"
-    >
-      <div
-        class="tb-item"
-        data-key="sort"
-      >
-        <div class="toolbar-split">
-          <button
-            class="toolbar-btn toolbar-split__main"
-            :title="cachedSortOrder === 'asc' ? t(locale, 'sortAsc') : t(locale, 'sortDesc')"
-            :disabled="!hasSelection"
-            @click="emit('apply-sort')"
-          >
-            <svg
-              viewBox="0 0 1024 1024"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="64"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <line
-                v-for="b in SORT_BARS"
-                :key="b.name"
-                :x1="b.x1"
-                :y1="b.y1"
-                :x2="b.x2"
-                :y2="b.y2"
-              />
-              <path :d="SORT_ARROW_PATHS[cachedSortOrder]" />
-            </svg>
-          </button>
-          <button
-            ref="sortArrowRef"
-            class="toolbar-btn toolbar-split__arrow"
-            :title="t(locale, 'sort')"
-            :disabled="!hasSelection"
-            @click="emit('update:sort-menu-open', !sortMenuOpen)"
-          >
-            <svg
-              viewBox="0 0 1024 1024"
-              fill="currentColor"
-            ><path d="M180.053 361.387a32 32 0 0 1 45.227 0L512 648.107l286.72-286.72a32 32 0 1 1 45.227 45.227l-309.334 309.333a32 32 0 0 1-45.226 0L180.053 406.613a32 32 0 0 1 0-45.226z" /></svg>
-          </button>
-          <SortPicker
-            :model-open="sortMenuOpen"
-            :locale="locale"
-            :current-sort="cachedSortOrder"
-            :trigger-el="sortArrowRef"
-            @update:model-open="emit('update:sort-menu-open', $event)"
-            @change="emit('sort-change', $event)"
-          />
-        </div>
-      </div>
-    </Teleport>
-
     <Teleport
       :disabled="teleportDisabled('sep4')"
       :to="overflowMenuTarget"
@@ -1137,6 +1079,65 @@ const nfFallbackLabel = computed(() =>
             :disabled="isSingleCell"
             @update:model-open="emit('update:calc-menu-open', $event)"
             @change="emit(`calc-${$event}`)"
+          />
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- 排序 -->
+    <Teleport
+      :disabled="teleportDisabled('sort')"
+      :to="overflowMenuTarget"
+    >
+      <div
+        class="tb-item"
+        data-key="sort"
+      >
+        <div class="toolbar-split">
+          <button
+            class="toolbar-btn toolbar-split__main"
+            :title="cachedSortOrder === 'asc' ? t(locale, 'sortAsc') : t(locale, 'sortDesc')"
+            :disabled="!canSort"
+            @click="emit('apply-sort')"
+          >
+            <svg
+              viewBox="0 0 1024 1024"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="64"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <line
+                v-for="b in SORT_BARS"
+                :key="b.name"
+                :x1="b.x1"
+                :y1="b.y1"
+                :x2="b.x2"
+                :y2="b.y2"
+              />
+              <path :d="SORT_ARROW_PATHS[cachedSortOrder]" />
+            </svg>
+          </button>
+          <button
+            ref="sortArrowRef"
+            class="toolbar-btn toolbar-split__arrow"
+            :title="t(locale, 'sort')"
+            :disabled="!canSort"
+            @click="emit('update:sort-menu-open', !sortMenuOpen)"
+          >
+            <svg
+              viewBox="0 0 1024 1024"
+              fill="currentColor"
+            ><path d="M180.053 361.387a32 32 0 0 1 45.227 0L512 648.107l286.72-286.72a32 32 0 1 1 45.227 45.227l-309.334 309.333a32 32 0 0 1-45.226 0L180.053 406.613a32 32 0 0 1 0-45.226z" /></svg>
+          </button>
+          <SortPicker
+            :model-open="sortMenuOpen"
+            :locale="locale"
+            :current-sort="cachedSortOrder"
+            :trigger-el="sortArrowRef"
+            @update:model-open="emit('update:sort-menu-open', $event)"
+            @change="emit('sort-change', $event)"
           />
         </div>
       </div>

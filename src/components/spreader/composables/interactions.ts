@@ -1146,9 +1146,11 @@ export function createInteractions(
       } },
       { label: t(s.locale.value, 'sort'), disabled: sortDisabled, children: [
         { label: t(s.locale.value, 'sortAsc'), action: () => {
+          if (so.prepareSortConfirmation('asc')) return;
           so.sortSelectedColumns('asc');
         }, disabled: sortDisabled },
         { label: t(s.locale.value, 'sortDesc'), action: () => {
+          if (so.prepareSortConfirmation('desc')) return;
           so.sortSelectedColumns('desc');
         }, disabled: sortDisabled },
       ] },
