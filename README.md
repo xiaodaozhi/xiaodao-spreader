@@ -1,6 +1,6 @@
 # Xiaodao Spreader
 
-[中文](./README.ZH.md) | **English**
+[中文](./README.ZH.md) | **English** | [Demo](https://spreader.xdz.me)
 
 [![Downloads](https://img.shields.io/npm/d18m/xiaodao-spreader)](https://www.npmjs.com/package/xiaodao-spreader)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)

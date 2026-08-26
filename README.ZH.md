@@ -1,6 +1,6 @@
 # 小刀电子表格 (Xiaodao Spreader)
 
-**中文** | [English](./README.md)
+**中文** | [English](./README.md) | [演示](https://spreader.xdz.me)
 
 [![Downloads](https://img.shields.io/npm/d18m/xiaodao-spreader)](https://www.npmjs.com/package/xiaodao-spreader)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
