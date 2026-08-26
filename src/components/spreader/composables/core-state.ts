@@ -325,9 +325,6 @@ export function createCoreState(
   const scrollX = ref(0);
   const scrollY = ref(0);
 
-  // ============ 高 DPI 字号缩放 ============
-  const BASE_CELL_VPAD = (DEFAULT_ROW_HEIGHT - DEFAULT_FONT_SIZE) / 2;
-
   // ============ 字体度量 ============
   const fontMetricsCache = new Map<string, { ascent: number; descent: number }>();
   let fontMetricsCanvas: HTMLCanvasElement | null = null;
@@ -375,6 +372,13 @@ export function createCoreState(
     fontMetricsCache.set(key, result);
     return result;
   }
+
+  // ============ 高 DPI 字号缩放 ============
+  // 基于默认字体的实际行高（ascent + descent）计算内边距，
+  // 确保单行默认文本的自动行高 = DEFAULT_ROW_HEIGHT，与空行一致。
+  const _defMetrics = measureFontMetrics(DEFAULT_FONT_FAMILY, DEFAULT_FONT_SIZE, 'normal', 'normal');
+  const _defLineH = _defMetrics.ascent + _defMetrics.descent;
+  const BASE_CELL_VPAD = Math.max(0, (DEFAULT_ROW_HEIGHT - _defLineH) / 2);
 
   // 先声明 cellKey、findMerge、cellFontSize 等在后面会赋值的引用
   let cellKeyFn: (c: number, r: number) => string = (c, r) => `${c},${r}`;
@@ -440,9 +444,31 @@ export function createCoreState(
   const viewSizeProxy = { w: 800, h: 600 };
   let clampScrollFn: (sx: number | null, sy: number | null) => void = () => {};
 
+  const rowsWithData = computed<Set<number>>(() => {
+    const set = new Set<number>();
+    for (const key in cells) {
+      const commaIdx = key.indexOf(',');
+      if (commaIdx < 0) continue;
+      const r = parseInt(key.substring(commaIdx + 1), 10);
+      const cell = cells[key];
+      if (cell && (cell.value !== '' || cell.styleId !== undefined)) set.add(r);
+    }
+    for (let r = 0; r < rowHeights.value.length; r++) {
+      if (rowHeights.value[r] !== undefined) set.add(r);
+    }
+    for (const key in merges) {
+      const commaIdx = key.indexOf(',');
+      if (commaIdx < 0) continue;
+      const r = parseInt(key.substring(commaIdx + 1), 10);
+      set.add(r);
+    }
+    return set;
+  });
+
   function getRowHeight(r: number): number {
     const h = rowHeights.value[r];
     if (h !== undefined && h !== null && h > 0) return h;
+    if (!rowsWithData.value.has(r)) return DEFAULT_ROW_HEIGHT;
     let maxFs = DEFAULT_FONT_SIZE;
     let maxAsc: number;
     let maxDesc: number;

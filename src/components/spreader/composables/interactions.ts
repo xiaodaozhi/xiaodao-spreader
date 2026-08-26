@@ -158,10 +158,6 @@ export function createInteractions(
     const cP = s.colPositions.value;
     const rP = s.rowPositions.value;
     const cW = s.colWidths.value;
-    const rH: number[] = [];
-    for (let i = 0; i < s.rowCount; i++) {
-      rH[i] = rP[i + 1]! - rP[i]!;
-    }
 
     const sC = Math.max(0, s.hitCol(sx));
     let eC2 = sC;
@@ -189,6 +185,12 @@ export function createInteractions(
       if (m.startRow > eR || m.endRow < sR || m.startCol > eC || m.endCol < sC) continue;
       if (m.startCol < iterC) iterC = m.startCol;
       if (m.startRow < iterR) iterR = m.startRow;
+    }
+
+    // 仅构建可见区间的行高信息，避免遍历全部行
+    const rH: number[] = new Array(iterR);
+    for (let i = iterR; i <= eR; i++) {
+      rH[i] = rP[i + 1]! - rP[i]!;
     }
 
     rCtx.fillStyle = cs.bg;
@@ -420,8 +422,9 @@ export function createInteractions(
             const resolved = resolveSharedBorder(neighborRight, ownBorder.left, 'cell', 'merge');
             if (resolved && resolved.width && resolved.width > 0) {
               const sySeg = HH + rP[rr]! - sy;
+              const rhSeg = rP[rr + 1]! - rP[rr]!;
               rCtx.fillStyle = resolved.color || BORDER_COLOR;
-              rCtx.fillRect(x, sySeg, resolved.width, rH[rr]!);
+              rCtx.fillRect(x, sySeg, resolved.width, rhSeg);
             }
           }
 
@@ -432,8 +435,9 @@ export function createInteractions(
             const resolved = resolveSharedBorder(ownBorder.right, neighborLeft, 'merge', 'cell');
             if (resolved && resolved.width && resolved.width > 0) {
               const sySeg = HH + rP[rr]! - sy;
+              const rhSeg = rP[rr + 1]! - rP[rr]!;
               rCtx.fillStyle = resolved.color || BORDER_COLOR;
-              rCtx.fillRect(x + cw - resolved.width, sySeg, resolved.width, rH[rr]!);
+              rCtx.fillRect(x + cw - resolved.width, sySeg, resolved.width, rhSeg);
             }
           }
 

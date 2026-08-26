@@ -89,25 +89,40 @@ export function createSheetsOps(
     const dr = rE - rS + 1;
     // 先对 merges 做调整规划（此时旧 anchor cell 的 value/style 还在未被删，可用于迁移）
     const rebuiltMerges = adjustMergesForDeleteRows(rS, rE);
-    for (let r = rS; r <= rE; r++) {
-      for (let c = 0; c < s.colCount; c++) s.delCell(s.cellKey(c, r));
-    }
-    for (let r = rS; r < s.rowCount - dr; r++) {
-      for (let c = 0; c < s.colCount; c++) {
-        const sk = s.cellKey(c, r + dr), dk = s.cellKey(c, r);
-        if (s.cells[sk]) {
-          s.cells[dk] = s.cells[sk]!;
-          s.delCell(sk);
-        } else {
-          s.delCell(dk);
-        }
+
+    // 稀疏迭代：仅遍历存在的 cell key，避免 O(行×列) 双重循环
+    type CellShift = { oldKey: string; newKey: string; cell: CellData };
+    const shifts: CellShift[] = [];
+    const keysToDelete: string[] = [];
+
+    for (const key in s.cells) {
+      const commaIdx = key.indexOf(',');
+      if (commaIdx < 0) continue;
+      const c = parseInt(key.substring(0, commaIdx), 10);
+      const r = parseInt(key.substring(commaIdx + 1), 10);
+      if (r >= rS && r <= rE) {
+        keysToDelete.push(key);
+      } else if (r > rE) {
+        shifts.push({ oldKey: key, newKey: s.cellKey(c, r - dr), cell: s.cells[key]! });
       }
-      s.rowHeights.value[r] = s.rowHeights.value[r + dr];
     }
-    for (let r = s.rowCount - dr; r < s.rowCount; r++) {
-      for (let c = 0; c < s.colCount; c++) s.delCell(s.cellKey(c, r));
-      s.rowHeights.value[r] = undefined;
+
+    // 删除范围内的单元格
+    for (const k of keysToDelete) delete s.cells[k];
+    // 移动范围内的单元格到新位置
+    for (const sh of shifts) {
+      delete s.cells[sh.oldKey];
+      s.cells[sh.newKey] = sh.cell;
     }
+
+    // 重建 rowHeights：上半部不变，下半部前移，尾部清空
+    const rH = s.rowHeights.value;
+    const newRH: (number | undefined)[] = new Array(rH.length);
+    for (let r = 0; r < rS; r++) newRH[r] = rH[r];
+    for (let r = rS; r < rH.length - dr; r++) newRH[r] = rH[r + dr];
+    for (let r = rH.length - dr; r < rH.length; r++) newRH[r] = undefined;
+    s.rowHeights.value = newRH;
+
     // 写入新的 merges 并迁移 anchor cell 数据（此时新坐标对应的 cells 已经就位）
     applyAdjustedMerges(rebuiltMerges);
   }
@@ -122,20 +137,41 @@ export function createSheetsOps(
     }
     const origRowCount = s.rowCount; // 扩展后的实际行数
     const rebuiltMerges = adjustMergesForInsertRows(rS, rE);
-    // 移动所有行（包括扩展的行），从最后一行开始，向下移动
-    for (let r = origRowCount - 1; r > rE; r--) {
-      for (let c = 0; c < origColCount; c++) {
-        const sk = s.cellKey(c, r - n), dk = s.cellKey(c, r);
-        if (s.cells[sk]) s.cells[dk] = s.cells[sk]!;
-        else s.delCell(dk);
+
+    // 稀疏迭代：收集需要下移的单元格，按旧行号降序排列
+    type CellShift = { oldKey: string; newKey: string; cell: CellData; oldRow: number };
+    const shifts: CellShift[] = [];
+    for (const key in s.cells) {
+      const commaIdx = key.indexOf(',');
+      if (commaIdx < 0) continue;
+      const c = parseInt(key.substring(0, commaIdx), 10);
+      const r = parseInt(key.substring(commaIdx + 1), 10);
+      if (r >= rS) {
+        shifts.push({ oldKey: key, newKey: s.cellKey(c, r + n), cell: s.cells[key]!, oldRow: r });
       }
-      s.rowHeights.value[r] = s.rowHeights.value[r - n];
     }
-    // 清空插入位置的新行（rS 到 rE 变成了新的空行）
-    for (let r = rS; r <= rE; r++) {
-      for (let c = 0; c < s.colCount; c++) s.delCell(s.cellKey(c, r));
-      s.rowHeights.value[r] = undefined;
+    shifts.sort((a, b) => b.oldRow - a.oldRow);
+    for (const sh of shifts) {
+      delete s.cells[sh.oldKey];
+      s.cells[sh.newKey] = sh.cell;
     }
+
+    // 清空插入位置的新行
+    for (const key in s.cells) {
+      const commaIdx = key.indexOf(',');
+      if (commaIdx < 0) continue;
+      const r = parseInt(key.substring(commaIdx + 1), 10);
+      if (r >= rS && r <= rE) delete s.cells[key];
+    }
+
+    // 重建 rowHeights：上半部不变，中间插入空行，下半部下移
+    const rH = s.rowHeights.value;
+    const newRH: (number | undefined)[] = new Array(origRowCount);
+    for (let r = 0; r < rS; r++) newRH[r] = rH[r];
+    for (let r = rS; r <= rE; r++) newRH[r] = undefined;
+    for (let r = rS; r < origRowCount; r++) newRH[r + n] = rH[r];
+    s.rowHeights.value = newRH;
+
     applyAdjustedMerges(rebuiltMerges);
   }
 
@@ -148,22 +184,82 @@ export function createSheetsOps(
       s.ensureCapacity(currentColCount - 1 + n, origRowCount - 1);
     }
     const origColCount = s.colCount; // 扩展后的实际列数
-    const origRowCount2 = s.rowCount; // 扩展后的实际行数
     const rebuiltMerges = adjustMergesForInsertCols(cS, cE);
-    // 移动所有列（包括扩展的列），从最后一列开始，向右移动
-    for (let c = origColCount - 1; c > cE; c--) {
-      for (let r = 0; r < origRowCount2; r++) {
-        const sk = s.cellKey(c - n, r), dk = s.cellKey(c, r);
-        if (s.cells[sk]) s.cells[dk] = s.cells[sk]!;
-        else s.delCell(dk);
+
+    // 稀疏迭代：收集需要右移的单元格，按旧列号降序排列
+    type CellShift = { oldKey: string; newKey: string; cell: CellData; oldCol: number };
+    const shifts: CellShift[] = [];
+    for (const key in s.cells) {
+      const commaIdx = key.indexOf(',');
+      if (commaIdx < 0) continue;
+      const c = parseInt(key.substring(0, commaIdx), 10);
+      const r = parseInt(key.substring(commaIdx + 1), 10);
+      if (c >= cS) {
+        shifts.push({ oldKey: key, newKey: s.cellKey(c + n, r), cell: s.cells[key]!, oldCol: c });
       }
-      s.colWidths.value[c] = s.colWidths.value[c - n]!;
     }
-    // 清空插入位置的新列（cS 到 cE 变成了新的空列）
-    for (let c = cS; c <= cE; c++) {
-      for (let r = 0; r < s.rowCount; r++) s.delCell(s.cellKey(c, r));
-      s.colWidths.value[c] = DEFAULT_COL_WIDTH;
+    shifts.sort((a, b) => b.oldCol - a.oldCol);
+    for (const sh of shifts) {
+      delete s.cells[sh.oldKey];
+      s.cells[sh.newKey] = sh.cell;
     }
+
+    // 清空插入位置的新列
+    for (const key in s.cells) {
+      const commaIdx = key.indexOf(',');
+      if (commaIdx < 0) continue;
+      const c = parseInt(key.substring(0, commaIdx), 10);
+      if (c >= cS && c <= cE) delete s.cells[key];
+    }
+
+    // 重建 colWidths：左半部不变，中间插入默认列宽，右半部右移
+    const cW = s.colWidths.value;
+    const newCW: number[] = new Array(origColCount);
+    for (let c = 0; c < cS; c++) newCW[c] = cW[c]!;
+    for (let c = cS; c <= cE; c++) newCW[c] = DEFAULT_COL_WIDTH;
+    for (let c = cS; c < origColCount; c++) newCW[c + n] = cW[c]!;
+    s.colWidths.value = newCW;
+
+    applyAdjustedMerges(rebuiltMerges);
+  }
+
+  function deleteCols(cS: number, cE: number) {
+    const dc = cE - cS + 1;
+    const rebuiltMerges = adjustMergesForDeleteCols(cS, cE);
+
+    // 稀疏迭代：仅遍历存在的 cell key
+    type CellShift = { oldKey: string; newKey: string; cell: CellData };
+    const shifts: CellShift[] = [];
+    const keysToDelete: string[] = [];
+
+    for (const key in s.cells) {
+      const commaIdx = key.indexOf(',');
+      if (commaIdx < 0) continue;
+      const c = parseInt(key.substring(0, commaIdx), 10);
+      const r = parseInt(key.substring(commaIdx + 1), 10);
+      if (c >= cS && c <= cE) {
+        keysToDelete.push(key);
+      } else if (c > cE) {
+        shifts.push({ oldKey: key, newKey: s.cellKey(c - dc, r), cell: s.cells[key]! });
+      }
+    }
+
+    // 删除范围内的单元格
+    for (const k of keysToDelete) delete s.cells[k];
+    // 移动范围外的单元格到新位置
+    for (const sh of shifts) {
+      delete s.cells[sh.oldKey];
+      s.cells[sh.newKey] = sh.cell;
+    }
+
+    // 重建 colWidths：左半部不变，右半部前移，尾部清空
+    const cW = s.colWidths.value;
+    const newCW: number[] = new Array(cW.length);
+    for (let c = 0; c < cS; c++) newCW[c] = cW[c]!;
+    for (let c = cS; c < cW.length - dc; c++) newCW[c] = cW[c + dc]!;
+    for (let c = cW.length - dc; c < cW.length; c++) newCW[c] = DEFAULT_COL_WIDTH;
+    s.colWidths.value = newCW;
+
     applyAdjustedMerges(rebuiltMerges);
   }
 
@@ -196,31 +292,6 @@ export function createSheetsOps(
       }
     }
     return { lastCol, lastRow };
-  }
-
-  function deleteCols(cS: number, cE: number) {
-    const dc = cE - cS + 1;
-    const rebuiltMerges = adjustMergesForDeleteCols(cS, cE);
-    for (let c = cS; c <= cE; c++) {
-      for (let r = 0; r < s.rowCount; r++) s.delCell(s.cellKey(c, r));
-    }
-    for (let c = cS; c < s.colCount - dc; c++) {
-      for (let r = 0; r < s.rowCount; r++) {
-        const sk = s.cellKey(c + dc, r), dk = s.cellKey(c, r);
-        if (s.cells[sk]) {
-          s.cells[dk] = s.cells[sk]!;
-          s.delCell(sk);
-        } else {
-          s.delCell(dk);
-        }
-      }
-      s.colWidths.value[c] = s.colWidths.value[c + dc]!;
-    }
-    for (let c = s.colCount - dc; c < s.colCount; c++) {
-      for (let r = 0; r < s.rowCount; r++) s.delCell(s.cellKey(c, r));
-      s.colWidths.value[c] = DEFAULT_COL_WIDTH;
-    }
-    applyAdjustedMerges(rebuiltMerges);
   }
 
   // ============ 列排序 ============
