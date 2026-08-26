@@ -491,7 +491,7 @@ The `ThemeColors` interface includes:
 
 ### 13.3 Interaction Layer
 - **Find/Replace** — *now implemented, see [Section 16](#16-find--replace)*
-- **Data Sort/Filter**
+- **Data Sort/Filter** — *now implemented, see [Section 19](#19-sorting)*
 - **Charts**
 
 ### 13.4 Performance Optimization
@@ -722,3 +722,36 @@ When the renderer draws borders and corner blocks, every adjacent edge goes thro
 - `SheetModelData` / `SheetState` / `UndoSnapshot` all add `borders: BorderStyle[]`.
 - `migrateBordersInStyles(styles)`: migrates legacy inline border props into the `borders` pool + `borderId` mechanism.
 - On load: if `smd.borders` exists it is used directly; otherwise migration runs over `styles`.
+
+---
+
+## 19. Sorting
+
+Located in `spreader/composables/sheets-ops.ts`, with `SortConfirmDialog.vue` providing the warning UI. Sorts the rows of the selected column range by their **displayed content** — numbers, dates, and text are all supported.
+
+### 19.1 Key Column & Display-based Comparison
+- The **key column** (the column that decides row order) is the first column of the user's *original* selection. When the selection is expanded via the Sort Warning dialog, the key column stays fixed at the original selection's first column — it does **not** shift to the leftmost expanded column.
+- Comparison keys come from `parseSortKeyByDisplay(raw, format, locale)`:
+  - Numbers / dates compare by their **displayed numeric value**; percent formats scale back by 100 so `100%` sorts as `100`, matching what the eye sees.
+  - Text (including the explicit Text format `@`) compares by the rendered string from `formatNumber`.
+  - A non-numeric cell inside a numeric-format column falls back to its display text instead of throwing.
+
+### 19.2 Data-only, Style-preserving
+Sorting moves only `Cell.value`; the target cell's `styleId` stays in place. Styles (border / fill / font / number format) never travel with the row, so sorting reorders content without disturbing per-cell styling.
+
+### 19.3 Blocking Conditions
+`analyzeSortRange` returns `blocked: true` (disabling sort) when the selected range contains:
+- a **formula cell** (value starts with `=`), because row permutation would corrupt formula references (the current formula architecture does not rewrite references);
+- a **merged cell** whose row range intersects the selection's row range (the column already overlaps).
+
+Both conditions mirror the right-click column-menu "Sort" availability (`canSortColumns`).
+
+### 19.4 Sort Warning Dialog (Excel-style)
+When the selection has adjacent data outside it, an Excel-style **Sort Warning** dialog (`SortConfirmDialog.vue`) appears before sorting:
+- **Expand the selection** — the sort range extends *horizontally* to adjacent columns that have data (rows stay exactly as the user selected); the key column remains the original first column.
+- **Sort the current selection only** — sort exactly the selected rectangle.
+
+Detection uses `getCurrentRegion(sel)` (horizontal-only expansion) + `needsSortConfirmation(sel)`. The flow is driven by `prepareSortConfirmation` / `confirmSort(expand)` / `cancelSortConfirmation`.
+
+### 19.5 Auto Number Recognition (input)
+Input text such as `100%`, `1,234`, `¥1,234.56` is recognized by `parseNumericText` (in `core/number-format.ts`) and stored as a number with the matching format; this is wired into `setCellValue` (in `composables/core-state.ts`) right after date recognition. This makes the display-based sort treat `100%` as the numeric `1` (scaled back on display) — consistent with the comparison rule in §19.1.

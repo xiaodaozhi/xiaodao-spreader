@@ -212,16 +212,17 @@ function tokenizeDate(str: string): { tokens: NFToken[]; isDuration: boolean } {
         tokens.push({ type: 'year', len: 2 });
         break;
       case 'mmmm':
-        tokens.push({ type: 'monthName', len: 4 });
+        // 持续时间上下文（[h]/[mm]/[ss]）中 m 系 token 一律为分钟，否则为月份
+        tokens.push(isDuration ? { type: 'minute', len: 4 } : { type: 'monthName', len: 4 });
         break;
       case 'mmm':
-        tokens.push({ type: 'monthName', len: 3 });
+        tokens.push(isDuration ? { type: 'minute', len: 3 } : { type: 'monthName', len: 3 });
         break;
       case 'mm':
-        tokens.push({ type: 'month', len: 2 });
+        tokens.push(isDuration ? { type: 'minute', len: 2 } : { type: 'month', len: 2 });
         break;
       case 'm':
-        tokens.push({ type: 'month', len: 1 });
+        tokens.push(isDuration ? { type: 'minute', len: 1 } : { type: 'month', len: 1 });
         break;
       case 'dddd':
         tokens.push({ type: 'weekday', len: 4 });
@@ -557,9 +558,9 @@ export type NFDialogCategory
     | 'duration' | 'text' | 'custom';
 
 export const NF_DIALOG_CATEGORIES: NFDialogCategory[] = [
-  'general', 'number', 'currency', 'currencyRounded', 'accounting',
-  'financial', 'percent', 'scientific', 'date', 'time', 'dateTime',
-  'duration', 'text', 'custom',
+  'general', 'text', 'number', 'percent', 'scientific', 'accounting',
+  'financial', 'currency', 'currencyRounded', 'date', 'time', 'dateTime',
+  'duration', 'custom',
 ];
 
 /**
@@ -1017,7 +1018,7 @@ export function buildNumberFormatCode(
   }
 }
 
-/** 构造工具栏下拉框的选项（含「格式…」自定义项） */
+/** 构造工具栏下拉框的选项（含「其他数字格式…」自定义项） */
 export function buildNumberFormatPresets(locale: string): NFOption[] {
   const sym = getCurrencySymbol(locale);
   const opts: NFOption[] = [

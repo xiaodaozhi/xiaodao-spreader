@@ -10,6 +10,8 @@ import {
   isGeneralFormat,
   type NFDialogCategory,
 } from '../../core/number-format';
+import SpDropdown from '../dropdown.vue';
+import type { FontOption } from '../../core/constants';
 
 // 数字格式配置对话框（参考 Excel「设置单元格格式 / 数字」）
 // 说明：本对话框仅产生 style.numberFormat 格式代码，绝不修改 Cell.value。
@@ -89,21 +91,35 @@ const DATETIME_FORMATS = computed(() =>
 const DURATION_FORMATS = ['[h]:mm:ss', '[h]:mm', 'mm:ss', '[h]"小时"mm"分"ss"秒"', '[h]:mm:ss.00', 'd"天"h:mm:ss'] as const;
 
 const CATEGORY_LABELS: Record<NFDialogCategory, string> = {
-  general: 'nfCatGeneral',
-  number: 'nfCatNumber',
-  currency: 'nfCatCurrency',
-  currencyRounded: 'nfCatCurrencyRounded',
-  accounting: 'nfCatAccounting',
-  financial: 'nfCatFinancial',
-  percent: 'nfCatPercent',
-  scientific: 'nfCatScientific',
-  date: 'nfCatDate',
-  time: 'nfCatTime',
-  dateTime: 'nfCatDateTime',
-  duration: 'nfCatDuration',
-  text: 'nfCatText',
+  general: 'nfGeneral',
+  text: 'nfText',
+  number: 'nfNumber',
+  percent: 'nfPercent',
+  scientific: 'nfScientific',
+  accounting: 'nfAccounting',
+  financial: 'nfFinancial',
+  currency: 'nfCurrency',
+  currencyRounded: 'nfCurrencyRounded',
+  date: 'nfDate',
+  time: 'nfTime',
+  dateTime: 'nfDateTime',
+  duration: 'nfDuration',
   custom: 'nfCatCustom',
 };
+
+// SpDropdown 选项（将各类格式列表转换为 FontOption[]）
+const categoryOptions = computed<FontOption[]>(() =>
+  NF_DIALOG_CATEGORIES.map(cat => ({ label: t(props.locale, CATEGORY_LABELS[cat]), value: cat })),
+);
+const symbolOptions: FontOption[] = SYMBOLS.map(s => ({ label: s.label, value: s.value }));
+const dateFormatOptions = computed<FontOption[]>(() =>
+  DATE_FORMATS.value.map(f => ({ label: f, value: f })),
+);
+const timeFormatOptions: FontOption[] = (TIME_FORMATS as readonly string[]).map(f => ({ label: f, value: f }));
+const dateTimeFormatOptions = computed<FontOption[]>(() =>
+  DATETIME_FORMATS.value.map(f => ({ label: f, value: f })),
+);
+const durationFormatOptions: FontOption[] = (DURATION_FORMATS as readonly string[]).map(f => ({ label: f, value: f }));
 
 // 控制项是否展示
 const showThousands = computed(() =>
@@ -243,7 +259,7 @@ function onCustomInput() {
 }
 
 // 打开对话框时：将日期/时间/日期时间/持续时间的默认值设为当前合并后下拉列表的第一项，
-// 避免硬编码默认值不在候选列表里，导致 <select> 选中项显示为空。
+// 避免硬编码默认值不在候选列表里，导致下拉框选中项显示为空。
 function initFormatDefaultsByLocale() {
   dateFmt.value = DATE_FORMATS.value[0]!;
   timeFmt.value = TIME_FORMATS[0]!;
@@ -321,19 +337,13 @@ const previewText = computed(() => {
           <div class="nf-dialog__body">
             <div class="nf-field">
               <label class="nf-field__label">{{ t(locale, 'nfCategory') }}</label>
-              <select
-                v-model="category"
-                class="nf-field__select"
+              <SpDropdown
+                class="nf-field__dropdown"
+                :model-value="category"
+                :options="categoryOptions"
+                @update:model-value="category = $event as NFDialogCategory"
                 @change="onControlChange"
-              >
-                <option
-                  v-for="cat in NF_DIALOG_CATEGORIES"
-                  :key="cat"
-                  :value="cat"
-                >
-                  {{ t(locale, CATEGORY_LABELS[cat]) }}
-                </option>
-              </select>
+              />
             </div>
 
             <div
@@ -370,19 +380,13 @@ const previewText = computed(() => {
               class="nf-field"
             >
               <label class="nf-field__label">{{ t(locale, 'nfSymbol') }}</label>
-              <select
-                v-model="symbol"
-                class="nf-field__select"
+              <SpDropdown
+                class="nf-field__dropdown"
+                :model-value="symbol"
+                :options="symbolOptions"
+                @update:model-value="symbol = $event as '¥' | '$' | '€' | '£'"
                 @change="onControlChange"
-              >
-                <option
-                  v-for="s in SYMBOLS"
-                  :key="s.value"
-                  :value="s.value"
-                >
-                  {{ s.label }}
-                </option>
-              </select>
+              />
             </div>
 
             <div
@@ -390,19 +394,13 @@ const previewText = computed(() => {
               class="nf-field"
             >
               <label class="nf-field__label">{{ t(locale, 'nfDateFormat') }}</label>
-              <select
-                v-model="dateFmt"
-                class="nf-field__select"
+              <SpDropdown
+                class="nf-field__dropdown"
+                :model-value="dateFmt"
+                :options="dateFormatOptions"
+                @update:model-value="dateFmt = $event as string"
                 @change="onControlChange"
-              >
-                <option
-                  v-for="f in DATE_FORMATS"
-                  :key="f"
-                  :value="f"
-                >
-                  {{ f }}
-                </option>
-              </select>
+              />
             </div>
 
             <div
@@ -410,19 +408,13 @@ const previewText = computed(() => {
               class="nf-field"
             >
               <label class="nf-field__label">{{ t(locale, 'nfTimeFormat') }}</label>
-              <select
-                v-model="timeFmt"
-                class="nf-field__select"
+              <SpDropdown
+                class="nf-field__dropdown"
+                :model-value="timeFmt"
+                :options="timeFormatOptions"
+                @update:model-value="timeFmt = $event as string"
                 @change="onControlChange"
-              >
-                <option
-                  v-for="f in TIME_FORMATS"
-                  :key="f"
-                  :value="f"
-                >
-                  {{ f }}
-                </option>
-              </select>
+              />
             </div>
 
             <div
@@ -430,19 +422,13 @@ const previewText = computed(() => {
               class="nf-field"
             >
               <label class="nf-field__label">{{ t(locale, 'nfDateTime') }}</label>
-              <select
-                v-model="dateTimeFmt"
-                class="nf-field__select"
+              <SpDropdown
+                class="nf-field__dropdown"
+                :model-value="dateTimeFmt"
+                :options="dateTimeFormatOptions"
+                @update:model-value="dateTimeFmt = $event as string"
                 @change="onControlChange"
-              >
-                <option
-                  v-for="f in DATETIME_FORMATS"
-                  :key="f"
-                  :value="f"
-                >
-                  {{ f }}
-                </option>
-              </select>
+              />
             </div>
 
             <div
@@ -450,19 +436,13 @@ const previewText = computed(() => {
               class="nf-field"
             >
               <label class="nf-field__label">{{ t(locale, 'nfDuration') }}</label>
-              <select
-                v-model="durationFmt"
-                class="nf-field__select"
+              <SpDropdown
+                class="nf-field__dropdown"
+                :model-value="durationFmt"
+                :options="durationFormatOptions"
+                @update:model-value="durationFmt = $event as string"
                 @change="onControlChange"
-              >
-                <option
-                  v-for="f in DURATION_FORMATS"
-                  :key="f"
-                  :value="f"
-                >
-                  {{ f }}
-                </option>
-              </select>
+              />
             </div>
 
             <div class="nf-field">
@@ -556,7 +536,6 @@ const previewText = computed(() => {
 .nf-field { display: flex; align-items: center; gap: 8px; }
 .nf-field--inline { min-height: 26px; }
 .nf-field__label { width: 88px; min-width: 88px; font-size: 12px; color: #555; }
-.nf-field__select,
 .nf-field__input {
   flex: 1;
   height: 26px;
@@ -570,8 +549,21 @@ const previewText = computed(() => {
   box-sizing: border-box;
   font-family: inherit;
 }
-.nf-field__select:focus,
 .nf-field__input:focus { border-color: #0078d7; box-shadow: 0 0 0 1px rgba(0, 120, 215, 0.3); }
+
+/* SpDropdown 在对话框中的表单风格 */
+.nf-field__dropdown { flex: 1; }
+.nf-field__dropdown :deep(.sp-dropdown__trigger) {
+  border: 1px solid #c0c0c0;
+  background: #fff;
+  color: #1a1a1a;
+  padding: 0 6px;
+}
+.nf-field__dropdown :deep(.sp-dropdown__trigger:hover) { background: #f5f5f5; }
+.nf-field__dropdown :deep(.sp-dropdown__trigger--open) {
+  border-color: #0078d7;
+  box-shadow: 0 0 0 1px rgba(0, 120, 215, 0.3);
+}
 .nf-field__textarea {
   flex: 1;
   min-height: 44px;

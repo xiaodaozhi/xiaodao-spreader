@@ -2,6 +2,8 @@
 import { ref, computed, watch, nextTick } from 'vue';
 import { t } from '../core/constants';
 import type { FindScope } from '../core/types';
+import type { FontOption } from '../core/constants';
+import SpDropdown from './dropdown.vue';
 
 const props = defineProps<{
   open: boolean;
@@ -32,6 +34,12 @@ const countText = computed(() => {
   return props.message || '';
 });
 
+const scopeOptions = computed<FontOption[]>(() => [
+  { label: t(props.locale, 'scopeSheet'), value: 'sheet' },
+  { label: t(props.locale, 'scopeWorkbook'), value: 'workbook' },
+  { label: t(props.locale, 'scopeSelection'), value: 'selection' },
+]);
+
 // 打开 / 需要聚焦时聚焦查找输入框
 watch(
   () => props.focusToken,
@@ -49,10 +57,6 @@ function onInputKd(e: KeyboardEvent) {
     e.preventDefault();
     emit('close');
   }
-}
-
-function onScopeChange(e: Event) {
-  emit('update:scope', (e.target as HTMLSelectElement).value as FindScope);
 }
 </script>
 
@@ -77,22 +81,13 @@ function onScopeChange(e: Event) {
       @input="emit('update:replaceText', ($event.target as HTMLInputElement).value)"
       @keydown="onInputKd"
     >
-    <select
-      class="find-bar__select"
-      :value="scope"
+    <SpDropdown
+      class="find-bar__dropdown"
+      :model-value="scope"
+      :options="scopeOptions"
       :title="t(locale, 'findScope')"
-      @change="onScopeChange"
-    >
-      <option value="sheet">
-        {{ t(locale, 'scopeSheet') }}
-      </option>
-      <option value="workbook">
-        {{ t(locale, 'scopeWorkbook') }}
-      </option>
-      <option value="selection">
-        {{ t(locale, 'scopeSelection') }}
-      </option>
-    </select>
+      @update:model-value="$emit('update:scope', $event as FindScope)"
+    />
     <label class="find-bar__chk">
       <input
         type="checkbox"
@@ -186,16 +181,18 @@ function onScopeChange(e: Event) {
 .find-bar__input:focus {
   border-color: var(--sp-toolbar-btn-active-color);
 }
-.find-bar__select {
+.find-bar__dropdown { flex: 0 0 auto; }
+.find-bar__dropdown :deep(.sp-dropdown__trigger) {
   height: 24px;
-  flex: 0 0 auto;
   border: 1px solid var(--sp-toolbar-border);
-  border-radius: 3px;
   background: #fff;
-  font-size: 12px;
   color: var(--sp-formula-bar-input-color, #1a1a1a);
-  outline: none;
-  padding: 0 2px;
+  font-size: 12px;
+  padding: 0 4px;
+}
+.find-bar__dropdown :deep(.sp-dropdown__trigger:hover) { background: #f5f5f5; }
+.find-bar__dropdown :deep(.sp-dropdown__trigger--open) {
+  border-color: var(--sp-toolbar-btn-active-color);
 }
 .find-bar__chk {
   display: flex;

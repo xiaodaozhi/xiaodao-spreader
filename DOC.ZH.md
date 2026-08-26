@@ -490,7 +490,7 @@ Canvas CSS 坐标（逻辑像素）
 
 ### 13.3 交互层
 - **查找/替换** — *已实现，见[第 16 节](#16-查找与替换)*
-- **数据排序/筛选**
+- **数据排序/筛选** — *已实现，见[第 19 节](#19-排序)*
 - **图表**
 
 ### 13.4 性能优化
@@ -721,3 +721,36 @@ Canvas CSS 坐标（逻辑像素）
 - `SheetModelData` / `SheetState` / `UndoSnapshot` 均新增 `borders: BorderStyle[]`。
 - `migrateBordersInStyles(styles)`：将旧版内联边框属性迁移为 `borders` 池 + `borderId` 机制。
 - 加载时：若 `smd.borders` 存在则直接使用；否则对 `styles` 执行迁移。
+
+---
+
+## 19. 排序
+
+逻辑位于 `spreader/composables/sheets-ops.ts`，「排序提醒」对话框由 `SortConfirmDialog.vue` 提供。按选中列范围的**展示内容**对行排序——数值、日期、文本均支持。
+
+### 19.1 基准列与按展示内容比较
+- **基准列**（决定行顺序的那一列）是用户*原始*选区的首列。当通过排序提醒对话框扩展选区时，基准列固定为原始选区首列，而**不会**偏移成扩展后最左列。
+- 比较键由 `parseSortKeyByDisplay(raw, format, locale)` 产生：
+  - 数值 / 日期按**展示数值**比较；百分比格式乘回 100，使 `100%` 按展示值 `100` 排序，符合肉眼所见。
+  - 文本（含显式文本格式 `@`）按 `formatNumber` 的渲染串比较。
+  - 数值格式列中混入的非数字单元格回退为展示文本，不会抛错。
+
+### 19.2 只移数据，不搬样式
+排序仅移动 `Cell.value`；目标位置原有的 `styleId` 原地保留。边框 / 填充 / 字体 / 数字格式等样式不随行重排，排序只改变内容、不改变各单元格样式。
+
+### 19.3 阻断条件
+`analyzeSortRange` 在以下情况返回 `blocked: true`（禁用排序）：
+- 选区内有**公式单元格**（值以 `=` 开头），因为行置换会破坏公式引用（当前公式架构不支持改写引用）；
+- 选区内存在**合并单元格**且其行范围与选区行范围相交（列方向已重叠）。
+
+两者与右键菜单列「排序」项的可用性（`canSortColumns`）一致。
+
+### 19.4 排序提醒对话框（类 Excel）
+当选区外存在相邻数据时，排序前弹出类 Excel 的「排序提醒」对话框（`SortConfirmDialog.vue`）：
+- **扩展选定区域** —— 排序范围*横向*扩展到相邻有数据的列（行范围与你选中的完全一致）；基准列仍为原始首列。
+- **仅对选定区域排序** —— 只排选中的矩形。
+
+检测使用 `getCurrentRegion(sel)`（仅横向扩展）+ `needsSortConfirmation(sel)`，流程由 `prepareSortConfirmation` / `confirmSort(expand)` / `cancelSortConfirmation` 驱动。
+
+### 19.5 输入时自动识别数字
+输入 `100%`、`1,234`、`¥1,234.56` 等文本由 `parseNumericText`（`core/number-format.ts`）识别为数值并套用对应格式；该逻辑在日期识别之后接入 `setCellValue`（`composables/core-state.ts`）。因此按展示内容排序时，`100%` 以数值 `1` 参与比较（展示时乘回），与 §19.1 的比较规则一致。

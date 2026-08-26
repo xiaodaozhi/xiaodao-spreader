@@ -38,11 +38,15 @@ const rootRef = ref<HTMLDivElement | null>(null);
 const listRef = ref<HTMLDivElement | null>(null);
 const menuRef = ref<HTMLDivElement | null>(null);
 const pos = ref<{ left?: number; right?: number; top: number; up: boolean }>({ top: 0, up: false });
+const triggerWidth = ref<number | undefined>(undefined);
 const tY = ref(0);
 const tDrag = ref(false);
 
 const current = computed(() => props.options.find((o) => String(o.value) === String(props.modelValue)));
-const effMenuWidth = computed(() => props.menuWidth);
+const effMenuWidth = computed(() => {
+  if (props.menuWidth !== undefined) return props.menuWidth;
+  return triggerWidth.value;
+});
 const vc = computed(() => Math.min(props.visibleCount, props.options.length));
 const list = computed(() => props.options.slice(viewStart.value, viewStart.value + vc.value));
 const canUp = computed(() => viewStart.value > 0);
@@ -61,6 +65,7 @@ function openMenu() {
   const el = props.triggerEl ?? rootRef.value;
   if (!el) return;
   const r = el.getBoundingClientRect();
+  triggerWidth.value = r.width;
   const menuH = vc.value * 22 + (scrollable.value ? 2 * 15 : 0) + 8;
   const spaceBelow = window.innerHeight - r.bottom - 4;
   const up = spaceBelow < menuH && r.top - 4 > menuH;
@@ -332,7 +337,7 @@ onBeforeUnmount(() => {
 }
 .sp-dropdown__menu {
   position: fixed;
-  z-index: 20000;
+  z-index: 40000;
   display: flex;
   flex-direction: column;
   background: #fff;

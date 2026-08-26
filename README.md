@@ -26,6 +26,8 @@ A high-performance, canvas-based spreadsheet component for Vue 3 — bringing an
 - **Undo / Redo** — Full state snapshots for cells, column widths, and row heights (50 steps)
 - **Format Painter** — Copy & apply cell formatting across ranges
 - **Number Format** — Excel-style number formatting (General / Text / Number / Currency / Accounting / Percent / Scientific / Date / Time / DateTime / Duration) with a custom format dialog; display-only, never mutates the stored cell value
+- **Smart Data Recognition** — Typing `100%`, `1,234`, `¥1,234.56` auto-converts the text to a number and applies the matching format; common date/time text auto-converts to dates — matching Excel input behavior
+- **Sorting & Sort Warning** — Sort any column by its **displayed content** (numbers / dates / text); sorting moves data only, never cell styles; ranges containing merged cells or formulas are auto-disabled; when adjacent data sits outside the selection, an Excel-style **Sort Warning** dialog lets you choose "Expand the selection" or "Sort the current selection only"
 - **Find & Replace** — Open via the toolbar find button or `Ctrl/Cmd+F` (also `Ctrl/Cmd+H`); three scopes — current sheet / entire workbook / current selection; match case and match entire cell; highlights all matches and locates the active one with wrap-around navigation; single and replace-all both integrate with undo/redo, mutating only the raw `value` (always kept a string), never format / border / merge
 
 ### Interaction
@@ -459,7 +461,7 @@ The project includes a GitHub Actions workflow (`.github/workflows/publish.yml`)
 - [ ] Frozen panes (freeze rows/columns)
 - [ ] Data validation (dropdown lists, input constraints)
 - [ ] Column / row grouping and collapsing
-- [ ] Sort & filter
+- [x] Sort & filter — sort by displayed content with Excel-style Sort Warning dialog (expand selection / current selection only); see [Sorting & Sort Warning](#features)
 - [ ] Cell comments / notes
 - [ ] Print layout
 
