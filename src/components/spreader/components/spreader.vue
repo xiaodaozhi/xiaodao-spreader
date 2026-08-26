@@ -48,7 +48,7 @@ const sheetsCtx: {
   activeSheetIndex: Ref<number>;
   saveSheet: () => void;
   loadSheet: (i: number) => void;
-  mkSheet: (name: string) => SheetState;
+  mkSheet: (name: string, dims?: { colCount?: number; rowCount?: number }) => SheetState;
 } = {
   sheets: ref<SheetState[]>([]),
   activeSheetIndex: ref(0),
@@ -67,6 +67,8 @@ const sheetsCtx: {
     scrollY: 0,
     colWidths: [],
     rowHeights: [],
+    colCount: 0,
+    rowCount: 0,
   }),
 };
 

@@ -18,7 +18,8 @@
 
 ### 核心电子表格
 
-- **Canvas 2D 渲染** — 高 DPI 自适应（DPR 缩放），虚拟视口渲染，支持 200 行 × 26 列
+- **动态表格扩展** — Excel 风格动态行列扩展；默认 26 列（A-Z）× 200 行，当滚动接近边界、在边缘输入数据、粘贴超出当前范围、或插入行列会将数据挤出边界时，自动扩展行列数
+- **Canvas 2D 渲染** — 高 DPI 自适应（DPR 缩放），虚拟视口渲染，支持动态大小的工作表
 - **多 Sheet 工作簿** — 标签栏支持新建、重命名、复制、删除、拖拽排序
 - **公式引擎** — 支持 `=SUM()`、`=AVERAGE()`、`=COUNT()`、`=IF()`、`=VLOOKUP()`、`=CONCATENATE()`，支持依赖追踪与循环引用检测；工具栏与右键菜单提供一键求和/平均值/计数
 - **合并单元格** — 合并居中、跨列合并、取消合并；合并区域边框按锚点存储、公共边渲染时统一解析
@@ -130,8 +131,8 @@ const myData = ref<SheetModelData[]>([
 | 属性 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
 | `data` (v-model) | `SheetModelData[]` | `[]` | 多 Sheet 数据（双向绑定） |
-| `rowCount` | `number` | `200` | 每个 Sheet 的总行数 |
-| `colCount` | `number` | `26` | 每个 Sheet 的总列数 |
+| `rowCount` | `number` | `200` | 每个 Sheet 的初始行数（可动态扩展） |
+| `colCount` | `number` | `26` | 每个 Sheet 的初始列数（可动态扩展） |
 | `width` | `number \| string` | — | 组件宽度（像素；传 `string` 或省略则自适应） |
 | `height` | `number \| string` | — | 组件高度（像素；传 `string` 或省略则自适应） |
 | `theme` | `'light' \| 'dark'` | `'light'` | 主题模式 |
@@ -157,6 +158,10 @@ interface SheetModelData {
   merges?: Record<string, SelectionRange>;
   colWidths?: Record<number, number>;
   rowHeights?: Record<number, number>;
+  /** 逻辑列数（0 基，不含）。省略时默认为 26。 */
+  colCount?: number;
+  /** 逻辑行数（0 基，不含）。省略时默认为 200。 */
+  rowCount?: number;
 }
 ```
 
@@ -235,6 +240,8 @@ src/
 
 ### 设计原则
 
+- **稀疏数据模型**：仅存储有实际数据的单元格；扩展逻辑范围不会创建空单元格
+- **动态范围**：每个 Sheet 维护响应式逻辑范围（`colCount`/`rowCount`），从 `colCount`/`rowCount` prop（默认 26/200）起步，通过 `ensureCapacity(minCol, minRow)`按需增长。扩展使用缓冲步长（8 列 / 32 行）以减少频繁调整开销
 - **组合式 API**：所有业务逻辑抽取到 `composables/`，保持单一职责
 - **Barrel 导出**：`spreader/index.ts` 集中导出组件和全部类型，`src/index.ts` 再统一 re-export，外部统一从 `xiaodao-spreader` 引入
 - **Canvas 2D 渲染**：仅绘制可视区域（虚拟渲染），大表流畅

@@ -17,7 +17,8 @@ A high-performance, canvas-based spreadsheet component for Vue 3 — bringing an
 ## Features
 
 ### Core Spreadsheet
-- **Canvas 2D Rendering** — High-DPI aware with DPR scaling, virtual viewport rendering for 200 × 26 sheets
+- **Dynamic Sheet Expansion** — Excel-like dynamic row/column expansion; default 26 columns (A-Z) × 200 rows, automatically expands when scrolling near boundaries, inputting at edges, pasting beyond current range, or inserting rows/columns that would push data out of bounds
+- **Canvas 2D Rendering** — High-DPI aware with DPR scaling, virtual viewport rendering for dynamically-sized sheets
 - **Multi-Sheet Workbook** — Tab bar with add, rename, duplicate, delete, reorder
 - **Formula Engine** — `=SUM()`, `=AVERAGE()`, `=COUNT()`, `=IF()`, `=VLOOKUP()`, `=CONCATENATE()` with dependency tracking and circular-reference detection; toolbar and context menu provide one-click sum/average/count
 - **Merge Cells** — Merge & Center, Merge Across, Unmerge; merged-region borders stored at the anchor, shared borders resolved at render time
@@ -127,8 +128,8 @@ const myData = ref<SheetModelData[]>([
 | Prop | Type | Default | Description |
 |------|------|---------|-------------|
 | `data` (v-model) | `SheetModelData[]` | `[]` | Multi-sheet data (two-way binding) |
-| `rowCount` | `number` | `200` | Total rows per sheet |
-| `colCount` | `number` | `26` | Total columns per sheet |
+| `rowCount` | `number` | `200` | Initial rows per sheet (can be exceeded dynamically) |
+| `colCount` | `number` | `26` | Initial columns per sheet (can be exceeded dynamically) |
 | `width` | `number \| string` | — | Component width (pixels; omit or pass `string` for responsive) |
 | `height` | `number \| string` | — | Component height (pixels; omit or pass `string` for responsive) |
 | `theme` | `'light' \| 'dark'` | `'light'` | Theme mode |
@@ -154,6 +155,10 @@ interface SheetModelData {
   merges?: Record<string, SelectionRange>;
   colWidths?: Record<number, number>;
   rowHeights?: Record<number, number>;
+  /** Logic column count (0-based exclusive). Defaults to 26 when omitted. */
+  colCount?: number;
+  /** Logic row count (0-based exclusive). Defaults to 200 when omitted. */
+  rowCount?: number;
 }
 ```
 
@@ -232,6 +237,8 @@ src/
 
 ### Design Principles
 
+- **Sparse Data Model**: Only cells with actual data are stored; expanding the logical range does not create empty cells
+- **Dynamic Range**: Each sheet maintains a reactive logical range (`colCount`/`rowCount`) that starts from the `colCount`/`rowCount` props (default 26/200) and grows as needed via `ensureCapacity(minCol, minRow)`. Expansion uses buffer steps (8 columns / 32 rows) to reduce frequent resize overhead
 - **Composition API**: All business logic extracted into `composables/`, maintaining single-responsibility modules
 - **Barrel Export**: `spreader/index.ts` centralizes all component and type exports; `src/index.ts` re-exports everything, so consumers import uniformly from `xiaodao-spreader`
 - **Canvas 2D Rendering**: Only visible cells are drawn (virtual rendering), ensuring smooth performance on large sheets

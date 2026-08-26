@@ -112,6 +112,10 @@ export interface SheetModelData {
   merges?: Record<string, SelectionRange>;
   colWidths?: Record<number, number>;
   rowHeights?: Record<number, number>;
+  /** 工作表逻辑有效列数（0-based exclusive）。缺失时回退到默认 26 */
+  colCount?: number;
+  /** 工作表逻辑有效行数（0-based exclusive）。缺失时回退到默认 200 */
+  rowCount?: number;
 }
 
 export interface SheetState {
@@ -129,6 +133,10 @@ export interface SheetState {
   scrollY: number;
   colWidths: number[];
   rowHeights: (number | undefined)[];
+  /** 工作表逻辑有效列数（0-based exclusive）。随操作动态增长 */
+  colCount: number;
+  /** 工作表逻辑有效行数（0-based exclusive）。随操作动态增长 */
+  rowCount: number;
 }
 
 export interface UndoSnapshot {

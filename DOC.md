@@ -144,6 +144,10 @@ interface SheetModelData {
   cells: Record<string, { value: string; styleId?: number; style?: CellStyle }>
   colWidths?: Record<number, number>
   rowHeights?: Record<number, number>
+  /** Logical column count (0-based exclusive). Defaults to 26 when omitted. */
+  colCount?: number
+  /** Logical row count (0-based exclusive). Defaults to 200 when omitted. */
+  rowCount?: number
 }
 
 // Worksheet internal runtime state
@@ -157,6 +161,8 @@ interface SheetState {
   activeCell: CellCoord
   scrollX: number; scrollY: number
   colWidths: number[]; rowHeights: (number | undefined)[]
+  /** Reactive logical dimensions — grows dynamically via ensureCapacity */
+  colCount: number; rowCount: number
 }
 
 // Undo snapshot
@@ -165,6 +171,8 @@ interface UndoSnapshot {
   styles: CellStyle[]
   borders: BorderStyle[]
   colWidths: number[]; rowHeights: (number | undefined)[]
+  /** Snapshot of logical dimensions for undo/redo */
+  colCount: number; rowCount: number
 }
 
 // Context menu item
@@ -192,13 +200,14 @@ interface ThemeColors { /* See Section 10 for full list */ }
 | `cells` | `reactive<Record<string, CellData>>` | Cell data for the current sheet |
 | `styles` | `reactive<CellStyle[]>` | Style pool for the current sheet; `styles[0]` is always default `{}` |
 | `borders` | `reactive<BorderStyle[]>` | Border pool for the current sheet; `borders[0]` is always default `{}`; styles reference borders via `borderId` |
+| `dims` | `reactive<{colCount: number; rowCount: number}>` | **Dynamic logical dimensions** — initialised from props (default 26/200), grows via `ensureCapacity()` |
 | `selection` | `ref<SelectionRange \| null>` | Current selection range |
 | `activeCell` | `ref<CellCoord>` | Active cell |
 | `scrollX/Y` | `ref<number>` | Grid area scroll offset |
 | `editingCell` | `ref<CellCoord \| null>` | Cell being edited |
 | `editValue` | `ref<string>` | Real-time text in the edit overlay |
-| `colWidths` | `ref<number[]>` | Width of each column (default 100px) |
-| `rowHeights` | `ref<number[]>` | Height of each row (default 24px) |
+| `colWidths` | `ref<number[]>` | Width of each column (default 100px), auto-expanded with `dims.colCount` |
+| `rowHeights` | `ref<number[]>` | Height of each row (default 24px), auto-expanded with `dims.rowCount` |
 | `sheets` | `ref<SheetState[]>` | All worksheets |
 | `activeSheetIndex` | `ref<number>` | Current active worksheet index |
 | `undoStack` / `redoStack` | `ref<UndoSnapshot[]>` | Undo/redo stacks (max 50 steps) |
@@ -217,8 +226,8 @@ interface ThemeColors { /* See Section 10 for full list */ }
 ### 4.3 Multi-Sheet Switching
 
 When switching sheets, `saveSheet()` → `loadSheet(i)` is executed:
-- `saveSheet()` serializes current `cells`, `styles`, `borders`, `selection`, `scrollX/Y`, `colWidths`, `rowHeights` to `sheets[activeSheetIndex]`
-- `loadSheet(i)` restores all state from `sheets[i]`, including `styles` pool sync via `syncStyles()`, `borders` pool sync via `syncBorders()`, and formula dependency graph rebuild
+- `saveSheet()` serializes current `cells`, `styles`, `borders`, `selection`, `scrollX/Y`, `colWidths`, `rowHeights`, and `dims` (colCount/rowCount) to `sheets[activeSheetIndex]`
+- `loadSheet(i)` restores all state from `sheets[i]`, including `dims` via `setDims()`, `styles` pool sync via `syncStyles()`, `borders` pool sync via `syncBorders()`, and formula dependency graph rebuild
 
 ### 4.4 v-model Data Sync
 
@@ -239,7 +248,8 @@ DEFAULT_ROW_HEIGHT = 24
 MIN_COL_WIDTH  = 30
 MIN_ROW_HEIGHT = 24
 
-Grid total: default 200 rows × 26 columns
+Default logical range: 200 rows × 26 columns
+Dynamic expansion via ensureCapacity(minCol, minRow) with buffer steps (8 columns / 32 rows)
 ```
 
 ### 5.1 Canvas Layout Plane
@@ -468,10 +478,10 @@ The `ThemeColors` interface includes:
 
 ## 12. Undo/Redo
 
-- **Snapshot**: `takeSnap()` deep clones current `cells`, `styles`, `borders`, `colWidths`, `rowHeights`
+- **Snapshot**: `takeSnap()` deep clones current `cells`, `styles`, `borders`, `colWidths`, `rowHeights`, and `dims` (colCount/rowCount)
 - **Stack Push**: Call `saveUndo()` before each modification, deduplicate with stack top (JSON comparison)
-- **Undo**: `undoStack.pop()` → `restoreSnap()` and rebuild formula dependency graph
-- **Redo**: `redoStack.pop()` → `restoreSnap()` and rebuild formula dependency graph
+- **Undo**: `undoStack.pop()` → `restoreSnap()` (restores dims via `setDims()`) and rebuild formula dependency graph
+- **Redo**: `redoStack.pop()` → `restoreSnap()` (restores dims via `setDims()`) and rebuild formula dependency graph
 - **Limit**: `UNDO_MAX = 50`, removes oldest snapshot when exceeded
 
 ---
@@ -755,3 +765,89 @@ Detection uses `getCurrentRegion(sel)` (horizontal-only expansion) + `needsSortC
 
 ### 19.5 Auto Number Recognition (input)
 Input text such as `100%`, `1,234`, `¥1,234.56` is recognized by `parseNumericText` (in `core/number-format.ts`) and stored as a number with the matching format; this is wired into `setCellValue` (in `composables/core-state.ts`) right after date recognition. This makes the display-based sort treat `100%` as the numeric `1` (scaled back on display) — consistent with the comparison rule in §19.1.
+
+---
+
+## 20. Dynamic Range Expansion
+
+Located in `composables/core-state.ts` and `composables/sheets-ops.ts`. Transforms the worksheet from a fixed 26×200 grid into an Excel-like dynamically-expandable sheet.
+
+### 20.1 Core Data Structure
+
+Each sheet maintains a **reactive** logical range via `dims`:
+
+```typescript
+// In CoreState (reactive)
+dims: { colCount: number; rowCount: number }
+```
+
+- Initialised from the `colCount`/`rowCount` props (default: 26 columns, 200 rows).
+- Grows monotonically — never shrinks automatically (only explicit sheet reset/load can reduce it).
+- Persisted as `colCount`/`rowCount` in `SheetModelData` for save/load round-tripping.
+
+### 20.2 ensureCapacity(minCol, minRow)
+
+The unified expansion entry point in `CoreState`:
+
+```typescript
+ensureCapacity(minCol: number, minRow: number): void
+```
+
+- If the current `dims.colCount` < `minCol`, expands columns; if `dims.rowCount` < `minRow`, expands rows.
+- Expansion uses **buffer steps** (`COL_EXPAND_STEP = 8`, `ROW_EXPAND_STEP = 32`) to reduce frequent resize overhead:
+  ```
+  newColCount = Math.ceil(minCol / 8) * 8   // rounds up to next multiple of 8
+  newRowCount = Math.ceil(minRow / 32) * 32 // rounds up to next multiple of 32
+  ```
+- Auto-expands `colWidths`/`rowHeights` arrays to match the new dims with default values.
+- Returns immediately if no expansion is needed (idempotent).
+
+### 20.3 Expansion Triggers
+
+Expansion is triggered automatically when user actions would cross the current boundary:
+
+| Trigger | Location | Behavior |
+|---|---|---|
+| **Scroll near boundary** | `interactions.ts` → `onWheel` | When scrolling within 40px of the right/bottom edge, estimates visible columns/rows and calls `ensureCapacity()` |
+| **Keyboard navigation past boundary** | `core-state.ts` → `moveActive()` | Arrow keys / PgUp/PgDn that would move beyond current dims expand the range first, then clamp |
+| **Input at boundary** | `core-state.ts` → `setCellValue()` | Writing a non-empty value to a cell calls `ensureCapacity(col, row)` to guarantee the target exists |
+| **Paste beyond range** | `borders-merge.ts` → `pasteFromClipboard()` | Calculates the paste target range and calls `ensureCapacity()` before writing |
+| **Insert rows/columns that push data out** | `sheets-ops.ts` → `insertRows()`/`insertCols()` | Uses `findLastDataExtents()` to detect if the last data row/col would be pushed beyond current range; expands only when non-default cells (data or custom format) are at risk, not for empty default cells |
+
+### 20.4 Conditional Expansion for Insert/Delete
+
+Insert operations use `findLastDataExtents()` to locate the actual last column/row containing data or custom formatting:
+
+```typescript
+function findLastDataExtents(): { lastCol: number; lastRow: number }
+```
+
+- Scans `cells` to find the maximum column/row that has either a non-empty value or a non-default `styleId` (`> 0`).
+- If inserting would push `lastCol + n` beyond the current `colCount`, expansion is triggered.
+- Inserting at the boundary **always** expands (since new empty rows/columns at the edge represent intentional user intent).
+- Default-format empty cells being pushed out does **not** trigger expansion — matching Excel's behavior.
+
+### 20.5 Sparse Storage Compatibility
+
+Expansion works seamlessly with the existing sparse cell storage:
+
+- Expanding logical range **does not create empty cells** — cells are only stored when they have actual data.
+- `colWidths`/`rowHeights` arrays are padded with default values (100px / 24px) for the new range.
+- Undo/redo snapshots include `colCount`/`rowCount`, so range expansion/contraction is properly reversible.
+- Sheet serialization (`SheetModelData`) includes `colCount?`/`rowCount?` for persistence.
+
+### 20.6 Column Name Conversion
+
+Column labels use Excel-style naming (A→Z→AA→AZ→BA→...→ZZ→AAA...), implemented in `core/utils.ts`:
+
+- `colToLabel(col: number): string` — converts 0-based column index to letter label
+- `labelToCol(label: string): number` — converts letter label back to 0-based index
+
+These utilities handle header rendering, cell reference parsing, and formula column references across the full dynamic range.
+
+### 20.7 Integration Notes
+
+- **All dependent calculations** (`colPositions`, `rowPositions`, `totalWidth`, `totalHeight`, `maxScrollX`, `maxScrollY`) are computed properties that reactively depend on `dims.colCount`/`dims.rowCount`, so they automatically update when the range expands.
+- **Canvas rendering** iterates only the visible area via virtual scrolling; expansion does not impact rendering performance.
+- **Selection** (including select-all) uses `dims` for boundary calculation, so expanded ranges are fully selectable.
+- **Copy-paste** operations respect dynamic boundaries; the clipboard protocol (TSV) is unchanged.

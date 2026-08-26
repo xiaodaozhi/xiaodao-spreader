@@ -27,8 +27,19 @@ export interface CoreState {
     locale?: string;
   };
   locale: ComputedRef<string>;
+  /** 当前工作表逻辑有效列数（0-based exclusive），响应式，可在运行期动态增长 */
   colCount: number;
+  /** 当前工作表逻辑有效行数（0-based exclusive），响应式，可在运行期动态增长 */
   rowCount: number;
+
+  /** 按需扩展工作表逻辑范围：当 minCol+1 > colCount 或 minRow+1 > rowCount 时，
+   *  按缓冲增量将 dims 扩展到至少覆盖目标坐标，并用默认值补齐 colWidths/rowHeights。
+   *  不创建任何空 Cell，不收缩范围。 */
+  ensureCapacity: (minCol: number, minRow: number) => void;
+  /** 当前 colCount/rowCount 是否为动态扩展（与初始 props 不同），供加载逻辑判断 */
+  hasDynamicDims: () => boolean;
+  /** 直接设置当前工作表的逻辑范围（加载/撤销恢复等受控内部场景使用；会同时裁剪或补齐 colWidths/rowHeights） */
+  setDims: (colCount: number, rowCount: number) => void;
 
   // 核心数据
   cells: Record<string, CellData>;
@@ -169,8 +180,14 @@ export function createCoreState(
   });
 
   const locale = computed(() => (props.locale === 'zh-CN' ? 'zh-CN' : 'en-US'));
-  const colCount = props.colCount;
-  const rowCount = props.rowCount;
+  // 初始逻辑范围：取 props 默认值（26/200）。每个 Sheet 可在加载时覆盖。
+  const initColCount = props.colCount;
+  const initRowCount = props.rowCount;
+  const dims = reactive({ colCount: initColCount, rowCount: initRowCount });
+
+  // 扩展缓冲步长：一次扩展足够的行列，减少频繁扩展开销
+  const EXTEND_COL_STEP = 8;
+  const EXTEND_ROW_STEP = 32;
 
   // ============ 核心数据 ============
   const cells = reactive<Record<string, CellData>>({});
@@ -303,8 +320,8 @@ export function createCoreState(
   const activeCell = ref<CellCoord>({ col: 0, row: 0 });
   const editingCell = ref<CellCoord | null>(null);
   const editValue = ref('');
-  const colWidths = ref<number[]>(new Array(colCount).fill(DEFAULT_COL_WIDTH));
-  const rowHeights = ref<(number | undefined)[]>(new Array(rowCount).fill(undefined));
+  const colWidths = ref<number[]>(new Array(dims.colCount).fill(DEFAULT_COL_WIDTH));
+  const rowHeights = ref<(number | undefined)[]>(new Array(dims.rowCount).fill(undefined));
   const scrollX = ref(0);
   const scrollY = ref(0);
 
@@ -414,7 +431,7 @@ export function createCoreState(
   // ============ 列位置/行位置计算 ============
   const colPositions = computed(() => {
     const p = [0];
-    for (let i = 0; i < colCount; i++) p.push(p[i]! + colWidths.value[i]!);
+    for (let i = 0; i < dims.colCount; i++) p.push(p[i]! + colWidths.value[i]!);
     return p;
   });
   colPositionsRef = colPositions;
@@ -435,7 +452,7 @@ export function createCoreState(
     const defMetrics = measureFontMetrics(DEFAULT_FONT_FAMILY, DEFAULT_FONT_SIZE, 'normal', 'normal');
     maxAsc = defMetrics.ascent;
     maxDesc = defMetrics.descent;
-    for (let c = 0; c < colCount; c++) {
+    for (let c = 0; c < dims.colCount; c++) {
       const fs = cellFontSize(c, r);
       const st = resolveStyleFn(cells[cellKeyFn(c, r)]);
       const ffa = typeof st?.fontFamily === 'string' && st.fontFamily ? st.fontFamily : DEFAULT_FONT_FAMILY;
@@ -485,12 +502,12 @@ export function createCoreState(
 
   const rowPositions = computed(() => {
     const p = [0];
-    for (let i = 0; i < rowCount; i++) p.push(p[i]! + getRowHeightFn(i));
+    for (let i = 0; i < dims.rowCount; i++) p.push(p[i]! + getRowHeightFn(i));
     return p;
   });
 
-  const totalWidth = computed(() => colPositions.value[colCount]!);
-  const totalHeight = computed(() => rowPositions.value[rowCount]!);
+  const totalWidth = computed(() => colPositions.value[dims.colCount]!);
+  const totalHeight = computed(() => rowPositions.value[dims.rowCount]!);
 
   // ============ 选区操作 ============
   function cellKey(c: number, r: number) {
@@ -533,7 +550,7 @@ export function createCoreState(
   }
 
   function selectAll() {
-    selectRange(0, 0, colCount - 1, rowCount - 1, 'all');
+    selectRange(0, 0, dims.colCount - 1, dims.rowCount - 1, 'all');
   }
 
   function isSelected(c: number, r: number) {
@@ -625,10 +642,12 @@ export function createCoreState(
 
   function getCellValue(c: number, r: number) {
     clearEvalCache();
-    return computeCellValue(c, r, cells, colCount, rowCount);
+    return computeCellValue(c, r, cells, dims.colCount, dims.rowCount);
   }
 
   function setCellValue(c: number, r: number, v: string | null | undefined) {
+    // 按需扩展：允许写入超出当前逻辑范围的坐标，保证粘贴/拖拽/末尾输入等操作不被截断
+    if (c >= 0 && r >= 0) ensureCapacity(c, r);
     const k = cellKey(c, r);
     clearEvalCache();
     if (v === '' || v == null) {
@@ -673,7 +692,7 @@ export function createCoreState(
     if (styleId !== undefined && styleId > 0) cell.styleId = styleId;
     cells[k] = cell;
     if (val.startsWith('=')) {
-      formulaDeps.set(k, parseFormulaRefs(val.slice(1), colCount, rowCount));
+      formulaDeps.set(k, parseFormulaRefs(val.slice(1), dims.colCount, dims.rowCount));
     } else {
       formulaDeps.clear(k);
     }
@@ -723,9 +742,16 @@ export function createCoreState(
   // ============ 导航 ============
   function moveActive(dC: number, dR: number) {
     const cur = activeCell.value;
-    let newC = Math.max(0, Math.min(colCount - 1, cur.col + dC));
-    let newR = Math.max(0, Math.min(rowCount - 1, cur.row + dR));
+    // 先计算不钳制的目标位置
+    let newC = Math.max(0, cur.col + dC);
+    let newR = Math.max(0, cur.row + dR);
 
+    // 如果目标超出当前范围，先扩展
+    if (newC >= dims.colCount || newR >= dims.rowCount) {
+      ensureCapacity(newC, newR);
+    }
+
+    // 现在再获取 merge 信息（扩展后范围已足够）
     const curMerge = findMergeFn(cur.col, cur.row);
     const targetMerge = findMergeFn(newC, newR);
 
@@ -734,9 +760,15 @@ export function createCoreState(
       else if (dC < 0) newC = curMerge.range.startCol - 1;
       if (dR > 0) newR = curMerge.range.endRow + 1;
       else if (dR < 0) newR = curMerge.range.startRow - 1;
-      newC = Math.max(0, Math.min(colCount - 1, newC));
-      newR = Math.max(0, Math.min(rowCount - 1, newR));
+      // 处理 merge 后可能再次超出
+      if (newC >= dims.colCount || newR >= dims.rowCount) {
+        ensureCapacity(newC, newR);
+      }
     }
+
+    // 最后钳制到有效范围
+    newC = Math.max(0, Math.min(dims.colCount - 1, newC));
+    newR = Math.max(0, Math.min(dims.rowCount - 1, newR));
 
     selectCell(newC, newR);
   }
@@ -761,8 +793,8 @@ export function createCoreState(
   // ============ 二分命中 ============
   function hitCol(x: number) {
     const p = colPositions.value;
-    if (x < 0 || x >= p[colCount]!) return -1;
-    let lo = 0, hi = colCount - 1;
+    if (x < 0 || x >= p[dims.colCount]!) return -1;
+    let lo = 0, hi = dims.colCount - 1;
     while (lo < hi) {
       const m = (lo + hi + 1) >> 1;
       if (p[m]! <= x) lo = m;
@@ -773,8 +805,8 @@ export function createCoreState(
 
   function hitRow(y: number) {
     const p = rowPositions.value;
-    if (y < 0 || y >= p[rowCount]!) return -1;
-    let lo = 0, hi = rowCount - 1;
+    if (y < 0 || y >= p[dims.rowCount]!) return -1;
+    let lo = 0, hi = dims.rowCount - 1;
     while (lo < hi) {
       const m = (lo + hi + 1) >> 1;
       if (p[m]! <= y) lo = m;
@@ -783,12 +815,69 @@ export function createCoreState(
     return lo;
   }
 
+  function ensureCapacity(minCol: number, minRow: number) {
+    const targetCol = minCol + 1; // colCount 为 exclusive（最大列 index+1）
+    const targetRow = minRow + 1;
+    let grew = false;
+    if (targetCol >= dims.colCount) {
+      const newColCount = Math.max(dims.colCount + EXTEND_COL_STEP, targetCol);
+      const added = newColCount - dims.colCount;
+      const cw = colWidths.value;
+      for (let i = 0; i < added; i++) cw.push(DEFAULT_COL_WIDTH);
+      dims.colCount = newColCount;
+      grew = true;
+    }
+    if (targetRow >= dims.rowCount) {
+      const newRowCount = Math.max(dims.rowCount + EXTEND_ROW_STEP, targetRow);
+      const added = newRowCount - dims.rowCount;
+      const rh = rowHeights.value;
+      for (let i = 0; i < added; i++) rh.push(undefined);
+      dims.rowCount = newRowCount;
+      grew = true;
+    }
+    if (grew) state.scheduleRender?.();
+  }
+
+  function hasDynamicDims(): boolean {
+    return dims.colCount !== initColCount || dims.rowCount !== initRowCount;
+  }
+
+  function setDims(newCol: number, newRow: number) {
+    let changed = false;
+    const nc = Math.max(1, Math.floor(newCol));
+    const nr = Math.max(1, Math.floor(newRow));
+    if (nc !== dims.colCount) {
+      if (nc > dims.colCount) {
+        const cw = colWidths.value;
+        for (let i = dims.colCount; i < nc; i++) cw.push(DEFAULT_COL_WIDTH);
+      } else {
+        colWidths.value = colWidths.value.slice(0, nc);
+      }
+      dims.colCount = nc;
+      changed = true;
+    }
+    if (nr !== dims.rowCount) {
+      if (nr > dims.rowCount) {
+        const rh = rowHeights.value;
+        for (let i = dims.rowCount; i < nr; i++) rh.push(undefined);
+      } else {
+        rowHeights.value = rowHeights.value.slice(0, nr);
+      }
+      dims.rowCount = nr;
+      changed = true;
+    }
+    if (changed) state.scheduleRender?.();
+  }
+
   // ============ 组装 State ============
   const state: CoreState = {
     props,
     locale,
-    colCount,
-    rowCount,
+    get colCount() { return dims.colCount; },
+    get rowCount() { return dims.rowCount; },
+    ensureCapacity,
+    hasDynamicDims,
+    setDims,
 
     cells,
     styles,

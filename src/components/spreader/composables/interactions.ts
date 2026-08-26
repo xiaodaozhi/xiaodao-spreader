@@ -1111,7 +1111,7 @@ export function createInteractions(
         so.insertRows(s2.startRow, s2.endRow);
         scheduleRender();
         so.emitModelData();
-      }, disabled: s2.endRow >= s.rowCount - 1 },
+      } },
       { label: t(s.locale.value, 'cut'), action: () => {
         us.saveUndo();
         bm.copyRowCol();
@@ -1153,7 +1153,7 @@ export function createInteractions(
         so.insertCols(s2.startCol, s2.endCol);
         scheduleRender();
         so.emitModelData();
-      }, disabled: s2.endCol >= s.colCount - 1 },
+      } },
       { label: t(s.locale.value, 'cut'), action: () => {
         us.saveUndo();
         bm.copyRowCol();
@@ -1709,7 +1709,21 @@ export function createInteractions(
     so.focusEditInput();
   }
   function onWheel(e: WheelEvent) {
-    so.clampScroll(s.scrollX.value + e.deltaX, s.scrollY.value + e.deltaY);
+    const newX = s.scrollX.value + e.deltaX;
+    const newY = s.scrollY.value + e.deltaY;
+    // 接近右/下边界时按缓冲扩展逻辑范围，扩展后 clampScroll 自然钳制到新范围
+    const nearMargin = 40;
+    const mx = so.maxScrollX.value;
+    const my = so.maxScrollY.value;
+    if ((newX >= mx - nearMargin && e.deltaX > 0) || (newY >= my - nearMargin && e.deltaY > 0)) {
+      // 估算当前可见最后一列/行，确保扩展后能覆盖滚动目标（不截断，允许超出当前范围）
+      const gw = Math.max(0, so.viewSize.w - 28 - 11);
+      const gh = Math.max(0, so.viewSize.h - 28 - 11);
+      const approxCol = Math.max(0, Math.ceil((newX + gw) / 100) + 2);
+      const approxRow = Math.max(0, Math.ceil((newY + gh) / 24) + 2);
+      s.ensureCapacity(approxCol, approxRow);
+    }
+    so.clampScroll(newX, newY);
     scheduleRender();
   }
 
@@ -2081,7 +2095,7 @@ export function createInteractions(
       if (so.modelData.value && so.modelData.value.length > 0) {
         lastEmittedDataRef.value = JSON.stringify(so.modelData.value);
         so.sheets.value = so.modelData.value.map((smd) => {
-          const sh = so.mkSheet(smd.name);
+          const sh = so.mkSheet(smd.name, { colCount: smd.colCount, rowCount: smd.rowCount });
           const { cells: migratedCells, styles: migratedStyles } = migrateCells(smd.cells);
           Object.assign(sh.cells, migratedCells);
           sh.styles = smd.styles ?? migratedStyles;
@@ -2096,13 +2110,13 @@ export function createInteractions(
           if (smd.colWidths) {
             for (const [c, w] of Object.entries(smd.colWidths)) {
               const ci = Number(c);
-              if (ci >= 0 && ci < s.colCount && w >= 30) sh.colWidths[ci] = w;
+              if (ci >= 0 && ci < (sh.colCount ?? s.colCount) && w >= 30) sh.colWidths[ci] = w;
             }
           }
           if (smd.rowHeights) {
             for (const [r, h] of Object.entries(smd.rowHeights)) {
               const ri = Number(r);
-              if (ri >= 0 && ri < s.rowCount && h >= 24) sh.rowHeights[ri] = h;
+              if (ri >= 0 && ri < (sh.rowCount ?? s.rowCount) && h >= 24) sh.rowHeights[ri] = h;
             }
           }
           if (smd.merges) {

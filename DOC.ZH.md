@@ -144,6 +144,10 @@ interface SheetModelData {
   cells: Record<string, { value: string; styleId?: number; style?: CellStyle }>
   colWidths?: Record<number, number>
   rowHeights?: Record<number, number>
+  /** 逻辑列数（0 基，不含）。省略时默认为 26。 */
+  colCount?: number
+  /** 逻辑行数（0 基，不含）。省略时默认为 200。 */
+  rowCount?: number
 }
 
 // 工作表内部运行时状态
@@ -157,6 +161,8 @@ interface SheetState {
   activeCell: CellCoord
   scrollX: number; scrollY: number
   colWidths: number[]; rowHeights: (number | undefined)[]
+  /** 响应式逻辑尺寸 —— 通过 ensureCapacity 动态增长 */
+  colCount: number; rowCount: number
 }
 
 // 撤销快照
@@ -165,6 +171,8 @@ interface UndoSnapshot {
   styles: CellStyle[]
   borders: BorderStyle[]
   colWidths: number[]; rowHeights: (number | undefined)[]
+  /** 撤销/重做的逻辑尺寸快照 */
+  colCount: number; rowCount: number
 }
 
 // 右键菜单项
@@ -192,13 +200,14 @@ interface ThemeColors { /* 完整列表见第 10 节 */ }
 | `cells` | `reactive<Record<string, CellData>>` | 当前 sheet 单元格数据 |
 | `styles` | `reactive<CellStyle[]>` | 当前 sheet 样式池；`styles[0]` 恒为默认 `{}` |
 | `borders` | `reactive<BorderStyle[]>` | 当前 sheet 边框池；`borders[0]` 恒为默认 `{}`；样式通过 `borderId` 引用边框 |
+| `dims` | `reactive<{colCount: number; rowCount: number}>` | **动态逻辑尺寸** —— 由 props 初始化（默认 26/200），通过 `ensureCapacity()` 增长 |
 | `selection` | `ref<SelectionRange \| null>` | 当前选区 |
 | `activeCell` | `ref<CellCoord>` | 活动单元格 |
 | `scrollX/Y` | `ref<number>` | 网格区滚动偏移 |
 | `editingCell` | `ref<CellCoord \| null>` | 正在编辑的单元格 |
 | `editValue` | `ref<string>` | 编辑浮层实时文本 |
-| `colWidths` | `ref<number[]>` | 各列宽度（默认 100px） |
-| `rowHeights` | `ref<number[]>` | 各行高度（默认 24px） |
+| `colWidths` | `ref<number[]>` | 各列宽度（默认 100px），随 `dims.colCount` 自动扩展 |
+| `rowHeights` | `ref<number[]>` | 各行高度（默认 24px），随 `dims.rowCount` 自动扩展 |
 | `sheets` | `ref<SheetState[]>` | 全部工作表 |
 | `activeSheetIndex` | `ref<number>` | 当前激活工作表索引 |
 | `undoStack` / `redoStack` | `ref<UndoSnapshot[]>` | 撤销/重做栈（最多 50 步） |
@@ -217,8 +226,8 @@ interface ThemeColors { /* 完整列表见第 10 节 */ }
 ### 4.3 多 Sheet 切换
 
 切换 sheet 时执行 `saveSheet()` → `loadSheet(i)`：
-- `saveSheet()` 将当前 `cells`、`styles`、`borders`、`selection`、`scrollX/Y`、`colWidths`、`rowHeights` 序列化到 `sheets[activeSheetIndex]`
-- `loadSheet(i)` 从 `sheets[i]` 恢复全部状态，包括通过 `syncStyles()` 同步 `styles` 池、通过 `syncBorders()` 同步 `borders` 池，并重建公式依赖图
+- `saveSheet()` 将当前 `cells`、`styles`、`borders`、`selection`、`scrollX/Y`、`colWidths`、`rowHeights` 以及 `dims`（colCount/rowCount）序列化到 `sheets[activeSheetIndex]`
+- `loadSheet(i)` 从 `sheets[i]` 恢复全部状态，包括通过 `setDims()` 恢复 `dims`、通过 `syncStyles()` 同步 `styles` 池、通过 `syncBorders()` 同步 `borders` 池，并重建公式依赖图
 
 ### 4.4 v-model 数据同步
 
@@ -239,7 +248,8 @@ DEFAULT_ROW_HEIGHT = 24
 MIN_COL_WIDTH  = 30
 MIN_ROW_HEIGHT = 24
 
-网格总量：默认 200 行 × 26 列
+默认逻辑范围：200 行 × 26 列
+通过 ensureCapacity(minCol, minRow) 动态扩展，缓冲步长（8 列 / 32 行）
 ```
 
 ### 5.1 Canvas 布局平面
@@ -467,10 +477,10 @@ Canvas CSS 坐标（逻辑像素）
 
 ## 12. 撤销/重做
 
-- **快照**：`takeSnap()` 深拷贝当前 `cells`、`styles`、`borders`、`colWidths`、`rowHeights`
+- **快照**：`takeSnap()` 深拷贝当前 `cells`、`styles`、`borders`、`colWidths`、`rowHeights` 以及 `dims`（colCount/rowCount）
 - **入栈**：每次修改前调用 `saveUndo()`，与栈顶去重（JSON 比对）
-- **撤销**：`undoStack.pop()` → `restoreSnap()` 并重建公式依赖图
-- **重做**：`redoStack.pop()` → `restoreSnap()` 并重建公式依赖图
+- **撤销**：`undoStack.pop()` → `restoreSnap()`（通过 `setDims()` 恢复 dims）并重建公式依赖图
+- **重做**：`redoStack.pop()` → `restoreSnap()`（通过 `setDims()` 恢复 dims）并重建公式依赖图
 - **上限**：`UNDO_MAX = 50`，超出时移除最旧快照
 
 ---
@@ -754,3 +764,89 @@ Canvas CSS 坐标（逻辑像素）
 
 ### 19.5 输入时自动识别数字
 输入 `100%`、`1,234`、`¥1,234.56` 等文本由 `parseNumericText`（`core/number-format.ts`）识别为数值并套用对应格式；该逻辑在日期识别之后接入 `setCellValue`（`composables/core-state.ts`）。因此按展示内容排序时，`100%` 以数值 `1` 参与比较（展示时乘回），与 §19.1 的比较规则一致。
+
+---
+
+## 20. 动态范围扩展
+
+逻辑位于 `composables/core-state.ts` 与 `composables/sheets-ops.ts`。将工作表从固定 26×200 网格转变为类 Excel 的动态可扩展工作表。
+
+### 20.1 核心数据结构
+
+每个 sheet 通过 `dims` 维护**响应式**逻辑范围：
+
+```typescript
+// CoreState 中（响应式）
+dims: { colCount: number; rowCount: number }
+```
+
+- 由 `colCount`/`rowCount` prop 初始化（默认：26 列、200 行）。
+- 单调增长——不会自动缩小（仅在显式 sheet 重置/加载时可缩减）。
+- 以 `colCount`/`rowCount` 字段持久化到 `SheetModelData`，支持保存/加载往返。
+
+### 20.2 ensureCapacity(minCol, minRow)
+
+`CoreState` 中统一的扩展入口：
+
+```typescript
+ensureCapacity(minCol: number, minRow: number): void
+```
+
+- 若当前 `dims.colCount` < `minCol`，扩展列；若 `dims.rowCount` < `minRow`，扩展行。
+- 扩展使用**缓冲步长**（`COL_EXPAND_STEP = 8`、`ROW_EXPAND_STEP = 32`）以减少频繁调整开销：
+  ```
+  newColCount = Math.ceil(minCol / 8) * 8   // 向上取整到 8 的倍数
+  newRowCount = Math.ceil(minRow / 32) * 32 // 向上取整到 32 的倍数
+  ```
+- 自动将 `colWidths`/`rowHeights` 数组扩展到新的 dims，填充默认值。
+- 无需扩展时立即返回（幂等）。
+
+### 20.3 扩展触发时机
+
+当用户操作将跨越当前边界时，自动触发扩展：
+
+| 触发 | 位置 | 行为 |
+|---|---|---|
+| **滚动接近边界** | `interactions.ts` → `onWheel` | 滚动到距右/下边界 40px 以内时，估算可视行列数并调用 `ensureCapacity()` |
+| **键盘导航跨越边界** | `core-state.ts` → `moveActive()` | 方向键/PgUp/PgDn 将移出当前 dims 时，先扩展范围再钳制 |
+| **边界单元格输入** | `core-state.ts` → `setCellValue()` | 向单元格写入非空值时调用 `ensureCapacity(col, row)` 确保目标存在 |
+| **粘贴超出范围** | `borders-merge.ts` → `pasteFromClipboard()` | 计算粘贴目标范围，写入前调用 `ensureCapacity()` |
+| **插入行列挤出数据** | `sheets-ops.ts` → `insertRows()`/`insertCols()` | 通过 `findLastDataExtents()` 检测最后一行/列数据是否会被挤出当前范围；仅在非默认单元格（有数据或自定义格式）面临风险时扩展，不对空默认单元格扩展 |
+
+### 20.4 插入/删除的条件扩展
+
+插入操作使用 `findLastDataExtents()` 定位实际含有数据或自定义格式的最后列/行：
+
+```typescript
+function findLastDataExtents(): { lastCol: number; lastRow: number }
+```
+
+- 扫描 `cells` 找到含有非空值或非默认 `styleId`（> 0）的最大列/行。
+- 若插入会使 `lastCol + n` 超过当前 `colCount`，触发扩展。
+- **在边界插入始终扩展**（因为边缘新增空行列代表用户的明确意图）。
+- 默认格式的空单元格被挤出**不**触发扩展——与 Excel 行为一致。
+
+### 20.5 稀疏存储兼容
+
+扩展与现有稀疏单元格存储无缝协作：
+
+- 扩展逻辑范围**不会创建空单元格**——单元格仅在有实际数据时才存储。
+- `colWidths`/`rowHeights` 数组以默认值（100px / 24px）填充新范围。
+- 撤销/重做快照包含 `colCount`/`rowCount`，确保范围扩展/缩减可正确回退。
+- Sheet 序列化（`SheetModelData`）包含 `colCount?`/`rowCount?` 用于持久化。
+
+### 20.6 列名转换
+
+列标签使用 Excel 风格命名（A→Z→AA→AZ→BA→...→ZZ→AAA...），实现于 `core/utils.ts`：
+
+- `colToLabel(col: number): string` —— 将 0 基列索引转换为字母标签
+- `labelToCol(label: string): number` —— 将字母标签转换回 0 基索引
+
+这些工具函数处理表头渲染、单元格引用解析以及公式列引用，覆盖完整动态范围。
+
+### 20.7 集成说明
+
+- **所有依赖计算**（`colPositions`、`rowPositions`、`totalWidth`、`totalHeight`、`maxScrollX`、`maxScrollY`）均为计算属性，响应式依赖 `dims.colCount`/`dims.rowCount`，因此范围扩展时自动更新。
+- **Canvas 渲染**仅通过虚拟滚动绘制可视区域；扩展不影响渲染性能。
+- **选区**（含全选）使用 `dims` 进行边界计算，扩展范围完全可选。
+- **复制粘贴**操作遵循动态边界；剪贴板协议（TSV）不变。

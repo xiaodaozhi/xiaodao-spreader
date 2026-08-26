@@ -117,7 +117,7 @@ export function createUndoStyles(
     activeSheetIndex: Ref<number>;
     saveSheet: () => void;
     loadSheet: (i: number) => void;
-    mkSheet: (name: string) => SheetState;
+    mkSheet: (name: string, dims?: { colCount?: number; rowCount?: number }) => SheetState;
   },
 ): UndoStylesState {
   // ============ 撤销/重做 ============
@@ -141,6 +141,7 @@ export function createUndoStyles(
         activeCell: sh.activeCell ? { ...sh.activeCell } : { col: 0, row: 0 },
         scrollX: sh.scrollX, scrollY: sh.scrollY,
         colWidths: [...sh.colWidths], rowHeights: [...sh.rowHeights],
+        colCount: sh.colCount, rowCount: sh.rowCount,
       })),
       styles: [...s.styles],
       activeSheetIndex: sheetsCtx.activeSheetIndex.value,

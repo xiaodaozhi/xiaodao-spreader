@@ -45,7 +45,7 @@ export interface SheetsOpsState {
   dupSheet: (i: number) => number;
   moveSheet: (i: number, d: number) => void;
   sheetCount: ComputedRef<number>;
-  mkSheet: (name: string) => SheetState;
+  mkSheet: (name: string, dims?: { colCount?: number; rowCount?: number }) => SheetState;
 
   // v-model emit
   emitModelData: () => void;
@@ -114,17 +114,25 @@ export function createSheetsOps(
 
   function insertRows(rS: number, rE: number) {
     const n = rE - rS + 1;
-    if (rE >= s.rowCount - 1) return;
+    const currentRowCount = s.rowCount;
+    const origColCount = s.colCount;
+    const { lastRow } = findLastDataExtents();
+    if (lastRow >= rS && lastRow + n >= currentRowCount) {
+      s.ensureCapacity(origColCount - 1, currentRowCount - 1 + n);
+    }
+    const origRowCount = s.rowCount; // 扩展后的实际行数
     const rebuiltMerges = adjustMergesForInsertRows(rS, rE);
-    for (let r = s.rowCount - 1; r > rE; r--) {
-      for (let c = 0; c < s.colCount; c++) {
+    // 移动所有行（包括扩展的行），从最后一行开始，向下移动
+    for (let r = origRowCount - 1; r > rE; r--) {
+      for (let c = 0; c < origColCount; c++) {
         const sk = s.cellKey(c, r - n), dk = s.cellKey(c, r);
         if (s.cells[sk]) s.cells[dk] = s.cells[sk]!;
         else s.delCell(dk);
       }
       s.rowHeights.value[r] = s.rowHeights.value[r - n];
     }
-    for (let r = rE + 1; r <= rE + n; r++) {
+    // 清空插入位置的新行（rS 到 rE 变成了新的空行）
+    for (let r = rS; r <= rE; r++) {
       for (let c = 0; c < s.colCount; c++) s.delCell(s.cellKey(c, r));
       s.rowHeights.value[r] = undefined;
     }
@@ -133,21 +141,61 @@ export function createSheetsOps(
 
   function insertCols(cS: number, cE: number) {
     const n = cE - cS + 1;
-    if (cE >= s.colCount - 1) return;
+    const currentColCount = s.colCount;
+    const origRowCount = s.rowCount;
+    const { lastCol } = findLastDataExtents();
+    if (lastCol >= cS && lastCol + n >= currentColCount) {
+      s.ensureCapacity(currentColCount - 1 + n, origRowCount - 1);
+    }
+    const origColCount = s.colCount; // 扩展后的实际列数
+    const origRowCount2 = s.rowCount; // 扩展后的实际行数
     const rebuiltMerges = adjustMergesForInsertCols(cS, cE);
-    for (let c = s.colCount - 1; c > cE; c--) {
-      for (let r = 0; r < s.rowCount; r++) {
+    // 移动所有列（包括扩展的列），从最后一列开始，向右移动
+    for (let c = origColCount - 1; c > cE; c--) {
+      for (let r = 0; r < origRowCount2; r++) {
         const sk = s.cellKey(c - n, r), dk = s.cellKey(c, r);
         if (s.cells[sk]) s.cells[dk] = s.cells[sk]!;
         else s.delCell(dk);
       }
       s.colWidths.value[c] = s.colWidths.value[c - n]!;
     }
-    for (let c = cE + 1; c <= cE + n; c++) {
+    // 清空插入位置的新列（cS 到 cE 变成了新的空列）
+    for (let c = cS; c <= cE; c++) {
       for (let r = 0; r < s.rowCount; r++) s.delCell(s.cellKey(c, r));
       s.colWidths.value[c] = DEFAULT_COL_WIDTH;
     }
     applyAdjustedMerges(rebuiltMerges);
+  }
+
+  // 同时找到最后一个有数据的行和列
+  function findLastDataExtents(): { lastCol: number; lastRow: number } {
+    let lastCol = -1, lastRow = -1;
+    for (const key in s.cells) {
+      const parts = key.split(',');
+      if (parts.length === 2) {
+        const c = parseInt(parts[0]!, 10);
+        const r = parseInt(parts[1]!, 10);
+        const cell = s.cells[key];
+        if (cell && (cell.value !== '' || cell.styleId !== undefined)) {
+          if (c > lastCol) lastCol = c;
+          if (r > lastRow) lastRow = r;
+        }
+      }
+    }
+    for (let c = s.colCount - 1; c >= 0; c--) {
+      const w = s.colWidths.value[c];
+      if (w !== undefined && w !== DEFAULT_COL_WIDTH) {
+        if (c > lastCol) lastCol = c;
+        break;
+      }
+    }
+    for (let r = s.rowCount - 1; r >= 0; r--) {
+      if (s.rowHeights.value[r] !== undefined) {
+        if (r > lastRow) lastRow = r;
+        break;
+      }
+    }
+    return { lastCol, lastRow };
   }
 
   function deleteCols(cS: number, cE: number) {
@@ -583,7 +631,11 @@ export function createSheetsOps(
     sidN++;
     return `s_${sidN}`;
   }
-  function mkSheet(name: string): SheetState {
+  function mkSheet(name: string, dims?: { colCount?: number; rowCount?: number }): SheetState {
+    const colC = Math.max(1, dims?.colCount ?? s.colCount);
+    const rowC = Math.max(1, dims?.rowCount ?? s.rowCount);
+    const cw: number[] = new Array(colC).fill(DEFAULT_COL_WIDTH);
+    const rh: (number | undefined)[] = new Array(rowC).fill(undefined);
     return {
       id: nid(), name, cells: {}, merges: {},
       styles: [{}],
@@ -591,8 +643,10 @@ export function createSheetsOps(
       selection: { startCol: 0, startRow: 0, endCol: 0, endRow: 0 },
       activeCell: { col: 0, row: 0 },
       scrollX: 0, scrollY: 0,
-      colWidths: new Array(s.colCount).fill(DEFAULT_COL_WIDTH),
-      rowHeights: new Array(s.rowCount).fill(undefined),
+      colWidths: cw,
+      rowHeights: rh,
+      colCount: colC,
+      rowCount: rowC,
     };
   }
   const sheets = ref<SheetState[]>([mkSheet('Sheet1')]);
@@ -611,6 +665,8 @@ export function createSheetsOps(
     sh.rowHeights = [...s.rowHeights.value];
     sh.styles = [...s.styles];
     sh.borders = [...s.borders];
+    sh.colCount = s.colCount;
+    sh.rowCount = s.rowCount;
   }
 
   function loadSheet(i: number) {
@@ -626,6 +682,10 @@ export function createSheetsOps(
     s.scrollY.value = sh.scrollY;
     s.colWidths.value = [...sh.colWidths];
     s.rowHeights.value = [...sh.rowHeights];
+    // 同步逻辑范围：通过 s.setDims 让 dims 与 colWidths/rowHeights 同步（含裁剪 / 补齐）
+    const targetCol = Math.max(1, sh.colCount ?? s.colCount);
+    const targetRow = Math.max(1, sh.rowCount ?? s.rowCount);
+    s.setDims?.(targetCol, targetRow);
     s.syncStyles(sh.styles);
     s.syncBorders(sh.borders ?? [{}]);
     activeSheetIndex.value = i;
@@ -688,6 +748,7 @@ export function createSheetsOps(
       activeCell: src.activeCell ? { ...src.activeCell } : { col: 0, row: 0 },
       scrollX: src.scrollX, scrollY: src.scrollY,
       colWidths: [...src.colWidths], rowHeights: [...src.rowHeights],
+      colCount: src.colCount, rowCount: src.rowCount,
     };
     sheets.value.splice(i + 1, 0, cp);
     loadSheet(i + 1);
@@ -743,6 +804,9 @@ export function createSheetsOps(
         if (hv !== undefined && hv !== null) rh[i] = hv;
       }
       if (Object.keys(rh).length) smd.rowHeights = rh;
+      // 输出逻辑有效范围：仅当与默认值不同时输出，保持旧数据兼容
+      if (sh.colCount !== 26) smd.colCount = sh.colCount;
+      if (sh.rowCount !== 200) smd.rowCount = sh.rowCount;
       return smd;
     });
     const js = JSON.stringify(out);
@@ -803,8 +867,24 @@ export function createSheetsOps(
   function clampScroll(sx: number | null, sy: number | null) {
     const gw = Math.max(0, viewSize.w - HEADER_WIDTH - SB_SIZE);
     const gh = Math.max(0, viewSize.h - HEADER_HEIGHT - SB_SIZE);
-    s.scrollX.value = Math.max(0, Math.min(sx ?? s.scrollX.value, Math.max(0, s.totalWidth.value - gw)));
-    s.scrollY.value = Math.max(0, Math.min(sy ?? s.scrollY.value, Math.max(0, s.totalHeight.value - gh)));
+    const newX = sx ?? s.scrollX.value;
+    const newY = sy ?? s.scrollY.value;
+
+    // 任何滚动操作（滚轮、拖拽滚动条、点击滚动条轨道）都在接近边界时触发动态扩展
+    const nearMargin = 40;
+    const maxX = Math.max(0, s.totalWidth.value - gw);
+    const maxY = Math.max(0, s.totalHeight.value - gh);
+    if (
+      (newX >= maxX - nearMargin && newX > s.scrollX.value) ||
+      (newY >= maxY - nearMargin && newY > s.scrollY.value)
+    ) {
+      const approxCol = Math.max(0, Math.ceil((newX + gw) / 100) + 2);
+      const approxRow = Math.max(0, Math.ceil((newY + gh) / 24) + 2);
+      s.ensureCapacity(approxCol, approxRow);
+    }
+
+    s.scrollX.value = Math.max(0, Math.min(newX, Math.max(0, s.totalWidth.value - gw)));
+    s.scrollY.value = Math.max(0, Math.min(newY, Math.max(0, s.totalHeight.value - gh)));
   }
   // 反向注入到 core-state
   s.clampScroll = clampScroll;

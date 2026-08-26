@@ -402,27 +402,31 @@ export function createBordersMerge(
     const ac = s.activeCell.value;
     const src = copySourceRange;
     const hasSrcStyles = src && copySourceStyles.length > 0;
+    // 先按粘贴目标右下角扩展逻辑范围，避免被固定边界截断
+    const cols = lines.map((l) => l.split('\t').length);
+    const maxCols = cols.length ? Math.max(...cols) : 0;
+    const targetCol = ac.col + maxCols - 1;
+    const targetRow = ac.row + lines.length - 1;
+    if (targetCol >= 0 && targetRow >= 0) s.ensureCapacity(targetCol, targetRow);
     for (let r = 0; r < lines.length; r++) {
-      const cols = lines[r]!.split('\t');
-      for (let c = 0; c < cols.length; c++) {
+      const cs = lines[r]!.split('\t');
+      for (let c = 0; c < cs.length; c++) {
         const tc = ac.col + c;
         const tr = ac.row + r;
-        if (tc < s.colCount && tr < s.rowCount) {
-          let val = cols[c]!;
-          if (val.startsWith('=') && src) {
-            val = shiftFormulaRefs(
-              val,
-              tc - (src.startCol + c),
-              tr - (src.startRow + r),
-              s.colCount, s.rowCount, colToLabel,
-            );
-          }
-          if (hasSrcStyles && r < copySourceStyles.length && c < (copySourceStyles[r]?.length ?? 0)) {
-            const srcStyle = copySourceStyles[r]![c] ?? null;
-            setCellWithStyle(tc, tr, val, srcStyle);
-          } else {
-            s.setCellValue(tc, tr, val);
-          }
+        let val = cs[c]!;
+        if (val.startsWith('=') && src) {
+          val = shiftFormulaRefs(
+            val,
+            tc - (src.startCol + c),
+            tr - (src.startRow + r),
+            s.colCount, s.rowCount, colToLabel,
+          );
+        }
+        if (hasSrcStyles && r < copySourceStyles.length && c < (copySourceStyles[r]?.length ?? 0)) {
+          const srcStyle = copySourceStyles[r]![c] ?? null;
+          setCellWithStyle(tc, tr, val, srcStyle);
+        } else {
+          s.setCellValue(tc, tr, val);
         }
       }
     }
