@@ -145,13 +145,20 @@ const canSort = computed(() => {
   return sheetsOpsRaw.canSortColumns(sel.startCol, sel.endCol);
 });
 
-// 筛选可用条件：已存在筛选态时始终可用（可清除/切换）；否则若活动单元格落在跨多格的合并区域内则禁用
+// 筛选可用条件：已存在筛选态（按钮选中态）时始终可用（点击即清除整个筛选）；
+// 否则若选区命中任何跨多格合并单元格则禁用——合并单元格会破坏表头/数据探测，不应进入筛选态。
 const canFilter = computed(() => {
   if (coreState.getFilter() !== null) return true;
-  const ac = coreState.activeCell;
-  const m = coreState.findMerge(ac.col, ac.row);
-  if (m && (m.range.startCol !== m.range.endCol || m.range.startRow !== m.range.endRow)) {
-    return false;
+  const sel = coreState.selection;
+  if (!sel) return true;
+  const sc = Math.min(sel.startCol, sel.endCol);
+  const ec = Math.max(sel.startCol, sel.endCol);
+  const sr = Math.min(sel.startRow, sel.endRow);
+  const er = Math.max(sel.startRow, sel.endRow);
+  for (const key in coreState.merges) {
+    const m = coreState.merges[key]!;
+    if (m.startCol === m.endCol && m.startRow === m.endRow) continue; // 单格不算合并
+    if (sc <= m.endCol && ec >= m.startCol && sr <= m.endRow && er >= m.startRow) return false;
   }
   return true;
 });

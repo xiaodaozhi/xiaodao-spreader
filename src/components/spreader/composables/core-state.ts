@@ -800,11 +800,19 @@ export function createCoreState(
       sc = ac.col; ec = ac.col;
     }
 
-    // 向下探测：从表头行向下逐行延伸到该列范围连续有内容的最后一行
+    // 向下探测：从表头行向下逐行延伸到该列范围连续有内容的最后一行；
+    // 一旦碰到（跨多格）已合并单元格即停止，合并单元格不计入数据区——其往往属独立分区而非列表数据。
     let bottom = anchorRow;
     while (bottom < dims.rowCount - 1) {
+      const next = bottom + 1;
       let any = false;
-      for (let c = sc; c <= ec; c++) if (has(c, bottom + 1)) { any = true; break; }
+      let merged = false;
+      for (let c = sc; c <= ec; c++) {
+        if (has(c, next)) any = true;
+        const m = findMerge(c, next);
+        if (m && (m.range.startCol !== m.range.endCol || m.range.startRow !== m.range.endRow)) merged = true;
+      }
+      if (merged) break;
       if (!any) break;
       bottom++;
     }
