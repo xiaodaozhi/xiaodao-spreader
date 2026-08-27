@@ -2544,6 +2544,16 @@ export function createInteractions(
     if (!cvs) return;
     const rect = cvs.getBoundingClientRect();
     const x = t.clientX - rect.left, y = t.clientY - rect.top;
+    const tcX = t.clientX, tcY = t.clientY;
+    // 触屏构造最小 MouseEvent（仅用 clientX/clientY 定位右键菜单）
+    const makeTouchEv = (cx: number, cy: number): MouseEvent =>
+      ({ clientX: cx, clientY: cy, preventDefault() {} } as unknown as MouseEvent);
+    // 编辑中/公式栏聚焦/改过：先提交编辑（与鼠标 onMouseDown 一致）
+    {
+      const fbRef = so.formulaBarRef.value;
+      const focusOnFb = !!(fbRef && typeof document !== 'undefined' && document.activeElement === fbRef);
+      if (s.editingCell.value || focusOnFb || fbDirty) acceptFormulaBarEdit();
+    }
     // 填充柄命中：进入 autofilling（与 mouse 共用 autoFillState），不启动滚动
     if (isFillHandleHit(x, y)) {
       e.preventDefault();
@@ -2624,6 +2634,13 @@ export function createInteractions(
       tSR = screenYToRow(y);
       if (tLongTimer !== null) clearTimeout(tLongTimer);
       tLongTimer = window.setTimeout(() => {
+        const sel = s.selection.value;
+        const inSel = !!sel && tSC >= sel.startCol && tSC <= sel.endCol && tSR >= sel.startRow && tSR <= sel.endRow;
+        // 选区内长按 → 弹右键上下文菜单（与桌面右键等价）；选区外长按 → 框选
+        if (inSel) {
+          onCellCtx(makeTouchEv(tcX, tcY), tSC, tSR);
+          return;
+        }
         tSelecting = true;
         tSelAnchorC = tSC;
         tSelAnchorR = tSR;
@@ -2655,12 +2672,22 @@ export function createInteractions(
         tSC = -1;
         tSR = -1;
       }
-      // 列头/行头：长按进入拖拽多选（与单元格框选对称；左上角全选无需）
-      if (tZone === 'col' || tZone === 'row') {
+      // 列头/行头/全选角：长按手势——选区内长按弹右键菜单，选区外长按拖拽多选
+      if (tZone === 'col' || tZone === 'row' || tZone === 'all') {
         if (tLongTimer !== null) clearTimeout(tLongTimer);
         tLongTimer = window.setTimeout(() => {
-          tSelecting = true;
+          const sel = s.selection.value;
+          if (tZone === 'all') {
+            onCornerCtx(makeTouchEv(tcX, tcY));
+            return;
+          }
           if (tZone === 'col') {
+            const inSel = !!sel && sel.startRow === 0 && sel.endRow === s.rowCount - 1 && tSC >= sel.startCol && tSC <= sel.endCol;
+            if (inSel) {
+              onColHdrCtx(makeTouchEv(tcX, tcY), tSC);
+              return;
+            }
+            tSelecting = true;
             tSelAnchorC = tSC;
             tSelAnchorR = -1;
             if (tSC >= 0) {
@@ -2668,6 +2695,12 @@ export function createInteractions(
               scheduleRender();
             }
           } else {
+            const inSel = !!sel && sel.startCol === 0 && sel.endCol === s.colCount - 1 && tSR >= sel.startRow && tSR <= sel.endRow;
+            if (inSel) {
+              onRowHdrCtx(makeTouchEv(tcX, tcY), tSR);
+              return;
+            }
+            tSelecting = true;
             tSelAnchorC = -1;
             tSelAnchorR = tSR;
             if (tSR >= 0) {
@@ -2761,12 +2794,14 @@ export function createInteractions(
       isResizingC = false;
       isResizingR = false;
       so.scheduleOptEmit();
+      if (us.paintFmt.value) us.applyPaintFormat();
       isTouch = false;
       return;
     }
     // 框选结束（长按进入的选择模式）
     if (tSelecting) {
       tSelecting = false;
+      if (us.paintFmt.value) us.applyPaintFormat();
       isTouch = false;
       return;
     }
@@ -2802,6 +2837,8 @@ export function createInteractions(
       s.selectAll();
       scheduleRender();
     }
+    // 格式刷：轻点选择后应用（与鼠标 onMouseUp 一致；编辑态不应用）
+    if (us.paintFmt.value && !s.editingCell.value) us.applyPaintFormat();
   }
 
   // ============ 键盘 ============
