@@ -1633,10 +1633,11 @@ export function createInteractions(
     filterPopup.value = null;
   }
 
-  let cdcHandler: (() => void) | null = null;
+  let cdcHandler: ((e: Event) => void) | null = null;
   function rdl() {
     if (cdcHandler) {
       document.removeEventListener('click', cdcHandler);
+      document.removeEventListener('touchstart', cdcHandler as EventListener, true);
       cdcHandler = null;
     }
   }
@@ -1649,11 +1650,19 @@ export function createInteractions(
     if (x + mw > sw) x -= mw;
     if (y + mh > sh) y -= mh;
     ctxMenu.value = { x, y, items };
-    cdcHandler = () => {
+    cdcHandler = (ev: Event) => {
+      // 触屏：菜单内触摸（点菜单项）不关闭，交由菜单项自身点击处理；菜单外触摸则关闭
+      if (ev.type === 'touchstart') {
+        const tgt = ev.target as HTMLElement | null;
+        if (tgt && tgt.closest('.context-menu')) return;
+      }
       ctxMenu.value = null;
       rdl();
     };
-    setTimeout(() => document.addEventListener('click', cdcHandler!, { once: true }), 0);
+    setTimeout(() => {
+      document.addEventListener('click', cdcHandler!, { once: true });
+      document.addEventListener('touchstart', cdcHandler as EventListener, { once: true, capture: true } as AddEventListenerOptions);
+    }, 0);
   }
   const ctxSubmenuLeft = ref(false);
   function onCtxItemEnter(e: MouseEvent, item: ContextMenuItem) {
