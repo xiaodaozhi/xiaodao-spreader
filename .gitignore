@@ -33,3 +33,4 @@ npm-debug.log*
 
 dist-test/
 .trae/
+.pnpm-store/

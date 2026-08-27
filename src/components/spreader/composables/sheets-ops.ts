@@ -59,6 +59,7 @@ export interface SheetsOpsState {
   // 模板 refs & 滚动控制
   wrapperRef: Ref<HTMLDivElement | null>;
   canvasRef: Ref<HTMLCanvasElement | null>;
+  freezeCanvasRef: Ref<HTMLCanvasElement | null>;
   editInputRef: Ref<HTMLTextAreaElement | null>;
   formulaBarRef: Ref<HTMLTextAreaElement | null>;
   viewSize: { w: number; h: number };
@@ -956,6 +957,7 @@ export function createSheetsOps(
   // ============ 模板 refs & 滚动控制 ============
   const wrapperRef = ref<HTMLDivElement | null>(null);
   const canvasRef = ref<HTMLCanvasElement | null>(null);
+  const freezeCanvasRef = ref<HTMLCanvasElement | null>(null);
   const editInputRef = ref<HTMLTextAreaElement | null>(null);
   const formulaBarRef = ref<HTMLTextAreaElement | null>(null);
   const viewSize = reactive({ w: 800, h: 600 });
@@ -1087,6 +1089,7 @@ export function createSheetsOps(
 
     wrapperRef,
     canvasRef,
+    freezeCanvasRef,
     editInputRef,
     formulaBarRef,
     viewSize,

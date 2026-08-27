@@ -15,6 +15,7 @@ export interface InteractionsState {
   // 渲染器
   scheduleRender: () => void;
   render: () => void;
+  renderFrozenOverlay: () => void;
 
   // 编辑栏
   activeCellLabel: ComputedRef<string>;
@@ -118,7 +119,10 @@ export function createInteractions(
   // ============ 渲染器 ============
   let rp = false;
   let rCtx: CanvasRenderingContext2D | null = null;
+  let frozenCtx: CanvasRenderingContext2D | null = null;
   let rDpr = 1;
+  let drawCells: (rCtx: CanvasRenderingContext2D, sC2: number, eC2: number, sR2: number, eR2: number, rHs: number[]) => void = () => {};
+  let drawBorders: (rCtx: CanvasRenderingContext2D, sC2: number, eC2: number, sR2: number, eR2: number, rHs: number[]) => void = () => {};
 
   function scheduleRender() {
     if (!rp) {
@@ -126,6 +130,7 @@ export function createInteractions(
       requestAnimationFrame(() => {
         rp = false;
         render();
+        renderFrozenOverlay();
       });
     }
   }
@@ -151,10 +156,9 @@ export function createInteractions(
   const BORDER_COLOR = '#444';
 
   function render() {
-    const cvs = so.canvasRef.value;
-    if (!cvs) return;
     const wrapper = so.wrapperRef.value;
-    if (!wrapper) return;
+    const cvs = so.canvasRef.value;
+    if (!wrapper || !cvs) return;
     rCtx = cvs.getContext('2d');
     if (!rCtx) return;
     rDpr = window.devicePixelRatio || 1;
@@ -231,7 +235,7 @@ export function createInteractions(
     const ed = s.editingCell.value;
 
     // 第一步：绘制背景色、选中状态、文本内容（抽取为局部函数 drawCells，坐标改用 cellToScreenRect 以兼容冻结）
-    const drawCells = (rCtx: CanvasRenderingContext2D, sC2: number, eC2: number, sR2: number, eR2: number, rHs: number[]): void => {
+    drawCells = (rCtx: CanvasRenderingContext2D, sC2: number, eC2: number, sR2: number, eR2: number, rHs: number[]): void => {
     for (let row = sR2; row <= eR2; row++) {
       for (let col = sC2; col <= eC2; col++) {
         const mergeInfo = s.findMerge(col, row);
@@ -383,7 +387,7 @@ export function createInteractions(
       }
       return s.getCellBorderSide(s.cells[s.cellKey(col, row)], side);
     };
-    const drawBorders = (rCtx: CanvasRenderingContext2D, sC2: number, eC2: number, sR2: number, eR2: number, _rHs: number[]): void => {
+    drawBorders = (rCtx: CanvasRenderingContext2D, sC2: number, eC2: number, sR2: number, eR2: number, _rHs: number[]): void => {
     rCtx.fillStyle = BORDER_COLOR;
     for (let row = sR2; row <= eR2; row++) {
       for (let col = sC2; col <= eC2; col++) {
@@ -581,29 +585,6 @@ export function createInteractions(
     drawBorders(rCtx, iterC, eC, iterR, eR, rH);
     rCtx.restore();
 
-    // PASS 2：冻结区域（corner / rows / columns）
-    if (frozenColumnsWidth > 0 || frozenRowsHeight > 0) {
-      rCtx.save();
-      rCtx.beginPath();
-      if (frozenColumnsWidth > 0 && frozenRowsHeight > 0) {
-        rCtx.rect(HW, HH, frozenColumnsWidth, frozenRowsHeight);
-      }
-      if (frozenRowsHeight > 0) {
-        rCtx.rect(bodyLeft, HH, bodyWidth, frozenRowsHeight);
-      }
-      if (frozenColumnsWidth > 0) {
-        rCtx.rect(HW, bodyTop, frozenColumnsWidth, bodyHeight);
-      }
-      rCtx.clip();
-      // 冻结区域整体清底：fillRect 受 clip 约束，只覆盖冻结区域
-      // 必须在 drawCells 之前执行，否则空白 cell（无显式 bgColor）会透出 Body 滚动后的内容
-      rCtx.fillStyle = cs.gridBg;
-      rCtx.fillRect(0, 0, W, H);
-      drawCells(rCtx, iterC, eC, iterR, eR, rH);
-      drawBorders(rCtx, iterC, eC, iterR, eR, rH);
-      rCtx.restore();
-    }
-
     // 冻结分隔线（直接绘制，不属于 border pool）
     if (frozenColumnsWidth > 0) {
       rCtx.strokeStyle = cs.headerSep;
@@ -747,13 +728,155 @@ export function createInteractions(
     rCtx.moveTo(HW + 0.5, HH);
     rCtx.lineTo(HW + 0.5, H);
     rCtx.stroke();
+  }
 
-    // 角格
-    rCtx.fillStyle = cs.headerBg;
-    rCtx.fillRect(0, 0, HW, HH);
-    rCtx.strokeStyle = cs.headerSep;
-    rCtx.lineWidth = 1;
-    rCtx.strokeRect(0.5, 0.5, HW - 0.5, HH - 0.5);
+  function renderFrozenOverlay() {
+    const cvs = so.freezeCanvasRef.value;
+    const wrapper = so.wrapperRef.value;
+    if (!cvs || !wrapper) return;
+    const frozenCtx = cvs.getContext('2d');
+    if (!frozenCtx) return;
+    const rect = wrapper.getBoundingClientRect();
+    const W = rect.width;
+    const H = rect.height;
+    const HW = HEADER_WIDTH;
+    const HH = HEADER_HEIGHT;
+    const cs = so.themeColors.value;
+    const cP = s.colPositions.value;
+    const rP = s.rowPositions.value;
+    const cW = s.colWidths.value;
+    const sx = s.scrollX.value;
+    const sy = s.scrollY.value;
+
+    cvs.width = W * rDpr;
+    cvs.height = H * rDpr;
+    cvs.style.width = W + 'px';
+    cvs.style.height = H + 'px';
+    frozenCtx.setTransform(rDpr, 0, 0, rDpr, 0, 0);
+    frozenCtx.clearRect(0, 0, W, H);
+
+    const { frozenRowsHeight, frozenColumnsWidth } = s.getFrozenMetrics();
+    if (frozenRowsHeight <= 0 && frozenColumnsWidth <= 0) return;
+    const bodyLeft = HW + frozenColumnsWidth;
+    const bodyTop = HH + frozenRowsHeight;
+    const bodyWidth = Math.max(0, W - HW - SB_SIZE - frozenColumnsWidth);
+    const bodyHeight = Math.max(0, H - HH - SB_SIZE - frozenRowsHeight);
+    const frozenEC = Math.max(0, s.freeze.cols - 1);
+    const frozenER = Math.max(0, s.freeze.rows - 1);
+    const bodySC = Math.max(s.freeze.cols, s.hitCol(frozenColumnsWidth + sx));
+    let bodyEC = bodySC;
+    for (let c = bodySC; c < s.colCount; c++) {
+      if (HW + cP[c]! - sx >= W) break;
+      bodyEC = c;
+    }
+    const bodySR = Math.max(s.freeze.rows, s.hitRow(frozenRowsHeight + sy));
+    let bodyER = bodySR;
+    for (let r = bodySR; r < s.rowCount; r++) {
+      if (HH + rP[r]! - sy >= H) break;
+      bodyER = r;
+    }
+    let sC = bodySC, eC = bodyEC, sR = bodySR, eR = bodyER;
+    if (frozenColumnsWidth > 0) { sC = 0; eC = Math.max(eC, frozenEC); }
+    if (frozenRowsHeight > 0) { sR = 0; eR = Math.max(eR, frozenER); }
+    let iterC = sC;
+    let iterR = sR;
+    for (const key in s.merges) {
+      const m = s.merges[key];
+      if (!m) continue;
+      if (m.startRow > eR || m.endRow < sR || m.startCol > eC || m.endCol < sC) continue;
+      if (m.startCol < iterC) iterC = m.startCol;
+      if (m.startRow < iterR) iterR = m.startRow;
+    }
+    const rH: number[] = new Array(iterR);
+    for (let i = iterR; i <= eR; i++) rH[i] = rP[i + 1]! - rP[i]!;
+
+    const getBorderSideAt = (col: number, row: number, side: 'top' | 'right' | 'bottom' | 'left'): BorderSide | undefined => {
+      const m = s.findMerge(col, row);
+      if (m) return s.getCellBorderSide(s.cells[m.anchor], side);
+      return s.getCellBorderSide(s.cells[s.cellKey(col, row)], side);
+    };
+    const drawBorders = (ctx: CanvasRenderingContext2D, sC2: number, eC2: number, sR2: number, eR2: number): void => {
+      ctx.fillStyle = '#444';
+      for (let row = sR2; row <= eR2; row++) {
+        for (let col = sC2; col <= eC2; col++) {
+          const mergeInfo = s.findMerge(col, row);
+          if (mergeInfo && !(col === mergeInfo.range.startCol && row === mergeInfo.range.startRow)) continue;
+          const rect2 = s.cellToScreenRect(row, col);
+          const x = rect2.x, y = rect2.y, cw = rect2.width, rh = rect2.height;
+          if (x + cw < HW || y + rh < HH || x > W || y > H) continue;
+          const cell = s.cells[s.cellKey(col, row)];
+          const ownBorder: Record<string, BorderSide | undefined> = {
+            top: s.getCellBorderSide(cell, 'top'),
+            right: s.getCellBorderSide(cell, 'right'),
+            bottom: s.getCellBorderSide(cell, 'bottom'),
+            left: s.getCellBorderSide(cell, 'left'),
+          };
+          if (mergeInfo) continue;
+          const neighbors = {
+            top: getBorderSideAt(col, row - 1, 'bottom'),
+            left: getBorderSideAt(col - 1, row, 'right'),
+            bottom: getBorderSideAt(col, row + 1, 'top'),
+            right: getBorderSideAt(col + 1, row, 'left'),
+          };
+          const rT = resolveSharedBorder(neighbors.top, ownBorder.top);
+          const rL = resolveSharedBorder(neighbors.left, ownBorder.left);
+          const rB = resolveSharedBorder(ownBorder.bottom, neighbors.bottom);
+          const rR = resolveSharedBorder(ownBorder.right, neighbors.right);
+          const wT = rT?.width ?? 0;
+          const wL = rL?.width ?? 0;
+          const wB = rB?.width ?? 0;
+          const wR = rR?.width ?? 0;
+          if (wT > 0) { ctx.fillStyle = rT?.color || '#444'; ctx.fillRect(x, y, cw, wT); }
+          if (wB > 0) { ctx.fillStyle = rB?.color || '#444'; ctx.fillRect(x, y + rh - wB, cw, wB); }
+          if (wL > 0) { ctx.fillStyle = rL?.color || '#444'; ctx.fillRect(x, y, wL, rh); }
+          if (wR > 0) { ctx.fillStyle = rR?.color || '#444'; ctx.fillRect(x + cw - wR, y, wR, rh); }
+        }
+      }
+    };
+    const drawFrozenPane = (x: number, y: number, w: number, h: number, cS: number, cE: number, rS: number, rE: number) => {
+      if (w <= 0 || h <= 0) return;
+      frozenCtx.save();
+      frozenCtx.beginPath();
+      frozenCtx.rect(x, y, w, h);
+      frozenCtx.clip();
+      frozenCtx.fillStyle = cs.gridBg;
+      frozenCtx.fillRect(x, y, w, h);
+      drawCells(frozenCtx, cS, cE, rS, rE, rH);
+      drawBorders(frozenCtx, cS, cE, rS, rE);
+      frozenCtx.restore();
+    };
+    // 每个 pane 只绘制自己负责的区域：
+    // - 左上角：冻结列 × 冻结行
+    // - 顶部冻结行：列可滚动（iterC..eC 包含可能跨边界的合并 anchor），行固定为冻结行
+    // - 左侧冻结列：列固定为冻结列，行可滚动（iterR..eR 包含可能跨边界的合并 anchor）
+    if (frozenColumnsWidth > 0 && frozenRowsHeight > 0) {
+      drawFrozenPane(HW, HH, frozenColumnsWidth, frozenRowsHeight, 0, frozenEC, 0, frozenER);
+    }
+    if (frozenRowsHeight > 0) {
+      drawFrozenPane(bodyLeft, HH, bodyWidth, frozenRowsHeight, iterC, eC, 0, frozenER);
+    }
+    if (frozenColumnsWidth > 0) {
+      drawFrozenPane(HW, bodyTop, frozenColumnsWidth, bodyHeight, 0, frozenEC, iterR, eR);
+    }
+    frozenCtx.strokeStyle = cs.headerSep;
+    frozenCtx.lineWidth = 1;
+    if (frozenColumnsWidth > 0) {
+      frozenCtx.beginPath();
+      frozenCtx.moveTo(bodyLeft + 0.5, HH);
+      frozenCtx.lineTo(bodyLeft + 0.5, H);
+      frozenCtx.stroke();
+    }
+    if (frozenRowsHeight > 0) {
+      frozenCtx.beginPath();
+      frozenCtx.moveTo(HW, bodyTop + 0.5);
+      frozenCtx.lineTo(W, bodyTop + 0.5);
+      frozenCtx.stroke();
+    }
+    frozenCtx.fillStyle = cs.headerBg;
+    frozenCtx.fillRect(0, 0, HW, HH);
+    frozenCtx.strokeStyle = cs.headerSep;
+    frozenCtx.lineWidth = 1;
+    frozenCtx.strokeRect(0.5, 0.5, HW - 0.5, HH - 0.5);
   }
 
   // ============ 编辑栏 ============
@@ -2363,6 +2486,7 @@ export function createInteractions(
   return {
     scheduleRender,
     render,
+    renderFrozenOverlay,
 
     activeCellLabel,
     formulaBarDisplay,

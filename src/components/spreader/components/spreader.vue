@@ -217,6 +217,9 @@ const setWrapperRef = (el: unknown) => {
 const setCanvasRef = (el: unknown) => {
   sheetsOpsRaw.canvasRef.value = el as HTMLCanvasElement | null;
 };
+const setFreezeCanvasRef = (el: unknown) => {
+  sheetsOpsRaw.freezeCanvasRef.value = el as HTMLCanvasElement | null;
+};
 const setEditInputRef = (el: unknown) => {
   sheetsOpsRaw.editInputRef.value = el as HTMLTextAreaElement | null;
 };
@@ -508,6 +511,11 @@ const setDimInputRef = (el: unknown) => {
         @touchmove.prevent="interactions.onTouchMove"
         @touchend="interactions.onTouchEnd"
       />
+      <canvas
+        :ref="setFreezeCanvasRef"
+        class="grid-canvas grid-canvas--freeze"
+        aria-hidden="true"
+      />
       <textarea
         :ref="setEditInputRef"
         class="cell-editor"
@@ -744,6 +752,8 @@ const setDimInputRef = (el: unknown) => {
 .formula-bar__toggle:hover { background: var(--sp-scroll-btn-hover-bg, #e8e8e8); }
 .spreadsheet-wrapper { flex: 1; position: relative; overflow: hidden; background: var(--sp-wrapper-bg); }
 .grid-canvas { position: absolute; top: 0; left: 0; display: block; outline: none; cursor: cell; }
+.grid-canvas--freeze { pointer-events: none; z-index: 1; }
+.grid-canvas:not(.grid-canvas--freeze) { z-index: 0; }
 .grid-canvas:focus { outline: none; }
 .v-scrollbar { position: absolute; right: 0; top: 0; width: 11px; height: calc(100% - 11px); display: flex; flex-direction: column; background: var(--sp-wrapper-bg); }
 .h-scrollbar { position: absolute; left: 0; bottom: 0; height: 11px; width: calc(100% - 11px); display: flex; background: var(--sp-wrapper-bg); }
