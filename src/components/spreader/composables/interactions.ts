@@ -2637,6 +2637,7 @@ export function createInteractions(
       e.preventDefault();
       isTouch = true;
       tMoved = false;
+      tSelecting = false;
       tSX = x;
       tSY = y;
       tSSX = s.scrollX.value;
@@ -2653,6 +2654,28 @@ export function createInteractions(
         tZone = 'all';
         tSC = -1;
         tSR = -1;
+      }
+      // 列头/行头：长按进入拖拽多选（与单元格框选对称；左上角全选无需）
+      if (tZone === 'col' || tZone === 'row') {
+        if (tLongTimer !== null) clearTimeout(tLongTimer);
+        tLongTimer = window.setTimeout(() => {
+          tSelecting = true;
+          if (tZone === 'col') {
+            tSelAnchorC = tSC;
+            tSelAnchorR = -1;
+            if (tSC >= 0) {
+              s.selectRange(tSC, 0, tSC, s.rowCount - 1, 'col');
+              scheduleRender();
+            }
+          } else {
+            tSelAnchorC = -1;
+            tSelAnchorR = tSR;
+            if (tSR >= 0) {
+              s.selectRange(0, tSR, s.colCount - 1, tSR, 'row');
+              scheduleRender();
+            }
+          }
+        }, 450);
       }
     }
   }
@@ -2688,13 +2711,30 @@ export function createInteractions(
       scheduleRender();
       return;
     }
-    // 长按进入的框选模式：拖动扩展矩形选区（不滚动）
+    // 长按进入的选择模式：拖动扩展选区（不滚动）
     if (tSelecting) {
       e.preventDefault();
-      const c = screenXToCol(x), r = screenYToRow(y);
-      if (c >= 0 && r >= 0 && tSelAnchorC >= 0 && tSelAnchorR >= 0) {
-        s.selectRange(tSelAnchorC, tSelAnchorR, c, r);
-        scheduleRender();
+      if (tSelAnchorC >= 0 && tSelAnchorR >= 0) {
+        // 单元格矩形框选
+        const c = screenXToCol(x), r = screenYToRow(y);
+        if (c >= 0 && r >= 0) {
+          s.selectRange(tSelAnchorC, tSelAnchorR, c, r);
+          scheduleRender();
+        }
+      } else if (tSelAnchorR === -1 && tSelAnchorC >= 0) {
+        // 列头拖拽多选：锚定整列，沿列方向扩展（行区间恒为全表）
+        const c = screenXToCol(x);
+        if (c >= 0) {
+          s.selectRange(Math.min(tSelAnchorC, c), 0, Math.max(tSelAnchorC, c), s.rowCount - 1, 'col');
+          scheduleRender();
+        }
+      } else if (tSelAnchorC === -1 && tSelAnchorR >= 0) {
+        // 行头拖拽多选：锚定整行，沿行方向扩展（列区间恒为全表）
+        const r = screenYToRow(y);
+        if (r >= 0) {
+          s.selectRange(0, Math.min(tSelAnchorR, r), s.colCount - 1, Math.max(tSelAnchorR, r), 'row');
+          scheduleRender();
+        }
       }
       return;
     }
