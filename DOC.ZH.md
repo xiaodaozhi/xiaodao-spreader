@@ -1,4 +1,4 @@
-# xiaodao-spreader — 设计文档
+# xiaodao-spreader: 设计文档
 
 **中文** | [English](./DOC.md)
 
@@ -13,9 +13,9 @@
 | 框架 | Vue 3 (Composition API + `<script setup>`) | ^3.4 |
 | 构建 | Vite | ^5.0 |
 | 语言 | TypeScript (strict) | ~5.4 |
-| 渲染 | Canvas 2D API | — |
+| 渲染 | Canvas 2D API | - |
 | 类型检查 | vue-tsc | ^2.2 |
-| 包管理 | pnpm | — |
+| 包管理 | pnpm | - |
 
 ---
 
@@ -30,12 +30,12 @@ xiaodao-spreader/
 ├── vite.config.ts                      # @vitejs/plugin-vue
 └── src/
     ├── main.ts                         # createApp(App).mount('#app')
-    ├── index.ts                        # 库入口 — 从 spreader/ 统一转出
+    ├── index.ts                        # 库入口: 从 spreader/ 统一转出
     ├── App.vue                         # 根组件，flex 全高容器
     ├── vite-env.d.ts
     └── components/
         └── spreader/
-            ├── index.ts                # 统一桶导出 — 组件 + 类型
+            ├── index.ts                # 统一桶导出: 组件 + 类型
             ├── components/
             │   ├── spreader.vue        # 主组件（Canvas 渲染 + 全部交互逻辑）
             │   ├── toolbar.vue         # 带溢出下拉的工具栏
@@ -104,7 +104,7 @@ interface BorderStyle {
 // 边框来源标识
 type BorderSource = 'cell' | 'merge';
 
-// 单元格样式 — 所有样式属性的类型化接口
+// 单元格样式: 所有样式属性的类型化接口
 interface CellStyle {
   fontFamily?: string; fontSize?: number | string; fontWeight?: string;
   fontStyle?: string; underline?: string; strikethrough?: string;
@@ -112,13 +112,13 @@ interface CellStyle {
   textAlign?: string; verticalAlign?: string; wrap?: string;
   borderId?: number;  // sheet 级 borders[] 池的下标；0 或省略 = 无边框
   // borderTopWidth / borderBottomWidth / borderLeftWidth / borderRightWidth / borderColor
-  //   @deprecated — 旧版内联边框属性，仅为迁移历史数据保留
+  //   @deprecated: 旧版内联边框属性，仅为迁移历史数据保留
   numberFormat?: string;
   numberFormatCategory?: 'custom';  // 标记常规单元格经小数位按钮自动生成的格式（自定义分类）
   [key: string]: unknown;  // 可扩展
 }
 
-// 单元格数据 — value 恒为字符串；样式通过 styleId 引用
+// 单元格数据: value 恒为字符串；样式通过 styleId 引用
 interface CellData {
   value: string
   styleId?: number  // sheet 级 styles[] 池的下标；0 或省略 = 默认样式
@@ -168,7 +168,7 @@ interface SheetState {
   activeCell: CellCoord
   scrollX: number; scrollY: number
   colWidths: number[]; rowHeights: (number | undefined)[]
-  /** 响应式逻辑尺寸 —— 通过 ensureCapacity 动态增长 */
+  /** 响应式逻辑尺寸：通过 ensureCapacity 动态增长 */
   colCount: number; rowCount: number
 }
 
@@ -207,7 +207,7 @@ interface ThemeColors { /* 完整列表见第 10 节 */ }
 | `cells` | `reactive<Record<string, CellData>>` | 当前 sheet 单元格数据 |
 | `styles` | `reactive<CellStyle[]>` | 当前 sheet 样式池；`styles[0]` 恒为默认 `{}` |
 | `borders` | `reactive<BorderStyle[]>` | 当前 sheet 边框池；`borders[0]` 恒为默认 `{}`；样式通过 `borderId` 引用边框 |
-| `dims` | `reactive<{colCount: number; rowCount: number}>` | **动态逻辑尺寸** —— 由 props 初始化（默认 26/200），通过 `ensureCapacity()` 增长 |
+| `dims` | `reactive<{colCount: number; rowCount: number}>` | **动态逻辑尺寸**：由 props 初始化（默认 26/200），通过 `ensureCapacity()` 增长 |
 | `selection` | `ref<SelectionRange \| null>` | 当前选区 |
 | `activeCell` | `ref<CellCoord>` | 活动单元格 |
 | `scrollX/Y` | `ref<number>` | 网格区滚动偏移 |
@@ -281,7 +281,7 @@ MIN_ROW_HEIGHT = 24
 └──────────────────────────────────────────────┘
 ```
 
-当工作表存在冻结窗格时，左上角 `freeze.cols × freeze.rows` 区块（及其表头边）固定在滚动网格之上/之侧 —— 详见 [第 21 节](#21-冻结窗格)。
+当工作表存在冻结窗格时，左上角 `freeze.cols × freeze.rows` 区块（及其表头边）固定在滚动网格之上/之侧：详见 [第 21 节](#21-冻结窗格)。
 
 ### 5.2 坐标变换
 
@@ -319,7 +319,7 @@ Canvas CSS 坐标（逻辑像素）
 
 1. Canvas 尺寸同步 + DPR 设置（`ctx.setTransform(dpr,0,0,dpr,0,0)`）
 2. 背景填充 + 网格区白底
-3. 可视范围计算（逐列累计判定，不用二分 — 渲染循环内直接遍历）
+3. 可视范围计算（逐列累计判定，不用二分，渲染循环内直接遍历）
 4. 网格区单元格（裁剪到 `[52,24]` - `[W,H]`）
    - 选区高亮 / 活动单元格边框 / 网格线 / 文本
    - 单元格边框 + 合并边界分段 + 角方块（统一经 `resolveSharedBorder` 解析）
@@ -344,12 +344,12 @@ Canvas CSS 坐标（逻辑像素）
 
 ### 7.1 支持的公式
 
-- `=SUM(A1:B5)` — 区间求和，支持绝对引用 `$A$1`
-- `=AVERAGE(A1:B5)` — 区间平均值
-- `=COUNT(A1:B5)` — 统计区间内数值单元格个数
-- `=IF(条件, 真值, 假值)` — 条件逻辑，支持比较运算符（`> < >= <= = <>`）与分支内算术
-- `=VLOOKUP(value, range, col_index, [approx])` — 垂直查找，默认精确匹配，`TRUE` 为近似匹配
-- `=CONCATENATE(A1, " ", B1)` — 多值拼接为字符串
+- `=SUM(A1:B5)`: 区间求和，支持绝对引用 `$A$1`
+- `=AVERAGE(A1:B5)`: 区间平均值
+- `=COUNT(A1:B5)`: 统计区间内数值单元格个数
+- `=IF(条件, 真值, 假值)`: 条件逻辑，支持比较运算符（`> < >= <= = <>`）与分支内算术
+- `=VLOOKUP(value, range, col_index, [approx])`: 垂直查找，默认精确匹配，`TRUE` 为近似匹配
+- `=CONCATENATE(A1, " ", B1)`: 多值拼接为字符串
 
 公式结果可为 `number`、`string` 或 `null`（错误）。`null` 渲染为 `#ERROR`。
 
@@ -507,13 +507,13 @@ Canvas CSS 坐标（逻辑像素）
 - **合并单元格**：扩展数据模型存储合并信息
 
 ### 13.2 渲染层
-- **冻结窗格** —— *已实现，见 [第 21 节](#21-冻结窗格)*
+- **冻结窗格**：*已实现，见 [第 21 节](#21-冻结窗格)*
 - **条件格式**：渲染循环中加入样式规则匹配
-- **自动填充** —— *已实现，见 [第 22 节](#22-自动填充)*
+- **自动填充**：*已实现，见 [第 22 节](#22-自动填充)*
 
 ### 13.3 交互层
-- **查找/替换** — *已实现，见[第 16 节](#16-查找与替换)*
-- **数据排序/筛选** — *已实现，见[第 19 节](#19-排序)*
+- **查找/替换**: *已实现，见[第 16 节](#16-查找与替换)*
+- **数据排序/筛选**: *已实现，见[第 19 节](#19-排序)*
 - **图表**
 
 ### 13.4 性能优化
@@ -557,7 +557,7 @@ Canvas CSS 坐标（逻辑像素）
 - 属性缺失 / 空字符串 = 常规（General）。
 - 文本 = `'@'`。
 - 常规格式下，若原始值可解析为有限数字，则按"数字"语义自动决定显示（极大/极小用科学计数），默认右对齐。
-- **日期/时间输入自动识别（仅常规单元格，对齐 Excel）**：通过 `setCellValue` 提交值时，若单元格当前格式为常规且输入命中常见模式，会自动转换为 Excel 序列值并套用对应格式代码——日期（`yyyy-m-d`、`yyyy/m/d`、`yyyy年m月d日`、`m-d`/`m/d` 补当前年）、时间（`h:mm`、`h:mm:ss`）、日期时间（日期 + 空格/`T` + 时间）。非法日期（如 `2023-2-29`、月/日越界）与不匹配的文本保持纯文本。套用的代码为 locale 日期/日期时间预设与 `h:mm:ss`，因此工具栏下拉会回显对应预设。序列号遵循 1900 日期系统，含 1900 闰年修正（`core/number-format.ts` 的 `parseDateTimeInput`）。
+- **日期/时间输入自动识别（仅常规单元格，对齐 Excel）**：通过 `setCellValue` 提交值时，若单元格当前格式为常规且输入命中常见模式，会自动转换为 Excel 序列值并套用对应格式代码，日期（`yyyy-m-d`、`yyyy/m/d`、`yyyy年m月d日`、`m-d`/`m/d` 补当前年）、时间（`h:mm`、`h:mm:ss`）、日期时间（日期 + 空格/`T` + 时间）。非法日期（如 `2023-2-29`、月/日越界）与不匹配的文本保持纯文本。套用的代码为 locale 日期/日期时间预设与 `h:mm:ss`，因此工具栏下拉会回显对应预设。序列号遵循 1900 日期系统，含 1900 闰年修正（`core/number-format.ts` 的 `parseDateTimeInput`）。
 
 ### 15.3 分类与格式代码
 
@@ -573,7 +573,7 @@ Canvas CSS 坐标（逻辑像素）
 ### 15.4 渲染与对齐
 
 - `formatNumber(value, format, locale)` 是顶层入口，返回显示字符串（绝不修改 value）。
-- `shouldAlignRightByDefault(value, format)`：数字格式与常规下的有限数字默认右对齐；文本与常规下的非数字保持左对齐 — 与 Excel 一致。
+- `shouldAlignRightByDefault(value, format)`：数字格式与常规下的有限数字默认右对齐；文本与常规下的非数字保持左对齐，与 Excel 一致。
 - `isFormatOverflowsToHashes(format)` / `isInvalidDisplayValue(value, format)`：供渲染器判断是否以 `#` 填充显示。
 - **i18n**：货币符号（`¥` / `$`）、月份与星期名跟随 `locale`。
 
@@ -717,7 +717,7 @@ Canvas CSS 坐标（逻辑像素）
 | `getBorders()` / `setBorders(borders)` | 返回数组浅拷贝 / 恢复快照并重建索引 |
 | `compactBorders(styles)` | 边框 GC：丢弃未被样式引用的边框，重新生成连续 id |
 
-约束：`borders[0]` 恒为默认空边框 `{}`；已注册边框经 `Object.freeze` 冻结 — 修改需复制后重新注册；`index`（Map）仅运行时使用，不序列化。
+约束：`borders[0]` 恒为默认空边框 `{}`；已注册边框经 `Object.freeze` 冻结，修改需复制后重新注册；`index`（Map）仅运行时使用，不序列化。
 
 辅助函数：`getCellBorderSide` / `getCellBorder` / `setCellBorderSide` / `setCellBorder` / `clearCellBorder` / `migrateBordersInStyles` / `cleanupMergeInternalBorders`。
 
@@ -728,7 +728,7 @@ Canvas CSS 坐标（逻辑像素）
 1. 两边均为空 → 不绘制。
 2. 仅一边存在 → 采用该边。
 3. 两边均存在：`width` 大者优先；宽度相等 → `first` 侧优先（稳定平局规则）。
-4. `firstSource`/`secondSource`（`'cell'`/`'merge'`）为预留参数，当前不影响优先级 — 合并单元格不会无条件覆盖普通单元格。
+4. `firstSource`/`secondSource`（`'cell'`/`'merge'`）为预留参数，当前不影响优先级，合并单元格不会无条件覆盖普通单元格。
 
 渲染器绘制边框与角方块时，每条相邻边都经此函数解析。**设置边框不再同步相邻单元格**（旧的 `syncCellBorders` 机制已移除）。
 
@@ -749,7 +749,7 @@ Canvas CSS 坐标（逻辑像素）
 
 ## 19. 排序
 
-逻辑位于 `spreader/composables/sheets-ops.ts`，「排序提醒」对话框由 `SortConfirmDialog.vue` 提供。按选中列范围的**展示内容**对行排序——数值、日期、文本均支持。
+逻辑位于 `spreader/composables/sheets-ops.ts`，「排序提醒」对话框由 `SortConfirmDialog.vue` 提供。按选中列范围的**展示内容**对行排序，数值、日期、文本均支持。
 
 ### 19.1 基准列与按展示内容比较
 - **基准列**（决定行顺序的那一列）是用户*原始*选区的首列。当通过排序提醒对话框扩展选区时，基准列固定为原始选区首列，而**不会**偏移成扩展后最左列。
@@ -770,8 +770,8 @@ Canvas CSS 坐标（逻辑像素）
 
 ### 19.4 排序提醒对话框（类 Excel）
 当选区外存在相邻数据时，排序前弹出类 Excel 的「排序提醒」对话框（`SortConfirmDialog.vue`）：
-- **扩展选定区域** —— 排序范围*横向*扩展到相邻有数据的列（行范围与你选中的完全一致）；基准列仍为原始首列。
-- **仅对选定区域排序** —— 只排选中的矩形。
+- **扩展选定区域**：排序范围*横向*扩展到相邻有数据的列（行范围与你选中的完全一致）；基准列仍为原始首列。
+- **仅对选定区域排序**：只排选中的矩形。
 
 检测使用 `getCurrentRegion(sel)`（仅横向扩展）+ `needsSortConfirmation(sel)`，流程由 `prepareSortConfirmation` / `confirmSort(expand)` / `cancelSortConfirmation` 驱动。
 
@@ -794,7 +794,7 @@ dims: { colCount: number; rowCount: number }
 ```
 
 - 由 `colCount`/`rowCount` prop 初始化（默认：26 列、200 行）。
-- 单调增长——不会自动缩小（仅在显式 sheet 重置/加载时可缩减）。
+- 单调增长，不会自动缩小（仅在显式 sheet 重置/加载时可缩减）。
 - 以 `colCount`/`rowCount` 字段持久化到 `SheetModelData`，支持保存/加载往返。
 
 ### 20.2 ensureCapacity(minCol, minRow)
@@ -837,13 +837,13 @@ function findLastDataExtents(): { lastCol: number; lastRow: number }
 - 扫描 `cells` 找到含有非空值或非默认 `styleId`（> 0）的最大列/行。
 - 若插入会使 `lastCol + n` 超过当前 `colCount`，触发扩展。
 - **在边界插入始终扩展**（因为边缘新增空行列代表用户的明确意图）。
-- 默认格式的空单元格被挤出**不**触发扩展——与 Excel 行为一致。
+- 默认格式的空单元格被挤出**不**触发扩展，与 Excel 行为一致。
 
 ### 20.5 稀疏存储兼容
 
 扩展与现有稀疏单元格存储无缝协作：
 
-- 扩展逻辑范围**不会创建空单元格**——单元格仅在有实际数据时才存储。
+- 扩展逻辑范围**不会创建空单元格**，单元格仅在有实际数据时才存储。
 - `colWidths`/`rowHeights` 数组以默认值（100px / 24px）填充新范围。
 - 撤销/重做快照包含 `colCount`/`rowCount`，确保范围扩展/缩减可正确回退。
 - Sheet 序列化（`SheetModelData`）包含 `colCount?`/`rowCount?` 用于持久化。
@@ -852,8 +852,8 @@ function findLastDataExtents(): { lastCol: number; lastRow: number }
 
 列标签使用 Excel 风格命名（A→Z→AA→AZ→BA→...→ZZ→AAA...），实现于 `core/utils.ts`：
 
-- `colToLabel(col: number): string` —— 将 0 基列索引转换为字母标签
-- `labelToCol(label: string): number` —— 将字母标签转换回 0 基索引
+- `colToLabel(col: number): string`：将 0 基列索引转换为字母标签
+- `labelToCol(label: string): number`：将字母标签转换回 0 基索引
 
 这些工具函数处理表头渲染、单元格引用解析以及公式列引用，覆盖完整动态范围。
 
@@ -872,11 +872,11 @@ function findLastDataExtents(): { lastCol: number; lastRow: number }
 
 ### 21.1 状态模型
 
-每个工作表持有响应式 `freeze: FreezePane`，其中 `FreezePane = { rows: number; cols: number }` —— 冻结的顶部行数与左侧列数。`{ rows: 0, cols: 0 }` 表示无冻结。
+每个工作表持有响应式 `freeze: FreezePane`，其中 `FreezePane = { rows: number; cols: number }`：冻结的顶部行数与左侧列数。`{ rows: 0, cols: 0 }` 表示无冻结。
 
-- `setFreeze(rows, cols)` —— 将两者钳制到 `[0, rowCount]` / `[0, colCount]` 后赋值；设计上**保留另一轴**（例如「冻结首行」会保留已有的冻结列）。
-- `clearFreeze()` —— 两者归零。
-- `getFreeze()` —— 返回普通快照 `{ rows, cols }`。
+- `setFreeze(rows, cols)`：将两者钳制到 `[0, rowCount]` / `[0, colCount]` 后赋值；设计上**保留另一轴**（例如「冻结首行」会保留已有的冻结列）。
+- `clearFreeze()`：两者归零。
+- `getFreeze()`：返回普通快照 `{ rows, cols }`。
 
 ### 21.2 持久化
 
@@ -884,7 +884,7 @@ function findLastDataExtents(): { lastCol: number; lastRow: number }
 
 - 存入 `SheetState.freeze`，并在 v-model 发射 / 保存工作表时序列化为 `SheetModelData.freeze?: FreezePane`（`sheets-ops.ts` 从响应式 `s.freeze` 拷贝进 `sh.freeze`）。
 - 切换工作表时恢复，并按新 `[rowCount, colCount]` 钳制。
-- **明确排除在撤销/重做之外** —— `undo-styles.ts` 在每次恢复后重新套用实时 `currentFreeze`，因此冻结/取消冻结不会污染单元格数据的撤销栈。
+- **明确排除在撤销/重做之外**：`undo-styles.ts` 在每次恢复后重新套用实时 `currentFreeze`，因此冻结/取消冻结不会污染单元格数据的撤销栈。
 - 行列插入/删除操作会确定性地把冻结行/列控制在新的范围内（`sheets-ops.ts` 在每次操作后钳制 `freeze.rows` / `freeze.cols`）。
 
 ### 21.3 工具栏入口
@@ -896,7 +896,7 @@ function findLastDataExtents(): { lastCol: number; lastRow: number }
 | 无冻结 | 冻结窗格 · 冻结首行 · 冻结首列 |
 | 已冻结 | 取消冻结 · 冻结首行 · 冻结首列 |
 
-- **冻结窗格**（`panes`）以**当前选区/活动单元格左上角**为冻结点（`rows = sel.startRow`，`cols = sel.startCol`）—— 等同 Excel 的 Freeze Panes。
+- **冻结窗格**（`panes`）以**当前选区/活动单元格左上角**为冻结点（`rows = sel.startRow`，`cols = sel.startCol`）， 等同 Excel 的 Freeze Panes。
 - **取消冻结**替换「冻结窗格」项（互斥）并调用 `clearFreeze()`。
 - 每个菜单项都带 SVG 图标；触发器按钮本身使用冻结图标，冻结首行/首列/取消冻结各有专属 SVG。
 - 选择「冻结首行」/「冻结首列」会保留已有的冻结轴（冻结首行保留冻结列，反之亦然）。
@@ -907,9 +907,9 @@ function findLastDataExtents(): { lastCol: number; lastRow: number }
 
 冻结窗格绘制在**独立的 overlay 画布**（`freezeCanvasRef`，`z-index: 1`）上，叠在主体画布（`z-index: 0`）之上。每帧由 `renderFrozenOverlay` 合成三个 pane，各自裁剪到自身视口：
 
-- **角区块** —— 冻结行 × 冻结列的左上块
-- **顶部冻结行带** —— 跨滚动宽度的冻结行带
-- **左侧冻结列带** —— 跨滚动高度的冻结列带
+- **角区块**：冻结行 × 冻结列的左上块
+- **顶部冻结行带**：跨滚动宽度的冻结行带
+- **左侧冻结列带**：跨滚动高度的冻结列带
 
 `cellToScreenRect(row, col)` 感知冻结：处于冻结方向的单元格**不**叠加 `scrollX`/`scrollY`，处于主体方向的叠加。这令冻结单元格固定、主体在其下滚动。两块画布共用同一坐标系，overlay 与主体完美对齐。
 
@@ -917,16 +917,16 @@ function findLastDataExtents(): { lastCol: number; lastRow: number }
 
 跨冻结线的合并单元格由 `drawMergedCells(ctx, vx, vy, vw, vh)` 通过对当前 pane 视口做**区域相交**绘制，而非仅靠 clip：
 
-- 合并的整屏矩形由**锚点**（左上，感知冻结）与**endCell**（右下，感知主体）合成 —— 其宽度为 `(endCell.right − anchor.left)`，`scrollX` 在主体一侧自然相减。
+- 合并的整屏矩形由**锚点**（左上，感知冻结）与**endCell**（右下，感知主体）合成：其宽度为 `(endCell.right − anchor.left)`，`scrollX` 在主体一侧自然相减。
 - **背景**：冻结 pane 中可见段的右边界固定在冻结分隔线；主体 pane 中随 `scrollX` 走。
-- **文本**：按合并的*逻辑*宽度（不随滚动）布局，保证换行/溢出/对齐稳定；绘制起点在冻结 pane 取锚点、在主体 pane 取 `anchor − scroll` —— 两层 clip 拼接成连续标题（冻结部分固定、主体部分滚动）。
+- **文本**：按合并的*逻辑*宽度（不随滚动）布局，保证换行/溢出/对齐稳定；绘制起点在冻结 pane 取锚点、在主体 pane 取 `anchor − scroll`：两层 clip 拼接成连续标题（冻结部分固定、主体部分滚动）。
 - **边框**：上/下/左/右四边按列/行分段（已感知冻结）；**右边与右上/右下角方块属于主体段**，仅在合并跨入主体处绘制，因此能正确随滚动移出。
 
 这保证冻结部分固定、非冻结部分滚出，即便合并单元格横跨分界线也成立。
 
 ### 21.6 集成说明
 
-- 冻结独立于其他滚动数学（`maxScrollX/Y`、命中测试）—— 冻结行/列简单排除在滚动视口外。
+- 冻结独立于其他滚动数学（`maxScrollX/Y`、命中测试）， 冻结行/列简单排除在滚动视口外。
 - 切换工作表会自动恢复各表自己的 `freeze`。
 
 ---
@@ -944,7 +944,7 @@ function findLastDataExtents(): { lastCol: number; lastRow: number }
 
 ### 22.2 纯引擎（`core/autofill.ts`）
 
-#### 22.2.1 FillValue —— 值分类
+#### 22.2.1 FillValue：值分类
 
 `parseFillValue(value, locale): FillValue` 将原始单元格值分类（优先级：公式 > 日期 > 文本数字 > 数字 > 文本）：
 
@@ -975,7 +975,7 @@ function findLastDataExtents(): { lastCol: number; lastRow: number }
 
 - 方向 = 源与拖拽单元格之间偏移较大的轴（行/列）。
 - 拖拽单元格落在源区域内时返回 `null`（取消）。
-- 永不与源区域重叠 —— 目标始终是源边界之外的*新增*单元格。
+- 永不与源区域重叠：目标始终是源边界之外的*新增*单元格。
 - 支持四方向：上 / 下 / 左 / 右；反向填充（上/左）通过将推断的 step 取负生成递减值。
 
 #### 22.2.4 公式平移
@@ -987,16 +987,16 @@ function findLastDataExtents(): { lastCol: number; lastRow: number }
 `validateMergeCompatibility(sourceRange, targetRange, merges): boolean`：
 
 - 当无合并与任一区域相交，或所有相交合并都被源/目标区域完全包含（整块填充）时返回 `true`。
-- 当合并与源或目标区域部分相交时返回 `false` —— 填充柄变灰且拖拽禁用（第一版保守策略）。
+- 当合并与源或目标区域部分相交时返回 `false`：填充柄变灰且拖拽禁用（第一版保守策略）。
 
 #### 22.2.6 applyAutoFillPlan
 
 `applyAutoFillPlan(sourceRange, targetRange, sheet, direction, locale, colCount, rowCount, colToLabel): FillResult`：
 
-- 返回 `{ cells, merges }` 增量 —— **不** mutate 输入 sheet。
+- 返回 `{ cells, merges }` 增量：**不** mutate 输入 sheet。
 - 对源区域内每一列（纵向填充）或每一行（横向填充）独立从该线的源单元格推断模式，再为该线的目标单元格生成值。
 - 公式单元格经 `translateFormulaForTarget` 平移；源/目标单元格的对应关系按填充线内的偏移确定。
-- 复制源单元格的 `styleId`（不深拷贝 style 对象）—— 经样式池复用。
+- 复制源单元格的 `styleId`（不深拷贝 style 对象）， 经样式池复用。
 - 反向填充（上/左）时模式 step 取负，值从源起始处递减。
 
 ### 22.3 交互层（`composables/interactions.ts`）
@@ -1012,7 +1012,7 @@ function findLastDataExtents(): { lastCol: number; lastRow: number }
 `isFillHandleHit(x, y): boolean`：
 
 - 无选区、编辑器开启、或选区与合并部分相交时返回 `false`。
-- 命中区 = `FILL_HANDLE_SIZE + 2 × FILL_HANDLE_HIT_PADDING`（14×14px），以柄角为中心 —— 足够触摸命中而不增大视觉尺寸。
+- 命中区 = `FILL_HANDLE_SIZE + 2 × FILL_HANDLE_HIT_PADDING`（14×14px），以柄角为中心：足够触摸命中而不增大视觉尺寸。
 - 在 `onMouseDown`/`onTouchStart` 中于 resize 句柄检查**之后**、单元格点击分支**之前**调用；在 `onMouseMove` 悬停分支中调用以切换为 `crosshair` 光标。
 
 #### 22.3.3 状态机
@@ -1036,25 +1036,25 @@ function findLastDataExtents(): { lastCol: number; lastRow: number }
 
 #### 22.3.5 触摸
 
-触摸与鼠标共用完全相同的 `autoFillState` / `updateAutoFillPreview` / `commitAutoFill` 路径——无独立实现。14×14px 命中区防止触摸选区误触。
+触摸与鼠标共用完全相同的 `autoFillState` / `updateAutoFillPreview` / `commitAutoFill` 路径，无独立实现。14×14px 命中区防止触摸选区误触。
 
 ### 22.4 提交（`composables/core-state.ts`）
 
 `applyAutoFill(sourceRange, targetRange, direction)`：
 
-1. `saveUndo()` —— 任何修改前一次快照。
-2. `ensureCapacity(targetRange.endCol, targetRange.endRow)` —— 动态扩展，折叠进同一撤销步骤。
-3. `applyAutoFillPlan(...)` —— 计算纯 `{ cells, merges }` 增量。
+1. `saveUndo()`：任何修改前一次快照。
+2. `ensureCapacity(targetRange.endCol, targetRange.endRow)`：动态扩展，折叠进同一撤销步骤。
+3. `applyAutoFillPlan(...)`：计算纯 `{ cells, merges }` 增量。
 4. 写入每个目标单元格：设置 `value` + `styleId`；更新 `formulaDeps`（公式则解析引用，否则清除）；`markDirty` 触发重算。
-5. `selectRange(源 + 目标并集)` —— 选区更新为完整填充范围。
+5. `selectRange(源 + 目标并集)`：选区更新为完整填充范围。
 6. `scheduleRender()` + `emitModelData()`。
 
 ### 22.5 集成说明
 
 - **公式重算**：提交后 `formulaDeps.markDirty` + `clearEvalCache` 确保依赖公式在下次渲染时重新求值。
-- **样式池**：目标单元格直接复用源 `styleId` —— 无需新注册样式，除非源本身变化。
-- **边框系统**：AutoFill 复制 `styleId`（携带 `borderId`）；渲染时的公共边解析不变——不引入邻居修改。
+- **样式池**：目标单元格直接复用源 `styleId`，无需新注册样式，除非源本身变化。
+- **边框系统**：AutoFill 复制 `styleId`（携带 `borderId`）；渲染时的公共边解析不变，不引入邻居修改。
 - **冻结窗格**：所有坐标走 `cellToScreenRect` / `screenToCell`；柄在 `render` 与 `renderFrozenOverlay` 中均绘制，保持冻结内容之上可见。
-- **动态扩展**：`ensureCapacity` 在 `applyAutoFillPlan` 之前调用，纯 plan 不校验边界——由调用方保证容量。
+- **动态扩展**：`ensureCapacity` 在 `applyAutoFillPlan` 之前调用，纯 plan 不校验边界，由调用方保证容量。
 - **撤销/重做**：每次拖拽一次 `saveUndo()`；快照包含 `colCount`/`rowCount`，动态扩展可逆。
 
