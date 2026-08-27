@@ -777,12 +777,13 @@ export function createInteractions(
         ctx.strokeRect(ax + 0.25, ay + 0.25, (segRight - ax) - 0.5, (segBottom - ay) - 0.5);
         drawMergeBorder(ctx, m, ax, ay, aw, ah, hFrozenPane, vFrozenPane);
         if (!(s.editingCell.value && s.editingCell.value.col === aC && s.editingCell.value.row === aR)) {
-          // 文本布局宽/高用逻辑尺寸（不随滚动）；绘制起点按 pane 平移：
-          // 冻结 pane 画在 anchor 原位置（冻结段固定显示标题开头），body pane 画在 anchor - scroll。
+          // 文本布局宽/高用逻辑尺寸（不随滚动）；绘制起点直接用 anchor 屏幕坐标 ax/ay：
+          // cellToScreenRect 已包含冻结/滚动偏移，故无需再减 sx/sy——否则 body pane 会双重滚动，
+          // 导致合并文字随页面向左滑动的速度比背景快一倍。冻结段与 body 段靠各 pane 的 clip 拼接。
           const logicW = cP[eC + 1]! - cP[aC]!;
           const logicH = rP[eR + 1]! - rP[aR]!;
-          const drawX = hFrozenPane ? ax : ax - sx;
-          const drawY = vFrozenPane ? ay : ay - sy;
+          const drawX = ax;
+          const drawY = ay;
           drawMergeText(ctx, aC, aR, logicW, logicH, drawX, drawY);
         }
       }
