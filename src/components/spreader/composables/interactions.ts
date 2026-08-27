@@ -2562,6 +2562,13 @@ export function createInteractions(
       }
       return;
     }
+    // 筛选按钮命中（最高优先级，与 mouse 一致）：直接打开弹窗，不进入滚动/选择
+    const hitFilter = isFilterButtonHit(x, y);
+    if (hitFilter >= 0) {
+      e.preventDefault();
+      openFilterPopup(hitFilter);
+      return;
+    }
     if (x >= HEADER_WIDTH && y >= HEADER_HEIGHT) {
       // 单元格区域：记录起点，移动时平移滚动，抬手时选中单元格
       e.preventDefault();
