@@ -142,6 +142,12 @@ let tTabSuppressClick = false;
 let tBarTimer: number | null = null;
 let tBarX = 0, tBarY = 0;
 
+// 触屏长按构造最小 MouseEvent（供右键菜单定位）；必须提供 preventDefault/stopPropagation，
+// 否则 onTabCtxMenu 内 e.stopPropagation() 会抛 TypeError 导致菜单不弹出
+function makeCtxMouseEv(x: number, y: number, target: EventTarget | null): MouseEvent {
+  return { clientX: x, clientY: y, target, preventDefault() {}, stopPropagation() {} } as unknown as MouseEvent;
+}
+
 function onTabTouchStart(e: TouchEvent, i: number) {
   const tch = e.touches[0];
   if (!tch) return;
@@ -152,7 +158,7 @@ function onTabTouchStart(e: TouchEvent, i: number) {
   const startEl = e.target as HTMLElement;
   tTabTimer = window.setTimeout(() => {
     tTabSuppressClick = true; // 吞掉松手后合成的 click（避免切换 sheet）
-    const ev = { clientX: tTabX, clientY: tTabY, target: startEl, preventDefault() {} } as unknown as MouseEvent;
+    const ev = makeCtxMouseEv(tTabX, tTabY, startEl);
     emit('tab-contextmenu', { ev, i: tTabIdx });
   }, TAB_LONG_MS);
 }
@@ -190,7 +196,7 @@ function onBarTouchStart(e: TouchEvent) {
   if (tBarTimer !== null) clearTimeout(tBarTimer);
   const startEl = el;
   tBarTimer = window.setTimeout(() => {
-    const ev = { clientX: tBarX, clientY: tBarY, target: startEl, preventDefault() {} } as unknown as MouseEvent;
+    const ev = makeCtxMouseEv(tBarX, tBarY, startEl);
     emit('tabbar-contextmenu', ev);
   }, TAB_LONG_MS);
 }
