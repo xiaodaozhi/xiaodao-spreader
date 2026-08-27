@@ -564,6 +564,19 @@ The project includes a GitHub Actions workflow (`.github/workflows/publish.yml`)
 
 ---
 
+## Touch & Mobile Interaction
+
+x-spreader is touch-first: every mouse interaction has a symmetric touch path, verified on real mobile devices.
+
+- **Tap to select / long-press for context menu**: tap a cell, row header, column header, or the corner select-all button to select; long-press (450ms) inside the current selection opens the right-click context menu (cell / row / column / corner). Long-press outside the selection falls back to range selection / header drag-multi-select, so gestures never conflict.
+- **Header filter arrow**: tap the arrow on the header cell to open the AutoFilter panel (`onTouchStart` now hit-tests the filter button).
+- **Resize columns / rows**: touch the right edge of a column header or bottom edge of a row header (8px hot zone, widened on touch) to drag width / height.
+- **Range selection**: long-press a cell (450ms) then drag to draw a rectangular selection; long-press a row/column header then drag to expand the selection. A clear drag (>8px) switches to scrolling; a light tap keeps the single selection.
+- **Format brush**: after copying a style from a source cell, tap the target range on touch to apply it (mirrors mouse `onMouseUp`).
+- **Commit edit by tapping outside**: tapping empty canvas or outside the formula bar commits an in-progress cell / formula-bar edit (mirrors mouse `onMouseDown`).
+- **Tab bar**: long-press a tab button or the empty tab-bar area (450ms) opens the tab right-click menu.
+- **Popups close on outside tap**: the context menu and the row-height / column-width editor panel (`dimPanel`) close on outside tap. They listen on `touchstart` because `onTouchStart` calls `preventDefault()`, which suppresses the synthetic `click`/`mousedown` that desktop close-listeners rely on. All other pickers already use `pointerdown` and close correctly on touch.
+
 ## Roadmap
 
 ### Near-term
@@ -582,6 +595,7 @@ The project includes a GitHub Actions workflow (`.github/workflows/publish.yml`)
 - [ ] Column / row grouping and collapsing
 - [x] Sort & filter: sort by displayed content with Excel-style Sort Warning dialog (expand selection / current selection only); see [Sorting & Sort Warning](#features)
 - [x] Auto Filter (AutoFilter): toolbar "Filter" / `Ctrl+Shift+L` to enable, header drop-down arrows, intelligent downward data probing, value/text/number/date multi-type filters, separate clear-column vs remove-all; see [Auto Filter (AutoFilter)](#auto-filter-autofilter)
+- [x] Touch & mobile interaction: symmetric touch paths for select / context menu / filter / resize / range select / format brush / tab menu; popups close on outside tap; see [Touch & Mobile Interaction](#touch--mobile-interaction)
 - [ ] Cell comments / notes
 - [ ] Print layout
 

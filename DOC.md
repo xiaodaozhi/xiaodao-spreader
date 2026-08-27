@@ -516,6 +516,7 @@ The `ThemeColors` interface includes:
 - **Find/Replace**: *now implemented, see [Section 16](#16-find--replace)*
 - **Data Sort**: *now implemented, see [Section 19](#19-sorting)*
 - **Auto Filter (AutoFilter)**: *now implemented, see [Section 23](#23-auto-filter-autofilter)*
+- **Touch & Mobile Interaction**: *now implemented — every mouse path has a symmetric touch path (select / context menu / filter hit-test / resize / range select / format brush / tab menu; popups close on outside tap). See [Section 24](#24-touch--mobile-interaction).*
 - **Charts**
 
 ### 13.4 Performance Optimization
@@ -1130,4 +1131,17 @@ clearFilter()            // remove AutoFilter entirely
 - **Row/column insert/delete**: `adjustFilterRows` / `adjustFilterCols` sync `filter.range`; deleting the whole filter region auto-cancels the filter.
 - **Sorting**: hidden rows are preserved; sorting moves data only, never styles; after sorting, filtered rows are recomputed and original row indices are not lost.
 - **Persistence**: `SheetFilter` is serialized through v-model; range, header arrows, criteria, and hidden rows are fully retained on `serialize` / `load`.
+
+## 24. Touch & Mobile Interaction
+
+x-spreader is touch-first: every mouse interaction has a symmetric touch path, verified on real mobile devices. Touch input goes through `onTouchStart` / `onTouchMove` / `onTouchEnd` in `composables/interactions.ts`; `onTouchStart` calls `e.preventDefault()` to suppress synthetic mouse/click events and own the gesture, so all close-listeners that rely on `click`/`mousedown` must also listen on `touchstart`.
+
+- **Tap to select / long-press context menu**: tap a cell, row header, column header, or the corner select-all button to select; long-press (450ms) inside the current selection opens the right-click context menu (cell / row / column / corner) via `showCtx`. Long-press outside the selection falls back to range selection / header drag-multi-select, so gestures never conflict. Touch coordinates are converted with `makeTouchEv(clientX, clientY)` into a minimal `MouseEvent` reused by `showCtx`.
+- **Header filter arrow**: `onTouchStart` now hit-tests `isFilterButtonHit` before selection/resize, so tapping the arrow opens the AutoFilter panel.
+- **Resize columns / rows**: touch the right edge of a column header or bottom edge of a row header (8px hot zone, widened on touch) to drag width / height — mirrors the mouse resize path.
+- **Range selection**: long-press a cell (450ms) then drag to draw a rectangular selection (`tSelecting` / `tSelAnchorC` / `tSelAnchorR`); long-press a row/column header then drag to expand the selection. A clear drag (>8px) switches to scrolling; a light tap keeps the single selection.
+- **Format brush**: after copying a style from a source cell, tapping the target range on touch applies it via `us.applyPaintFormat()` (mirrors mouse `onMouseUp`).
+- **Commit edit by tapping outside**: tapping empty canvas or outside the formula bar commits an in-progress cell / formula-bar edit via `acceptFormulaBarEdit()` (mirrors mouse `onMouseDown`).
+- **Tab bar**: long-press a tab button or the empty tab-bar area (450ms) emits `tab-contextmenu` / `tabbar-contextmenu`; `tabbar.vue` builds a real `MouseEvent` via `makeCtxMouseEv(x, y, target)` (with `preventDefault` + `stopPropagation`) so the shared `onTabCtxMenu` handler works unchanged.
+- **Popups close on outside tap**: the context menu (`showCtx`) and the row-height / column-width editor panel (`openDimPanel`) register a `touchstart` (capture) outside-close listener, because `onTouchStart`'s `preventDefault` suppresses the synthetic `click`/`mousedown` desktop listeners depend on. A `tCtxMenuOpened` flag prevents a long-press-opened menu from collapsing the selection on `onTouchEnd`. All other pickers (calc / color / border / merge / sort, `dropdown.vue`, toolbar overflow, filter-popup) already use `pointerdown` and close correctly on touch.
 

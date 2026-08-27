@@ -515,6 +515,7 @@ Canvas CSS 坐标（逻辑像素）
 - **查找/替换**: *已实现，见[第 16 节](#16-查找与替换)*
 - **数据排序**: *已实现，见[第 19 节](#19-排序)*
 - **自动筛选（AutoFilter）**: *已实现，见[第 23 节](#23-自动筛选autofilter)*
+- **触屏与移动端交互**: *已实现 —— 每个鼠标路径都有对称触屏路径（选择 / 右键菜单 / 筛选命中 / 列宽行高 / 框选 / 格式刷 / tab 菜单；浮层支持点外部关闭）。见[第 24 节](#24-触屏与移动端交互)。*
 - **图表**
 
 ### 13.4 性能优化
@@ -1130,4 +1131,17 @@ clearFilter()            // 整体移除 AutoFilter
 - **行列增删**：插入/删除行/列经 `adjustFilterRows` / `adjustFilterCols` 同步调整 `filter.range`；删除整片筛选区域自动取消 AutoFilter。
 - **排序**：筛选隐藏行保持，排序只移动数据、不搬运样式；排序后重新计算 filtered rows，原行索引不丢失。
 - **持久化**：`SheetFilter` 经 v-model 序列化；`serialize` / `load` 完整保留 range、表头箭头、条件与隐藏行。
+
+## 24. 触屏与移动端交互
+
+x-spreader 以触屏为第一交互：每个鼠标操作都有对称的触屏路径，并在真机验证。触屏事件走 `composables/interactions.ts` 的 `onTouchStart` / `onTouchMove` / `onTouchEnd`；`onTouchStart` 调 `e.preventDefault()` 抑制合成鼠标/click 事件、独占手势，因此所有依赖 `click`/`mousedown` 的关闭监听也必须监听 `touchstart`。
+
+- **点选 / 长按右键菜单**：点击单元格、行头、列头或左上角全选按钮完成选择；在当前选区内长按（450ms）经 `showCtx` 弹出对应右键菜单（单元格 / 行 / 列 / 角落）。选区外长按回落为框选 / 表头拖拽多选，手势零冲突。触屏坐标经 `makeTouchEv(clientX, clientY)` 转最小 `MouseEvent` 复用 `showCtx`。
+- **表头筛选箭头**：`onTouchStart` 在选区/resize 之前先命中 `isFilterButtonHit`，点箭头即打开 AutoFilter 面板。
+- **列宽 / 行高拖拽**：触摸列头右缘或行头下缘（触屏放宽 8px 热区）拖拽改列宽 / 行高，对齐鼠标 resize 路径。
+- **矩形框选**：单元格长按（450ms）后拖动绘制选区（`tSelecting` / `tSelAnchorC` / `tSelAnchorR`）；行/列头长按后拖动扩展行/列选区。明显拖动（>8px）转滚动，轻点保持单选。
+- **格式刷**：从源单元格复制样式后，触屏点目标区域经 `us.applyPaintFormat()` 应用（对齐鼠标 `onMouseUp`）。
+- **点外部提交编辑**：点空白画布或公式栏外经 `acceptFormulaBarEdit()` 提交进行中的单元格 / 公式栏编辑（对齐鼠标 `onMouseDown`）。
+- **底部 tab 栏**：长按 tab 按钮或 tab 栏空白区（450ms）`emit('tab-contextmenu' / 'tabbar-contextmenu')`；`tabbar.vue` 用 `makeCtxMouseEv(x, y, target)` 构造带 `preventDefault` + `stopPropagation` 的真实 `MouseEvent`，共享 `onTabCtxMenu` handler 原样工作。
+- **点外部关闭浮层**：右键菜单（`showCtx`）与行高 / 列宽编辑面板（`openDimPanel`）注册 `touchstart`（capture）点外部关闭监听，因为 `onTouchStart` 的 `preventDefault` 抑制了桌面监听依赖的合成 `click`/`mousedown`。`tCtxMenuOpened` 标志防止长按弹出的菜单在 `onTouchEnd` 把选区缩成单选。其余 picker（计算 / 颜色 / 边框 / 合并 / 排序、`dropdown.vue`、toolbar 溢出、filter-popup）均用 `pointerdown`，触屏原生关闭。
 
