@@ -777,13 +777,18 @@ export function createInteractions(
         ctx.strokeRect(ax + 0.25, ay + 0.25, (segRight - ax) - 0.5, (segBottom - ay) - 0.5);
         drawMergeBorder(ctx, m, ax, ay, aw, ah, hFrozenPane, vFrozenPane);
         if (!(s.editingCell.value && s.editingCell.value.col === aC && s.editingCell.value.row === aR)) {
-          // 文本布局宽/高用逻辑尺寸（不随滚动）；绘制起点直接用 anchor 屏幕坐标 ax/ay：
-          // cellToScreenRect 已包含冻结/滚动偏移，故无需再减 sx/sy——否则 body pane 会双重滚动，
-          // 导致合并文字随页面向左滑动的速度比背景快一倍。冻结段与 body 段靠各 pane 的 clip 拼接。
+          // 文本布局宽/高用逻辑尺寸（不随滚动）；绘制起点按 pane 与是否跨冻结线决定：
+          //  - 冻结 pane：直接用 anchor 屏幕坐标 ax/ay（cellToScreenRect 对冻结列/行已不含滚动偏移）；
+          //  - body pane 且不跨冻结线（anchor 在 body 区）：ax/ay 已含滚动偏移，直接用即可；
+          //  - body pane 且跨冻结线（anchor 落在冻结区）：ax/ay 不含滚动偏移，需补回 -sx/-sy
+          //    让文本随 body 滚动，否则会被钉在冻结分隔线不动。本次只修「不跨冻结线」的双倍滚动，
+          //    跨冻结线行为保持原状，避免回退。
           const logicW = cP[eC + 1]! - cP[aC]!;
           const logicH = rP[eR + 1]! - rP[aR]!;
-          const drawX = ax;
-          const drawY = ay;
+          const aColFrozen = aC < s.freeze.cols;
+          const aRowFrozen = aR < s.freeze.rows;
+          const drawX = hFrozenPane ? ax : (aColFrozen ? ax - sx : ax);
+          const drawY = vFrozenPane ? ay : (aRowFrozen ? ay - sy : ay);
           drawMergeText(ctx, aC, aR, logicW, logicH, drawX, drawY);
         }
       }
