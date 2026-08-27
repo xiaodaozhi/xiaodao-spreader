@@ -1883,10 +1883,15 @@ export function createInteractions(
   const dimInputRef = ref<HTMLInputElement | null>(null);
   const dimPanel = ref<{ type: 'row' | 'col'; x: number; y: number; value: string; error: string } | null>(null);
   let dimCloseHandler: (() => void) | null = null;
+  let dimCloseTouchHandler: (() => void) | null = null;
   function rdlDim() {
     if (dimCloseHandler) {
       document.removeEventListener('mousedown', dimCloseHandler);
       dimCloseHandler = null;
+    }
+    if (dimCloseTouchHandler) {
+      document.removeEventListener('touchstart', dimCloseTouchHandler);
+      dimCloseTouchHandler = null;
     }
   }
   function openDimPanel(type: 'row' | 'col', x: number, y: number) {
@@ -1909,7 +1914,14 @@ export function createInteractions(
     dimCloseHandler = () => {
       dimPanel.value = null;
     };
-    setTimeout(() => document.addEventListener('mousedown', dimCloseHandler!, { once: true }), 0);
+    dimCloseTouchHandler = () => {
+      dimPanel.value = null;
+    };
+    setTimeout(() => {
+      document.addEventListener('mousedown', dimCloseHandler!, { once: true });
+      // 触屏：onTouchStart 调了 preventDefault 会阻止合成的 mousedown，故补 touchstart 监听
+      document.addEventListener('touchstart', dimCloseTouchHandler!, { once: true });
+    }, 0);
     nextTick(() => {
       const inp = dimInputRef.value;
       if (inp) {

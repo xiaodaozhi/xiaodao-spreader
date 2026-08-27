@@ -733,6 +733,7 @@ const setDimInputRef = (el: unknown) => {
           class="dim-panel"
           :style="{ left: interactions.dimPanel.x + 'px', top: interactions.dimPanel.y + 'px' }"
           @mousedown.stop
+          @touchstart.stop
           @click.stop
         >
           <div class="dim-panel__title">
