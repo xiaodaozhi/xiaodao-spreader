@@ -2569,6 +2569,42 @@ export function createInteractions(
       openFilterPopup(hitFilter);
       return;
     }
+    // 列宽 resize 热区（列头右缘）：与鼠标一致，命中即进入 resize 而非滚动（触屏放宽到 8px 易命中）
+    if (y < HEADER_HEIGHT && x >= HEADER_WIDTH) {
+      const c = screenXToCol(x);
+      if (c >= 0) {
+        const cRight = s.cellToScreenRect(0, c).x + s.colWidths.value[c]!;
+        if (Math.abs(x - cRight) <= 8) {
+          e.preventDefault();
+          us.saveUndo();
+          isResizingC = true;
+          rszTC = c;
+          rszSS = s.colWidths.value[c]!;
+          rszSG = (x - HEADER_WIDTH) + s.scrollX.value;
+          isTouch = true;
+          tMoved = false;
+          return;
+        }
+      }
+    }
+    // 行高 resize 热区（行头下缘）
+    if (x < HEADER_WIDTH && y >= HEADER_HEIGHT) {
+      const r = screenYToRow(y);
+      if (r >= 0) {
+        const rBottom = s.cellToScreenRect(r, 0).y + s.getRowHeight(r);
+        if (Math.abs(y - rBottom) <= 8) {
+          e.preventDefault();
+          us.saveUndo();
+          isResizingR = true;
+          rszTR = r;
+          rszSS = s.getRowHeight(r);
+          rszSG = (y - HEADER_HEIGHT) + s.scrollY.value;
+          isTouch = true;
+          tMoved = false;
+          return;
+        }
+      }
+    }
     if (x >= HEADER_WIDTH && y >= HEADER_HEIGHT) {
       // 单元格区域：记录起点，移动时平移滚动，抬手时选中单元格
       e.preventDefault();
@@ -2618,6 +2654,25 @@ export function createInteractions(
       updateAutoFillPreview(x, y);
       return;
     }
+    // 列宽 / 行高 resize 拖拽（与鼠标一致）
+    if (isResizingC) {
+      const d = ((x - HEADER_WIDTH) + s.scrollX.value) - rszSG;
+      let newW = rszSS + d;
+      newW = newW < MIN_COL_WIDTH ? MIN_COL_WIDTH : (newW > MAX_COL_WIDTH ? MAX_COL_WIDTH : newW);
+      s.colWidths.value[rszTC] = newW;
+      e.preventDefault();
+      scheduleRender();
+      return;
+    }
+    if (isResizingR) {
+      const d = ((y - HEADER_HEIGHT) + s.scrollY.value) - rszSG;
+      let newH = rszSS + d;
+      newH = newH < MIN_ROW_HEIGHT ? MIN_ROW_HEIGHT : (newH > MAX_ROW_HEIGHT ? MAX_ROW_HEIGHT : newH);
+      s.rowHeights.value[rszTR] = newH;
+      e.preventDefault();
+      scheduleRender();
+      return;
+    }
     if (Math.abs(x - tSX) > 8 || Math.abs(y - tSY) > 8) {
       tMoved = true;
       e.preventDefault();
@@ -2630,6 +2685,14 @@ export function createInteractions(
     // autofilling 提交
     if (s.autoFillState.value.active) {
       commitAutoFill();
+      isTouch = false;
+      return;
+    }
+    // 列宽 / 行高 resize 提交（与鼠标 onMouseUp 一致）
+    if (isResizingC || isResizingR) {
+      isResizingC = false;
+      isResizingR = false;
+      so.scheduleOptEmit();
       isTouch = false;
       return;
     }
