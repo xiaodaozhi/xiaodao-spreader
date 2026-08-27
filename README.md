@@ -214,11 +214,16 @@ src/
         │   ├── toolbar.vue           # Toolbar with overflow dropdown
         │   ├── tabbar.vue            # Sheet tab bar
         │   ├── dropdown.vue          # Generic dropdown component
+        │   ├── find-replace-bar.vue  # Find/replace bar UI
         │   └── pickers/
-        │       ├── colorPicker.vue
-        │       ├── borderPicker.vue
-        │       ├── mergePicker.vue
-        │       └── numberFormatDialog.vue
+        │       ├── colorPicker.vue       # Text & fill color picker
+        │       ├── borderPicker.vue      # Border picker
+        │       ├── mergePicker.vue       # Merge cell picker
+        │       ├── numberFormatDialog.vue # Number format custom dialog
+        │       ├── sortPicker.vue        # Sort dropdown
+        │       ├── sortConfirmDialog.vue # Excel-style sort warning dialog
+        │       ├── calcPicker.vue        # Sum / average / count picker
+        │       └── insertFunctionDialog.vue # Insert function dialog
         ├── composables/
         │   ├── core-state.ts        # Props, cells/merges/selection, font metrics, navigation
         │   ├── undo-styles.ts       # Undo/redo, format painter, font/alignment/color
@@ -234,6 +239,7 @@ src/
             ├── border-resolve.ts    # Shared-border conflict resolution (resolveSharedBorder)
             ├── formula.ts           # Formula engine (parse, evaluate, deps, cache)
             ├── find-replace-core.ts # Find/replace pure algorithms (zero Vue deps, unit-testable)
+            ├── sort-core.ts         # Sort pure algorithms (zero Vue deps, unit-testable)
             ├── autofill.ts          # Auto-fill pure engine (pattern inference, fill handle logic, zero Vue deps)
             ├── number-format.ts     # Number format engine (Excel-style display formatting)
             ├── theme.ts             # Theme CSS variable construction

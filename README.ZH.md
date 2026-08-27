@@ -217,11 +217,16 @@ src/
         │   ├── toolbar.vue           # 工具栏（含溢出下拉）
         │   ├── tabbar.vue            # Sheet 标签栏
         │   ├── dropdown.vue          # 通用下拉组件
+        │   ├── find-replace-bar.vue  # 查找替换栏 UI
         │   └── pickers/
-        │       ├── colorPicker.vue
-        │       ├── borderPicker.vue
-        │       ├── mergePicker.vue
-        │       └── numberFormatDialog.vue
+        │       ├── colorPicker.vue       # 文字 / 填充颜色选择器
+        │       ├── borderPicker.vue      # 边框选择器
+        │       ├── mergePicker.vue       # 合并单元格选择器
+        │       ├── numberFormatDialog.vue # 数字格式自定义对话框
+        │       ├── sortPicker.vue        # 排序下拉
+        │       ├── sortConfirmDialog.vue # Excel 风格排序提醒对话框
+        │       ├── calcPicker.vue        # 求和 / 平均值 / 计数选择器
+        │       └── insertFunctionDialog.vue # 插入函数对话框
         ├── composables/
         │   ├── core-state.ts        # Props、cells/merges/selection、字体度量、导航
         │   ├── undo-styles.ts       # 撤销重做、格式刷、字体/对齐/颜色
@@ -237,6 +242,7 @@ src/
             ├── border-resolve.ts    # 公共边冲突解析（resolveSharedBorder）
             ├── formula.ts           # 公式引擎（解析、计算、依赖、缓存）
             ├── find-replace-core.ts # 查找替换纯算法（零 Vue 依赖，可单测）
+            ├── sort-core.ts         # 排序纯算法（零 Vue 依赖，可单测）
             ├── autofill.ts          # 自动填充纯引擎（模式推断、填充柄逻辑，零 Vue 依赖）
             ├── number-format.ts     # 数字格式引擎（Excel 风格显示格式化）
             ├── theme.ts             # 主题 CSS 变量构建
