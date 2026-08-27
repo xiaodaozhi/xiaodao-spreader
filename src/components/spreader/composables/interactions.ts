@@ -1544,6 +1544,8 @@ export function createInteractions(
 
   // ============ 右键菜单 ============
   const ctxMenu = ref<{ x: number; y: number; items: ContextMenuItem[] } | null>(null);
+  // 菜单被任意路径关闭（含菜单项点击经 setCtxMenuNull 直接置空）时清理点外部关闭监听
+  watch(ctxMenu, (v) => { if (v === null) rdl(); });
 
   // ============ 筛选弹窗 ============
   /** 当前打开的筛选弹窗：关联的列与屏幕锚点；null 表示未打开 */
@@ -1634,11 +1636,15 @@ export function createInteractions(
   }
 
   let cdcHandler: ((e: Event) => void) | null = null;
+  let ctcHandler: ((ev: Event) => void) | null = null;
   function rdl() {
     if (cdcHandler) {
       document.removeEventListener('click', cdcHandler);
-      document.removeEventListener('touchstart', cdcHandler as EventListener, true);
       cdcHandler = null;
+    }
+    if (ctcHandler) {
+      document.removeEventListener('touchstart', ctcHandler as EventListener, { capture: true } as AddEventListenerOptions);
+      ctcHandler = null;
     }
   }
   function showCtx(x: number, y: number, items: ContextMenuItem[]) {
@@ -1649,19 +1655,25 @@ export function createInteractions(
     const sh = window.innerHeight;
     if (x + mw > sw) x -= mw;
     if (y + mh > sh) y -= mh;
+    // 预先判定子菜单弹出方向：菜单紧贴右侧边缘时子菜单应向左弹，
+    // 在首次渲染即设定，避免 hover 时先画右侧再翻左的「闪烁」。
+    ctxSubmenuLeft.value = x + mw + 150 > sw;
     ctxMenu.value = { x, y, items };
-    cdcHandler = (ev: Event) => {
-      // 触屏：菜单内触摸（点菜单项）不关闭，交由菜单项自身点击处理；菜单外触摸则关闭
-      if (ev.type === 'touchstart') {
-        const tgt = ev.target as HTMLElement | null;
-        if (tgt && tgt.closest('.context-menu')) return;
-      }
+    cdcHandler = () => {
+      ctxMenu.value = null;
+      rdl();
+    };
+    // 触屏关闭：监听常驻（不用 once），点菜单内（含子菜单）不关、点外部才关并清理；
+    // 否则点菜单内打开子菜单那次 touchstart 会把 once 监听消费掉，导致之后点外部关不掉主菜单。
+    ctcHandler = (ev: Event) => {
+      const tgt = ev.target as HTMLElement | null;
+      if (tgt && tgt.closest('.context-menu')) return;
       ctxMenu.value = null;
       rdl();
     };
     setTimeout(() => {
       document.addEventListener('click', cdcHandler!, { once: true });
-      document.addEventListener('touchstart', cdcHandler as EventListener, { once: true, capture: true } as AddEventListenerOptions);
+      document.addEventListener('touchstart', ctcHandler as EventListener, { capture: true } as AddEventListenerOptions);
     }, 0);
   }
   const ctxSubmenuLeft = ref(false);
@@ -1680,8 +1692,10 @@ export function createInteractions(
       ctxSubmenuLeft.value = false;
       return;
     }
-    const subRect = sub.getBoundingClientRect();
-    ctxSubmenuLeft.value = subRect.right > window.innerWidth;
+    // 用父项右缘 + 子菜单固有宽度判定是否溢出（不依赖子菜单当前左右位置），避免先右后左的闪烁
+    const elRect = el.getBoundingClientRect();
+    const subWidth = sub.getBoundingClientRect().width;
+    ctxSubmenuLeft.value = elRect.right + subWidth > window.innerWidth;
   }
 
   function onTabCtxMenu(e: MouseEvent, i: number) {
@@ -2173,6 +2187,8 @@ export function createInteractions(
   let tLongTimer: number | null = null;
   let tSelecting = false;
   let tSelAnchorC = 0, tSelAnchorR = 0;
+  // 长按在选区内弹出的右键菜单：抬手时切勿改写选区（否则多选会被缩成单选）
+  let tCtxMenuOpened = false;
 
   // ============ AutoFill 状态 ============
   let autoScrollRAF: number | null = null;
@@ -2646,6 +2662,7 @@ export function createInteractions(
       isTouch = true;
       tMoved = false;
       tSelecting = false;
+      tCtxMenuOpened = false;
       tZone = 'cell';
       tSX = x;
       tSY = y;
@@ -2659,6 +2676,7 @@ export function createInteractions(
         const inSel = !!sel && tSC >= sel.startCol && tSC <= sel.endCol && tSR >= sel.startRow && tSR <= sel.endRow;
         // 选区内长按 → 弹右键上下文菜单（与桌面右键等价）；选区外长按 → 框选
         if (inSel) {
+          tCtxMenuOpened = true;
           onCellCtx(makeTouchEv(tcX, tcY), tSC, tSR);
           return;
         }
@@ -2699,12 +2717,14 @@ export function createInteractions(
         tLongTimer = window.setTimeout(() => {
           const sel = s.selection.value;
           if (tZone === 'all') {
+            tCtxMenuOpened = true;
             onCornerCtx(makeTouchEv(tcX, tcY));
             return;
           }
           if (tZone === 'col') {
             const inSel = !!sel && sel.startRow === 0 && sel.endRow === s.rowCount - 1 && tSC >= sel.startCol && tSC <= sel.endCol;
             if (inSel) {
+              tCtxMenuOpened = true;
               onColHdrCtx(makeTouchEv(tcX, tcY), tSC);
               return;
             }
@@ -2718,6 +2738,7 @@ export function createInteractions(
           } else {
             const inSel = !!sel && sel.startCol === 0 && sel.endCol === s.colCount - 1 && tSR >= sel.startRow && tSR <= sel.endRow;
             if (inSel) {
+              tCtxMenuOpened = true;
               onRowHdrCtx(makeTouchEv(tcX, tcY), tSR);
               return;
             }
@@ -2804,6 +2825,12 @@ export function createInteractions(
   function onTouchEnd() {
     if (!isTouch) return;
     if (tLongTimer !== null) { clearTimeout(tLongTimer); tLongTimer = null; }
+    // 长按在选区内弹出的右键菜单：菜单仍开着的这一抬手不应改写选区（否则多选被缩成单选）
+    if (tCtxMenuOpened) {
+      tCtxMenuOpened = false;
+      isTouch = false;
+      return;
+    }
     // autofilling 提交
     if (s.autoFillState.value.active) {
       commitAutoFill();
