@@ -958,7 +958,7 @@ export function createInteractions(
     rCtx.lineWidth = 1;
     rCtx.strokeRect(0.5, 0.5, HW - 1, HH - 1);
     const tSize = Math.min(HW, HH) * 0.32;
-    rCtx.fillStyle = cs.headerText;
+    rCtx.fillStyle = cs.activeCellBorder;
     rCtx.beginPath();
     rCtx.moveTo(HW - 1, HH - 1 - tSize);
     rCtx.lineTo(HW - 1 - tSize, HH - 1);
