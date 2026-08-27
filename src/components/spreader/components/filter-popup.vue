@@ -11,6 +11,8 @@ const props = withDefaults(defineProps<{
   /** 锚点：筛选按钮左上角（屏幕坐标） */
   anchor: { x: number; y: number };
   locale?: string;
+  /** 当前列 Header 单元格的值（如「班级」），缺省回退到列字母 */
+  headerLabel?: string;
   getFilter: () => SheetFilter | null;
   setFilter: (f: SheetFilter | null) => void;
   setFilterColumn: (col: number, fc: FilterColumn | null) => void;
@@ -120,7 +122,7 @@ function initFromFilter() {
   }
 }
 
-// ---- 值列表模式：实时生效 ----
+// ---- 值列表模式：仅维护本地态，点击「确定」才提交（避免实时影响表格） ----
 function syncValuesFilter() {
   const f = props.getFilter();
   if (!f) return;
@@ -144,12 +146,10 @@ function toggleValue(v: string) {
   if (next.has(v)) next.delete(v);
   else next.add(v);
   selected.value = next;
-  syncValuesFilter();
 }
 
 function toggleBlank() {
   blankChecked.value = !blankChecked.value;
-  syncValuesFilter();
 }
 
 function selectAll() {
@@ -158,13 +158,11 @@ function selectAll() {
   items.forEach((v) => next.add(v));
   selected.value = next;
   blankChecked.value = true;
-  syncValuesFilter();
 }
 
 function clearAllSelection() {
   selected.value = new Set();
   blankChecked.value = false;
-  syncValuesFilter();
 }
 
 // ---- 条件模式 ----
@@ -190,11 +188,13 @@ function applyCondition() {
 
 // ---- 底部操作 ----
 function clearColumn() {
-  props.clearFilterColumn(props.col);
-  initFromFilter();
+  // 仅把本地选择置为「全选」（等价于该列无筛选），提交后由 onOk 生效；不实时改 filter
+  selected.value = new Set(cand.value.values);
+  blankChecked.value = cand.value.hasBlank;
 }
 
 function onOk() {
+  syncValuesFilter();
   props.close();
 }
 
@@ -247,7 +247,7 @@ onBeforeUnmount(() => {
     >
       <!-- 头部 -->
       <div class="filter-popup__head">
-        <span class="filter-popup__head-label">{{ colToLabel(col) }}</span>
+        <span class="filter-popup__head-label">{{ headerLabel || colToLabel(col) }}</span>
         <span
           v-if="columnActive"
           class="filter-popup__head-badge"

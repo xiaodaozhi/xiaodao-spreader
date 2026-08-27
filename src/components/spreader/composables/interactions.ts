@@ -8,10 +8,39 @@ import { migrateCells } from '../core/style-pool';
 import { migrateBordersInStyles } from '../core/border-pool';
 import type { BordersMergeState } from './borders-merge';
 import type { SheetsOpsState } from './sheets-ops';
-import type { ContextMenuItem, BorderSide, ThemeColors } from '../core/types';
+import type { ContextMenuItem, BorderSide, ThemeColors, SelectionRange, FilterColumn, SheetFilter, CellData } from '../core/types';
 import { resolveSharedBorder } from '../core/border-resolve';
 import { computeTargetRange, validateMergeCompatibility } from '../core/autofill';
-import { isColumnFiltered, FILTER_BLANK } from '../core/filter-core';
+import { isColumnFiltered } from '../core/filter-core';
+
+/** 兼容旧版筛选数据：确保加载后的 AutoFilter 具备合法的 range。
+ *  - 已有 range → 防御性扩展到覆盖所有 columns 列键；
+ *  - 仅有 columns（旧 per-column 模型）→ 根据列键 + 数据最大行推断 range；
+ *  - 完全无 filter → 返回 null（不创建无效 AutoFilter）。 */
+function normalizeLoadedFilter(raw: unknown, cells: Record<string, CellData>): SheetFilter | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as { range?: SelectionRange; columns?: Record<number, FilterColumn> };
+  const columns: Record<number, FilterColumn> = r.columns ?? {};
+  const colKeys = Object.keys(columns).map((k) => Number(k)).filter((n) => !Number.isNaN(n));
+  if (!r.range || typeof r.range.startRow !== 'number') {
+    let minC = colKeys.length ? Math.min(...colKeys) : 0;
+    let maxC = colKeys.length ? Math.max(...colKeys) : 0;
+    let maxR = 0;
+    for (const key in cells) {
+      const comma = key.indexOf(',');
+      if (comma < 0) continue;
+      const rr = parseInt(key.substring(comma + 1), 10);
+      if (rr > maxR) maxR = rr;
+    }
+    return { range: { startCol: minC, startRow: 0, endCol: maxC, endRow: Math.max(0, maxR) }, columns };
+  }
+  const range = { ...r.range };
+  for (const c of colKeys) {
+    if (c < range.startCol) range.startCol = c;
+    if (c > range.endCol) range.endCol = c;
+  }
+  return { range, columns };
+}
 
 export interface InteractionsState {
   // 渲染器
@@ -387,6 +416,10 @@ export function createInteractions(
               }
               rCtx.restore();
             }
+          }
+          // ---- AutoFilter 箭头：仅绘制在 Filter Range 的 Header 行、且列落在范围内 ----
+          if (f && row === f.range.startRow && col >= f.range.startCol && col <= f.range.endCol) {
+            drawFilterButton(rCtx, x, y, cw, rh, isColumnFiltered(f.columns[col]), cs);
           }
         }
       }
@@ -805,7 +838,6 @@ export function createInteractions(
       rCtx.textAlign = 'center';
       rCtx.textBaseline = 'middle';
       rCtx.fillText(colToLabel(col), x + cw / 2, HH / 2);
-      if (f) drawFilterButton(rCtx, x + cw - FILTER_BTN - 3, isColumnFiltered(f.columns[col]), cs);
     }
     // 冻结列标题（不滚动，覆盖在 body 之上，防止 body 标题透过）
     if (frozenColumnsWidth > 0) {
@@ -834,7 +866,6 @@ export function createInteractions(
         rCtx.textAlign = 'center';
         rCtx.textBaseline = 'middle';
         rCtx.fillText(colToLabel(col), x + cw / 2, HH / 2);
-        if (f) drawFilterButton(rCtx, x + cw - FILTER_BTN - 3, isColumnFiltered(f.columns[col]), cs);
       }
     }
     rCtx.strokeStyle = cs.headerSep;
@@ -848,6 +879,7 @@ export function createInteractions(
     rCtx.fillStyle = cs.headerBg;
     rCtx.fillRect(0, HH, HW, H - HH);
     for (let row = bodySR; row <= bodyER; row++) {
+      if (s.isRowHidden(row)) continue;
       const y = HH + rP[row]! - sy, rh = rH[row]!;
       if (y + rh < HH || y > H) continue;
       if (sel && row >= sel.startRow && row <= sel.endRow) {
@@ -876,6 +908,7 @@ export function createInteractions(
       rCtx.fillStyle = cs.headerBg;
       rCtx.fillRect(0, HH, HW, frozenRowsHeight);
       for (let row = 0; row <= frozenER; row++) {
+        if (s.isRowHidden(row)) continue;
         const y = HH + rP[row]!, rh = rH[row]!;
         if (y + rh < HH || y > H) continue;
         if (sel && row >= sel.startRow && row <= sel.endRow) {
@@ -1492,13 +1525,14 @@ export function createInteractions(
   /** 列头筛选按钮尺寸（正方形） */
   const FILTER_BTN = 15;
 
-  /** 在列头右侧绘制筛选按钮（漏斗图标）。active=true 表示该列筛选已生效（高亮主题色）。 */
-  function drawFilterButton(ctx: CanvasRenderingContext2D, x: number, active: boolean, cs: ThemeColors) {
-    const cx = x + FILTER_BTN / 2;
-    const cy = 3 + FILTER_BTN / 2;
+  /** 在 Header 单元格右侧绘制筛选按钮（漏斗图标）。active=true 表示该列已应用筛选（高亮主题色）。
+   *  (cellX, cellY, cellW, cellH) 为 Header 单元格的屏幕矩形。 */
+  function drawFilterButton(ctx: CanvasRenderingContext2D, cellX: number, cellY: number, cellW: number, cellH: number, active: boolean, _cs: ThemeColors) {
+    const cx = cellX + cellW - 9;
+    const cy = cellY + cellH / 2;
     ctx.save();
     ctx.beginPath();
-    // 漏斗：顶部宽口 → 收窄 → 底部小口（Excel 风格）
+    // 漏斗：顶部宽口 → 收窄 → 底部小口（Excel 风格），以 (cx, cy) 为中心
     ctx.moveTo(cx - 4, cy - 2.5);
     ctx.lineTo(cx + 4, cy - 2.5);
     ctx.lineTo(cx + 1.6, cy + 0.8);
@@ -1506,57 +1540,52 @@ export function createInteractions(
     ctx.lineTo(cx - 1.6, cy + 3);
     ctx.lineTo(cx - 1.6, cy + 0.8);
     ctx.closePath();
+    // 始终描边（保证可见）；已筛选列额外填充蓝色以区分
+    ctx.lineWidth = 1.1;
+    ctx.lineJoin = 'round';
     if (active) {
-      ctx.fillStyle = cs.activeCellBorder;
+      ctx.fillStyle = '#0078d7';
       ctx.fill();
+      ctx.strokeStyle = '#0078d7';
     } else {
-      ctx.strokeStyle = cs.headerText;
-      ctx.lineWidth = 1.1;
-      ctx.lineJoin = 'round';
-      ctx.stroke();
+      ctx.strokeStyle = '#5a5a5a';
     }
+    ctx.stroke();
     ctx.restore();
   }
 
   /** 命中测试：返回被点击的筛选按钮所在列（未命中返回 -1）。
-   *  优先级最高：高于单元格选择、行/列头选择、resize 命中。 */
+   *  筛选按钮位于 Filter Range 的 Header 行单元格右侧；优先级最高（高于单元格/行列头选择、resize）。
+   *  优先判断 Filter Button 再判断 Header / Cell。 */
   function isFilterButtonHit(x: number, y: number): number {
     const f = s.getFilter();
     if (!f) return -1;
-    if (y < 0 || y > HEADER_HEIGHT) return -1;
-    if (x < HEADER_WIDTH) return -1;
-    const { frozenColumnsWidth } = s.getFrozenMetrics();
-    const colFrozen = frozenColumnsWidth > 0 && x < HEADER_WIDTH + frozenColumnsWidth;
-    const logicalX = colFrozen ? (x - HEADER_WIDTH) : (x - HEADER_WIDTH + s.scrollX.value);
-    const col = s.hitCol(logicalX);
+    const hit = s.screenToCell(x, y);
+    if (!hit) return -1;
+    const { col, row } = hit;
+    if (row !== f.range.startRow) return -1;
     if (col < f.range.startCol || col > f.range.endCol) return -1;
-    const left = colFrozen
-      ? (HEADER_WIDTH + s.colPositions.value[col]!)
-      : (HEADER_WIDTH + s.colPositions.value[col]! - s.scrollX.value);
-    const cw = s.colWidths.value[col]!;
-    const btnLeft = left + cw - FILTER_BTN - 3;
-    const btnRight = left + cw - 3;
-    if (x >= btnLeft && x <= btnRight && y >= 3 && y <= HEADER_HEIGHT - 3) return col;
+    const rect = s.cellToScreenRect(row, col);
+    const arrowW = Math.min(rect.width, 18);
+    const btnLeft = rect.x + rect.width - arrowW;
+    const btnRight = rect.x + rect.width;
+    if (x >= btnLeft && x <= btnRight && y >= rect.y && y <= rect.y + rect.height) return col;
     return -1;
   }
 
-  /** 打开某列的筛选弹窗 */
+  /** 打开某列的筛选弹窗（锚定到 Header 单元格右侧箭头，固定定位） */
   function openFilterPopup(col: number) {
     const f = s.getFilter();
     if (!f) return;
     const cvs = so.canvasRef.value;
     if (!cvs) return;
     const cr = cvs.getBoundingClientRect();
-    const colFrozen = col < s.freeze.cols;
-    const left = colFrozen
-      ? (HEADER_WIDTH + s.colPositions.value[col]!)
-      : (HEADER_WIDTH + s.colPositions.value[col]! - s.scrollX.value);
-    const top = colFrozen ? HEADER_HEIGHT : (HEADER_HEIGHT + s.getFrozenMetrics().frozenRowsHeight);
-    // 锚点 = 筛选按钮左上角（屏幕坐标，供 fixed 定位的弹窗使用）
+    const rect = s.cellToScreenRect(f.range.startRow, col);
+    // 锚点 = Header 单元格右侧箭头左上角（屏幕坐标）
     filterPopup.value = {
       col,
-      x: cr.left + left + s.colWidths.value[col]! - FILTER_BTN - 3,
-      y: cr.top + top + 2,
+      x: cr.left + rect.x + rect.width - FILTER_BTN - 3,
+      y: cr.top + rect.y + 2,
     };
   }
 
@@ -1748,21 +1777,6 @@ export function createInteractions(
         scheduleRender();
         so.emitModelData();
       } },
-      { label: t(s.locale.value, 'filterByThisColumn'), action: () => {
-        const f = s.getFilter();
-        if (f && col >= f.range.startCol && col <= f.range.endCol) {
-          openFilterPopup(col);
-        } else {
-          const dr = s.getDataRange();
-          const startRow = dr ? dr.startRow : 0;
-          s.enableFilter({
-            startCol: col, endCol: col,
-            startRow,
-            endRow: dr ? dr.endRow : Math.max(0, s.rowCount - 1),
-          });
-          openFilterPopup(col);
-        }
-      } },
       { label: t(s.locale.value, 'sort'), disabled: sortDisabled, children: [
         { label: t(s.locale.value, 'sortAsc'), action: () => {
           if (so.prepareSortConfirmation('asc')) return;
@@ -1805,25 +1819,6 @@ export function createInteractions(
       { label: t(s.locale.value, 'delete'), action: () => {
         us.saveUndo();
         bm.clearSelected();
-        scheduleRender();
-        so.emitModelData();
-      } },
-      { label: t(s.locale.value, 'filterByValue'), action: () => {
-        const cv = s.getCellValue(c, r);
-        const vals = cv.trim() === '' ? [FILTER_BLANK] : [cv];
-        const f = s.getFilter();
-        if (f && c >= f.range.startCol && c <= f.range.endCol) {
-          s.setFilterColumn(c, { type: 'values', values: vals });
-        } else {
-          const dr = s.getDataRange();
-          const startRow = dr ? dr.startRow : 0;
-          s.enableFilter({
-            startCol: c, endCol: c,
-            startRow,
-            endRow: dr ? dr.endRow : Math.max(0, s.rowCount - 1),
-          });
-          s.setFilterColumn(c, { type: 'values', values: vals });
-        }
         scheduleRender();
         so.emitModelData();
       } },
@@ -2675,6 +2670,13 @@ export function createInteractions(
         s.selectAll();
         scheduleRender();
         return;
+      case ctl && sh && (e.key === 'l' || e.key === 'L'):
+        // Ctrl+Shift+L：切换整个 Sheet 的 AutoFilter（非对当前列筛选）。
+        // 快捷键始终为纯移除/创建：已启用则整体移除，未启用则按选区创建。
+        e.preventDefault();
+        s.toggleAutoFilter();
+        scheduleRender();
+        return;
       case ctl && e.key === 'Home':
         e.preventDefault();
         s.selectCell(0, 0);
@@ -2937,12 +2939,8 @@ export function createInteractions(
           }
           // 恢复冻结窗格：loadSheet(0) 会再做一次 clamp
           sh.freeze = smd.freeze ? { rows: smd.freeze.rows, cols: smd.freeze.cols } : { rows: 0, cols: 0 };
-          // 恢复筛选状态（深拷贝，避免与外部数据共享引用）
-          if (smd.filter) {
-            sh.filter = { range: { ...smd.filter.range }, columns: { ...smd.filter.columns } };
-          } else {
-            sh.filter = null;
-          }
+          // 恢复筛选状态（兼容旧版数据，深拷贝避免与外部数据共享引用）
+          sh.filter = normalizeLoadedFilter(smd.filter, sh.cells);
           return sh;
         });
         if (so.sheets.value.length > 0) so.loadSheet(0);
@@ -3009,12 +3007,8 @@ export function createInteractions(
         }
         // 恢复冻结窗格：loadSheet(0) 会再做一次 clamp
         sh.freeze = smd.freeze ? { rows: smd.freeze.rows, cols: smd.freeze.cols } : { rows: 0, cols: 0 };
-        // 恢复筛选状态（深拷贝，避免与外部数据共享引用）
-        if (smd.filter) {
-          sh.filter = { range: { ...smd.filter.range }, columns: { ...smd.filter.columns } };
-        } else {
-          sh.filter = null;
-        }
+        // 恢复筛选状态（兼容旧版数据，深拷贝避免与外部数据共享引用）
+        sh.filter = normalizeLoadedFilter(smd.filter, sh.cells);
         return sh;
       });
       if (so.sheets.value.length > 0) so.loadSheet(0);

@@ -170,21 +170,19 @@ function onInsertFunction(text: string) {
   interactionsRaw.insertFunctionIntoCell(text);
 }
 
-// ============ 筛选开关（工具栏「筛选」按钮） ============
+// ============ 筛选开关（工具栏「筛选」按钮 / Ctrl+Shift+L） ============
+// 切换整个 Sheet 的 AutoFilter：未启用时自动检测筛选范围（选区优先 → active cell 当前区域）→ 创建；
+// 已启用时整体移除（恢复隐藏行、清除所有条件、移除表头箭头）。
 function onToggleFilter() {
-  const f = coreState.getFilter();
-  if (f) {
-    coreState.clearFilter();
-  } else {
-    // 自动确定筛选区域：多格选区优先；单格或无选区回退到数据实际范围
-    const sel = coreState.selection;
-    const range = sel && (sel.startRow !== sel.endRow || sel.startCol !== sel.endCol)
-      ? sel
-      : (coreState.getDataRange()
-        ?? { startCol: 0, startRow: 0, endCol: Math.max(0, coreState.colCount - 1), endRow: Math.max(0, coreState.rowCount - 1) });
-    coreState.enableFilter(range);
-  }
+  coreState.toggleAutoFilter();
   interactions.scheduleRender();
+}
+
+// 当前筛选列 Header 单元格显示值（用于弹窗标题）；空则回退列字母
+function filterHeaderLabel(col: number): string {
+  const f = coreState.getFilter();
+  if (!f) return '';
+  return coreState.getCellValue(col, f.range.startRow);
 }
 
 // ============ 冻结窗格工具栏事件 ============
@@ -697,6 +695,7 @@ const setDimInputRef = (el: unknown) => {
       v-if="interactions.filterPopup"
       :key="interactions.filterPopup.col"
       :col="interactions.filterPopup.col"
+      :header-label="filterHeaderLabel(interactions.filterPopup.col)"
       :anchor="{ x: interactions.filterPopup.x, y: interactions.filterPopup.y }"
       :locale="coreState.locale"
       :get-filter="coreState.getFilter"

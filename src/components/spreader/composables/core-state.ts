@@ -5,7 +5,7 @@ import { formatNumber, isGeneralFormat, parseDateTimeInput, parseNumericText } f
 import { applyAutoFillPlan, validateMergeCompatibility } from '../core/autofill';
 import { colToLabel } from '../core/utils';
 import type { CellCoord, CellData, CellStyle, SelectionRange, BorderStyle, BorderSide, FreezePane, ViewportRegion, SheetFilter, FilterColumn } from '../core/types';
-import { isRowVisible as _isRowVisible, getColumnCandidates as _getColumnCandidates, type FilterCellAccessor, type FilterCandidates } from '../core/filter-core';
+import { isRowVisible as _isRowVisible, getColumnCandidates as _getColumnCandidates, isColumnFiltered, type FilterCellAccessor, type FilterCandidates } from '../core/filter-core';
 import { resolveStyle as _resolveStyle } from '../core/style-pool';
 import type { BorderPool } from '../core/border-pool';
 import { getCellBorderSide as _getCellBorderSide } from '../core/border-pool';
@@ -88,6 +88,20 @@ export interface CoreState {
   getColumnCandidates: (col: number) => FilterCandidates;
   /** 探测数据实际占用范围（有值或样式的单元格包围盒）；无数据返回 null */
   getDataRange: () => SelectionRange | null;
+  /** 探测以 anchor 为中心的「当前数据区域」（连续非空单元格块）；空 anchor 返回 null */
+  getCurrentRegion: (anchorC: number, anchorR: number) => SelectionRange | null;
+  /** 自动检测筛选范围：多选选区优先，否则以 active cell 当前区域推断；完全无数据返回 null */
+  detectFilterRange: () => SelectionRange | null;
+  /** 切换 AutoFilter：无则创建（自动检测范围），有则移除整个 AutoFilter */
+  toggleAutoFilter: () => void;
+  /** 某列是否落在当前 AutoFilter Range 内（决定表头箭头是否绘制） */
+  isColumnInFilterRange: (col: number) => boolean;
+  /** 当前 AutoFilter Range（无则 null） */
+  getFilterRange: () => SelectionRange | null;
+  /** 是否已启用 AutoFilter */
+  isFilterEnabled: () => boolean;
+  /** 某列是否已应用筛选条件（用于高亮箭头图标） */
+  isFilterColumnActive: (col: number) => boolean;
   isRowHidden: (r: number) => boolean;
   getFilteredOutRows: () => Set<number>;
   getVisibleRowCount: () => number;
@@ -718,6 +732,124 @@ export function createCoreState(
     return _getColumnCandidates(f, col, filterAccessor, locale.value);
   }
 
+  /** 探测以 anchor 为中心的「当前数据区域」（连续非空单元格块）。
+   *  算法：从 anchor 向上下扩展到首个全空行，再在所得行区间内向左右扩展到首个全空列。
+   *  空 anchor（自身无数据）返回 null。 */
+  function getCurrentRegion(anchorC: number, anchorR: number): SelectionRange | null {
+    const cCount = dims.colCount, rCount = dims.rowCount;
+    const has = (c: number, r: number): boolean => {
+      const cell = cells[cellKey(c, r)];
+      return !!cell && (cell.value !== '' || cell.styleId !== undefined);
+    };
+    if (!has(anchorC, anchorR)) return null;
+    const rowHasAny = (r: number): boolean => {
+      for (let c = 0; c < cCount; c++) if (has(c, r)) return true;
+      return false;
+    };
+    const colHasAnyInRows = (c: number, r1: number, r2: number): boolean => {
+      for (let r = r1; r <= r2; r++) if (has(c, r)) return true;
+      return false;
+    };
+    let top = anchorR;
+    while (top > 0 && rowHasAny(top - 1)) top--;
+    let bottom = anchorR;
+    while (bottom < rCount - 1 && rowHasAny(bottom + 1)) bottom++;
+    let left = anchorC;
+    while (left > 0 && colHasAnyInRows(left - 1, top, bottom)) left--;
+    let right = anchorC;
+    while (right < cCount - 1 && colHasAnyInRows(right + 1, top, bottom)) right++;
+    return { startCol: left, startRow: top, endCol: right, endRow: bottom };
+  }
+
+  /** 自动检测筛选范围（Excel 普通区域 AutoFilter 语义）：
+   *  - 多行选区（含数据）→ 整块选区矩形即筛选范围（Excel：显式选区优先）；
+   *  - 单选单元格 / 单行多选（同一行）→ 选中的行即作为「表头行」，列范围严格取选区涵盖的列（不向左右探测），
+   *    再从表头行「向下」智能延伸到该行范围内连续有内容的最后一行；
+   *  - 选区及其向下延伸均无内容 → 回退到整个数据占用范围（getDataRange）；仍无则 null（不创建无效 AutoFilter）。
+   *  说明：单选单元格与单行多选共用同一套「向下智能探测」逻辑，保证两者都能进入筛选态。 */
+  function detectFilterRange(): SelectionRange | null {
+    const sel = selection.value;
+    const multiRow = !!sel && sel.startRow !== sel.endRow;
+
+    // 多行选区：整块选区矩形即为筛选范围
+    if (multiRow) {
+      return {
+        startCol: Math.min(sel.startCol, sel.endCol),
+        endCol: Math.max(sel.startCol, sel.endCol),
+        startRow: Math.min(sel.startRow, sel.endRow),
+        endRow: Math.max(sel.startRow, sel.endRow),
+      };
+    }
+
+    // 单选单元格 或 单行多选：选中的行作为表头行，向下智能探测有内容的连续区域
+    const ac = activeCell.value;
+    const anchorCol = sel ? sel.startCol : ac.col;
+    const anchorRow = sel ? sel.startRow : ac.row;
+
+    const has = (c: number, r: number): boolean => {
+      const cell = cells[cellKey(c, r)];
+      return !!cell && (cell.value !== '' || cell.styleId !== undefined);
+    };
+
+    // 列范围：严格取选区所涵盖的列（单选单元格即该列；单行多选即选区列），不向左右探测
+    let sc: number, ec: number;
+    if (sel) {
+      sc = Math.min(sel.startCol, sel.endCol);
+      ec = Math.max(sel.startCol, sel.endCol);
+    } else {
+      sc = ac.col; ec = ac.col;
+    }
+
+    // 向下探测：从表头行向下逐行延伸到该列范围连续有内容的最后一行
+    let bottom = anchorRow;
+    while (bottom < dims.rowCount - 1) {
+      let any = false;
+      for (let c = sc; c <= ec; c++) if (has(c, bottom + 1)) { any = true; break; }
+      if (!any) break;
+      bottom++;
+    }
+
+    // 选区本身及其向下延伸均无内容 → 回退到整体数据区；仍无则 null（不创建无效 AutoFilter）
+    if (!has(anchorCol, anchorRow) && bottom === anchorRow) {
+      return getDataRange();
+    }
+    return { startCol: sc, endCol: ec, startRow: anchorRow, endRow: bottom };
+  }
+
+  /** 切换 AutoFilter（Sheet 同时只允许一个 AutoFilter Range）：
+   *  - 未启用 → 自动检测范围并创建；
+   *  - 已启用 → 整体移除（恢复隐藏行、清除所有条件、移除表头箭头）；
+   *  工具栏按钮与 Ctrl+Shift+L 均为纯切换：激活态点击即取消整个筛选态，不重新划定范围。 */
+  function toggleAutoFilter() {
+    if (filter.value) {
+      clearFilter();
+      return;
+    }
+    const range = detectFilterRange();
+    if (!range) return;
+    enableFilter(range);
+  }
+
+  function isColumnInFilterRange(col: number): boolean {
+    const f = filter.value;
+    if (!f) return false;
+    return col >= f.range.startCol && col <= f.range.endCol;
+  }
+
+  function getFilterRange(): SelectionRange | null {
+    return filter.value ? { ...filter.value.range } : null;
+  }
+
+  function isFilterEnabled(): boolean {
+    return !!filter.value;
+  }
+
+  function isFilterColumnActive(col: number): boolean {
+    const f = filter.value;
+    if (!f) return false;
+    return isColumnFiltered(f.columns[col]);
+  }
+
   /** 探测数据实际占用范围（有值或样式的单元格包围盒）；无数据返回 null */
   function getDataRange(): SelectionRange | null {
     let minC = Infinity, minR = Infinity, maxC = -1, maxR = -1;
@@ -1323,6 +1455,13 @@ export function createCoreState(
     setFilterColumn,
     getColumnCandidates,
     getDataRange,
+    getCurrentRegion,
+    detectFilterRange,
+    toggleAutoFilter,
+    isColumnInFilterRange,
+    getFilterRange,
+    isFilterEnabled,
+    isFilterColumnActive,
     isRowHidden,
     getFilteredOutRows,
     getVisibleRowCount,
