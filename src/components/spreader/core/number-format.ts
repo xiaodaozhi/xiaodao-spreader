@@ -388,7 +388,7 @@ function formatNumeric(value: number, parsed: NFParsed): string {
 // ============ 日期/时间格式化 ============
 // Excel 1900 日期系统：序列号 1 = 1900-01-01；常用 Unix 偏移为 25569 天。
 // 用 UTC 构造，避免本地时区偏移导致日期错位。
-function serialToDate(serial: number): Date {
+export function serialToDate(serial: number): Date {
   return new Date((serial - 25569) * 86400000);
 }
 
@@ -845,7 +845,7 @@ function daysInMonth(y: number, m: number): number {
  * 日期 → Excel 1900 系统序列号（与 serialToDate 互逆）。
  * 1900-01-01 ~ 02-28 区间减 1，对齐 Excel 的 1900 虚构闰年（1900-02-29 = 60）。
  */
-function dateToSerial(y: number, m: number, d: number): number {
+export function dateToSerial(y: number, m: number, d: number): number {
   const days = Date.UTC(y, m - 1, d) / 86400000 + 25569;
   return days <= 60 ? days - 1 : days;
 }

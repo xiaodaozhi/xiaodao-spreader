@@ -31,6 +31,7 @@ A high-performance, canvas-based spreadsheet component for Vue 3 — bringing an
 - **Smart Data Recognition** — Typing `100%`, `1,234`, `¥1,234.56` auto-converts the text to a number and applies the matching format; common date/time text auto-converts to dates — matching Excel input behavior
 - **Sorting & Sort Warning** — Sort any column by its **displayed content** (numbers / dates / text); sorting moves data only, never cell styles; ranges containing merged cells or formulas are auto-disabled; when adjacent data sits outside the selection, an Excel-style **Sort Warning** dialog lets you choose "Expand the selection" or "Sort the current selection only"
 - **Find & Replace** — Open via the toolbar find button or `Ctrl/Cmd+F` (also `Ctrl/Cmd+H`); three scopes — current sheet / entire workbook / current selection; match case and match entire cell; highlights all matches and locates the active one with wrap-around navigation; single and replace-all both integrate with undo/redo, mutating only the raw `value` (always kept a string), never format / border / merge
+- **Auto Fill (Fill Handle)** — Excel-style fill handle at the bottom-right corner of the active selection. Drag it up/down/left/right to fill cells: single values copy, number/date/text-number sequences auto-continue (e.g. `1,2 → 3,4,5`), formula references adjust per relative/absolute/mixed rules (e.g. `=A1*2` → `=A2*2`), and source `styleId` is reused via the style pool. Live preview during drag, edge auto-scroll, dynamic sheet expansion, freeze-pane compatibility, and a single undo step per operation — *see [Auto Fill](#auto-fill)*
 
 ### Interaction
 - **Smart Selection** — Click, drag, Shift+Click, row/column header select, corner-cell select-all
@@ -233,6 +234,7 @@ src/
             ├── border-resolve.ts    # Shared-border conflict resolution (resolveSharedBorder)
             ├── formula.ts           # Formula engine (parse, evaluate, deps, cache)
             ├── find-replace-core.ts # Find/replace pure algorithms (zero Vue deps, unit-testable)
+            ├── autofill.ts          # Auto-fill pure engine (pattern inference, fill handle logic, zero Vue deps)
             ├── number-format.ts     # Number format engine (Excel-style display formatting)
             ├── theme.ts             # Theme CSS variable construction
             └── utils.ts             # Pure utilities (col label, hit test, resolve size)
@@ -358,6 +360,75 @@ An Excel-style number formatting engine (`spreader/core/number-format.ts`) that 
 
 ---
 
+## Auto Fill
+
+An Excel-style fill-handle mechanism (`spreader/core/autofill.ts` pure engine + `composables/interactions.ts` canvas/interaction layer). Drag the small square at the bottom-right corner of the active selection to fill cells — no DOM handles, all drawn on Canvas.
+
+### Fill Patterns
+
+| Source values | Fill behavior | Example |
+|---------------|---------------|---------|
+| Single number | Copy | `42 → 42, 42, 42` |
+| Single text | Copy | `foo → foo, foo, foo` |
+| Single date | +1 day | `2026-01-01 → 2026-01-02, 2026-01-03` |
+| Two+ numbers, constant diff | Linear series | `1,2 → 3,4,5` · `2,4 → 6,8,10` |
+| Two+ dates, constant diff | Date series | `2026-01-01, 2026-01-03 → 2026-01-05, 2026-01-07` |
+| Text + number, same prefix | Text-number series | `Item1,Item2 → Item3,Item4` |
+| Two single letters | Alpha series | `A,B → C,D,E` |
+| Formula | Reference translation | `=A1*2` → `=A2*2, =A3*2` |
+| Multi-column / multi-row block | Per-column pattern inference | `A1:B2=[[1,10],[2,20]] → [[3,30],[4,40]]` |
+
+### Formula Reference Rules
+
+Fill-handle translation reuses the existing `shiftFormulaRefs()` — no second formula engine:
+
+| Reference type | Syntax | Fill behavior |
+|----------------|--------|---------------|
+| Relative | `=A1` | Row/col offset with the target cell |
+| Absolute | `=$A$1` | Stays unchanged |
+| Mixed (col absolute) | `=$A1` | Row adjusts, column locked |
+| Mixed (row absolute) | `=A$1` | Column adjusts, row locked |
+| Composite | `=B1*$F$1` | `B1` adjusts, `$F$1` locked |
+
+### Interaction
+
+- **Fill handle**: 6px square at the selection's bottom-right corner, theme primary color; turns grey when the selection partially intersects a merge (fill disabled).
+- **Hit-test**: independent `isFillHandleHit()` runs after resize handles and before cell click; hover shows `crosshair` cursor.
+- **State machine**: a dedicated `autofilling` state prevents selection drag / editor / resize from starting; ESC cancels mid-drag.
+- **Live preview**: the target range renders as a semi-transparent dashed rectangle during drag; the source selection stays put; no cell data is mutated until `mouseup`.
+- **Edge auto-scroll**: dragging within 30px of the viewport edge starts a single `requestAnimationFrame` loop that scrolls and updates the target range; stopped on `mouseup` / ESC / pointercancel.
+- **Dynamic expansion**: fills beyond the current `rowCount`/`colCount` trigger `ensureCapacity()` first, folded into the same undo step.
+- **Selection after fill**: the selection updates to the union of source + target range.
+- **Freeze panes**: all coordinates flow through `cellToScreenRect` / `screenToCell`, so the handle, hit-test, preview, and final fill work across frozen and body regions alike.
+- **Merge compatibility**: partially intersecting merges disable the fill handle (conservative first version); whole-block merges fill correctly.
+- **Touch**: shares the same `autoFillState` and `applyAutoFill` path as mouse — no separate implementation.
+
+### Architecture
+
+```
+Fill Handle UI (drawFillHandle)
+       ↓
+Unified Hit-Test (isFillHandleHit)
+       ↓
+AutoFill Drag State (autoFillState)
+       ↓
+Target Range Calculation (computeTargetRange)
+       ↓
+Pure AutoFill Pattern Engine (core/autofill.ts)
+       ↓
+Formula Translation (shiftFormulaRefs)
+       ↓
+Style / Border / Cell Mutation (applyAutoFill)
+       ↓
+Undo Snapshot (saveUndo, one step per drag)
+       ↓
+scheduleRender()
+```
+
+The pure engine (`core/autofill.ts`) has zero Vue/Canvas dependencies and is fully unit-tested in `test/autofill.test.ts` (54 cases), making it reusable for `Ctrl+D`/`Ctrl+R`, paste-fill, right-click fill, and programmatic auto-fill.
+
+---
+
 ## Border System
 
 A dedicated border storage & rendering mechanism (`spreader/core/border-pool.ts` + `border-resolve.ts`).
@@ -460,10 +531,10 @@ The project includes a GitHub Actions workflow (`.github/workflows/publish.yml`)
 ### Near-term
 
 - [x] More formulas: `COUNT`, `IF`, `VLOOKUP`, `CONCATENATE`
-- [ ] Cell background color picker
+- [x] Cell background color picker
 - [x] Number format (currency, percentage, date, number of decimals) — *see [Number Format](#number-format)*
 - [ ] Conditional formatting rules
-- [ ] Auto-fill drag handle
+- [x] Auto-fill drag handle — *see [Auto Fill](#auto-fill)*
 - [x] Find & Replace — *see [Find & Replace](#find--replace)*
 
 ### Mid-term

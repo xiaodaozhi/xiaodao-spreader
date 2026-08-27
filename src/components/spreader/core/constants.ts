@@ -15,6 +15,10 @@ export const SB_SIZE = 11;
 export const ARROW_SIZE = 11;
 export const SCROLL_STEP = 50;
 
+// ============ 填充柄常量 ============
+export const FILL_HANDLE_SIZE = 6;        // 填充柄视觉尺寸
+export const FILL_HANDLE_HIT_PADDING = 4;  // 填充柄命中区扩展（总命中区 = SIZE + 2*PADDING）
+
 // ============ 撤销/重做 ============
 export const UNDO_MAX = 50;
 

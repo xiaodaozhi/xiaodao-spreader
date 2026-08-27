@@ -1,7 +1,9 @@
-import { ref, reactive, computed, watchEffect, type ComputedRef, type Ref } from 'vue';
+import { ref, reactive, computed, watchEffect, shallowRef, type ComputedRef, type Ref } from 'vue';
 import { HEADER_HEIGHT, HEADER_WIDTH, SB_SIZE, DEFAULT_COL_WIDTH, DEFAULT_ROW_HEIGHT, MAX_ROW_HEIGHT, DEFAULT_FONT_FAMILY, DEFAULT_FONT_SIZE } from '../core/constants';
 import { FormulaDeps, clearEvalCache, computeCellValue, parseFormulaRefs } from '../core/formula';
 import { formatNumber, isGeneralFormat, parseDateTimeInput, parseNumericText } from '../core/number-format';
+import { applyAutoFillPlan, validateMergeCompatibility } from '../core/autofill';
+import { colToLabel } from '../core/utils';
 import type { CellCoord, CellData, CellStyle, SelectionRange, BorderStyle, BorderSide, FreezePane, ViewportRegion } from '../core/types';
 import { resolveStyle as _resolveStyle } from '../core/style-pool';
 import type { BorderPool } from '../core/border-pool';
@@ -14,6 +16,15 @@ import { getCellBorderSide as _getCellBorderSide } from '../core/border-pool';
  *  - 'all' ：左上角全选按钮 → expandSelectionForMerges 行为
  */
 export type SelectionMode = 'cell' | 'row' | 'col' | 'all';
+
+/** AutoFill 拖拽状态 */
+export interface AutoFillState {
+  active: boolean;
+  sourceRange: SelectionRange | null;
+  targetRange: SelectionRange | null;
+  direction: 'up' | 'down' | 'left' | 'right' | null;
+  preview: boolean;
+}
 
 // ============ 共享 State 接口 ============
 export interface CoreState {
@@ -164,6 +175,12 @@ export interface CoreState {
   clampScroll?: (sx: number | null, sy: number | null) => void;
   /** 查找高亮钩子：返回某单元格当前的高亮类型（由 find-replace 模块注入） */
   findHighlight?: (col: number, row: number) => 'active' | 'match' | null;
+
+  // 自动填充（AutoFill / Fill Handle）
+  /** AutoFill 拖拽状态：active 时 render 绘制预览，mouseup 触发 applyAutoFill */
+  autoFillState: Ref<AutoFillState>;
+  /** 一次性提交 AutoFill：saveUndo → ensureCapacity → applyAutoFillPlan → 写入 cells + formulaDeps → selectRange → scheduleRender */
+  applyAutoFill: (sourceRange: SelectionRange, targetRange: SelectionRange, direction: 'up' | 'down' | 'left' | 'right') => void;
 }
 
 // ============ 工厂函数 ============
@@ -344,6 +361,15 @@ export function createCoreState(
   const scrollY = ref(0);
   // 冻结窗格状态（默认未冻结）
   const freeze = reactive<FreezePane>({ rows: 0, cols: 0 });
+
+  // AutoFill 拖拽状态（shallowRef：整体替换，避免深层响应式开销）
+  const autoFillState = shallowRef<AutoFillState>({
+    active: false,
+    sourceRange: null,
+    targetRange: null,
+    direction: null,
+    preview: false,
+  });
 
   // ============ 字体度量 ============
   const fontMetricsCache = new Map<string, { ascent: number; descent: number }>();
@@ -1001,6 +1027,68 @@ export function createCoreState(
     return dims.colCount !== initColCount || dims.rowCount !== initRowCount;
   }
 
+  // ============ AutoFill 提交入口 ============
+  // 一次操作一个 Undo 快照：saveUndo → ensureCapacity → applyAutoFillPlan → 写入 cells + formulaDeps → selectRange → scheduleRender
+  // 不走 setCellValue：避免触发 setCellValue 内部的日期/数字格式自动识别（会覆盖 styleId 透传）
+  function applyAutoFill(
+    sourceRange: SelectionRange,
+    targetRange: SelectionRange,
+    direction: 'up' | 'down' | 'left' | 'right',
+  ) {
+    // Merge 兼容性校验（双保险）
+    if (!validateMergeCompatibility(sourceRange, targetRange, merges)) return;
+
+    // 1. 一次 Undo 快照
+    state.saveUndo?.();
+
+    // 2. 动态扩展（折叠进同一 Undo step）
+    ensureCapacity(targetRange.endCol, targetRange.endRow);
+
+    // 3. 纯函数计算目标 cells 增量
+    const plan = applyAutoFillPlan(
+      sourceRange,
+      targetRange,
+      { cells, styles },
+      direction,
+      locale.value,
+      dims.colCount,
+      dims.rowCount,
+      colToLabel,
+    );
+
+    // 4. 写入 cells + formulaDeps 更新
+    clearEvalCache();
+    for (const [k, cell] of Object.entries(plan.cells)) {
+      const val = cell.value;
+      if (val === '' && (cell.styleId === undefined || cell.styleId === 0)) {
+        // 空值无样式：删除 cell（与 setCellValue 语义一致）
+        formulaDeps.clear(k);
+        delCell(k);
+      } else {
+        cells[k] = { value: val, ...(cell.styleId !== undefined && cell.styleId > 0 ? { styleId: cell.styleId } : {}) };
+        if (val.startsWith('=')) {
+          formulaDeps.set(k, parseFormulaRefs(val.slice(1), dims.colCount, dims.rowCount));
+        } else {
+          formulaDeps.clear(k);
+        }
+      }
+      formulaDeps.markDirty(k);
+    }
+
+    // 5. selection 更新为新范围（源 + 目标）
+    const newRange: SelectionRange = {
+      startCol: Math.min(sourceRange.startCol, targetRange.startCol),
+      startRow: Math.min(sourceRange.startRow, targetRange.startRow),
+      endCol: Math.max(sourceRange.endCol, targetRange.endCol),
+      endRow: Math.max(sourceRange.endRow, targetRange.endRow),
+    };
+    selectRange(newRange.startCol, newRange.startRow, newRange.endCol, newRange.endRow);
+
+    // 6. 触发依赖重算 + 渲染 + 持久化
+    state.scheduleRender?.();
+    state.emitModelData?.();
+  }
+
   function setDims(newCol: number, newRow: number) {
     let changed = false;
     const nc = Math.max(1, Math.floor(newCol));
@@ -1130,6 +1218,10 @@ export function createCoreState(
 
     // 查找高亮：默认无高亮（find-replace 模块会覆盖注入）
     findHighlight: (_col: number, _row: number) => null,
+
+    // AutoFill / Fill Handle
+    autoFillState,
+    applyAutoFill,
   };
 
   // 设置内部函数对 state 的反向引用

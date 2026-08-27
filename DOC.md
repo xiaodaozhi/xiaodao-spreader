@@ -61,6 +61,7 @@ xiaodao-spreader/
                 ├── border-resolve.ts  # Shared-border conflict resolution (resolveSharedBorder)
                 ├── formula.ts         # Formula engine (parsing, evaluation, dependency tracking)
                 ├── find-replace-core.ts # Find/replace pure algorithms (zero Vue deps, unit-testable)
+                ├── autofill.ts        # Auto-fill pure engine (pattern inference, fill handle logic, zero Vue deps)
                 ├── number-format.ts    # Number format engine (Excel-style display formatting)
                 ├── theme.ts           # Theme CSS variable construction
                 └── utils.ts           # Pure utility functions (column label conversion, hit testing, etc.)
@@ -244,6 +245,8 @@ HEADER_HEIGHT = 24   (column header height)
 SB_SIZE       = 11   (scrollbar width/height)
 ARROW_SIZE    = 11   (scrollbar arrow button size)
 SCROLL_STEP   = 50   (scroll amount per click)
+FILL_HANDLE_SIZE       = 6   (fill handle visual size, px)
+FILL_HANDLE_HIT_PADDING = 4   (fill handle hit area expansion, px)
 DEFAULT_COL_WIDTH  = 100
 DEFAULT_ROW_HEIGHT = 24
 MIN_COL_WIDTH  = 30
@@ -389,6 +392,7 @@ Returns `'#ERROR'` if the formula evaluates to `null`.
 | Click corner cell | Select all |
 | Drag column header right edge | Adjust column width |
 | Drag row header bottom edge | Adjust row height |
+| Drag fill handle (bottom-right of selection) | Auto-fill (see [Section 22](#22-auto-fill)) |
 | Mouse wheel | Scroll |
 | Right-click | Context menu (area-dependent) |
 
@@ -500,7 +504,7 @@ The `ThemeColors` interface includes:
 ### 13.2 Rendering Layer
 - **Frozen Panes** — *now implemented, see [Section 21](#21-freeze-panes)*
 - **Conditional Formatting**: Add style rule matching in render loop
-- **Auto-Fill**: Drag handle at bottom-right of active cell
+- **Auto-Fill** — *now implemented, see [Section 22](#22-auto-fill)*
 
 ### 13.3 Interaction Layer
 - **Find/Replace** — *now implemented, see [Section 16](#16-find--replace)*
@@ -919,4 +923,133 @@ This guarantees the frozen portion stays pinned and the non-frozen portion scrol
 
 - Freeze is independent of the scroll math elsewhere (`maxScrollX/Y`, hit-testing) — frozen rows/cols are simply excluded from the scrollable viewport.
 - Switching sheets restores each sheet's own `freeze` automatically.
+
+---
+
+## 22. Auto Fill
+
+An Excel-style fill-handle mechanism. The pure engine lives in `spreader/core/autofill.ts` (zero Vue/Canvas deps, fully unit-tested in `test/autofill.test.ts`); the canvas/interaction layer lives in `composables/interactions.ts`; the commit entry point `applyAutoFill` lives in `composables/core-state.ts`.
+
+### 22.1 Design Principles
+
+- **Algorithm/UI separation**: the pure functions (`parseFillValue` / `inferFillPattern` / `generateFillValue` / `applyAutoFillPlan` / `computeTargetRange` / `translateFormulaForTarget` / `validateMergeCompatibility`) have no Vue/Canvas dependency, easy to unit-test and reuse for `Ctrl+D`/`Ctrl+R`, paste-fill, right-click fill, etc.
+- **No data mutation during drag**: during the drag only `autoFillState.targetRange` is updated for preview rendering; actual cell writes happen once on `mouseup`.
+- **One undo step per drag**: `saveUndo()` is called once at commit; dynamic `ensureCapacity()` is folded into the same step.
+- **Reuses existing capabilities**: formula translation calls `shiftFormulaRefs()` (no second formula engine); style copy reuses `styleId` via the style pool; border handling stays on the existing `border-resolve.ts` path; freeze compatibility flows through the existing `cellToScreenRect` / `screenToCell` APIs.
+
+### 22.2 Pure Engine (`core/autofill.ts`)
+
+#### 22.2.1 FillValue — value classification
+
+`parseFillValue(value, locale): FillValue` classifies a raw cell value (priority: formula > date > text-number > number > text):
+
+| Kind | Matched when | Stored payload |
+|------|--------------|----------------|
+| `formula` | value starts with `=` | the formula string |
+| `date` | `parseDateTimeInput` succeeds | Excel 1900-date-system serial |
+| `text-number` | non-empty prefix + trailing digits | `{ prefix, num, digits }` |
+| `number` | `isNumericValue` | the number |
+| `text` | fallback | the raw string |
+
+#### 22.2.2 Pattern inference
+
+`inferFillPattern(sourceValues: FillValue[]): FillPattern`:
+
+| Pattern | Triggered when | Parameters |
+|---------|----------------|------------|
+| `copy` | single value, non-constant diff, mixed kinds | `sourceValues` |
+| `linear` | all numbers, constant diff | `{ step, base, sourceLen }` |
+| `date-linear` | all dates, constant diff (single date → step=1) | `{ step, baseSerial, sourceLen }` |
+| `text-number` | all text-number, same prefix, constant num diff | `{ prefix, step, base, digits, sourceLen }` |
+| `text-series` | single ASCII letters with constant charCode diff | `{ step, baseCharCode, sourceLen }` |
+| `formula` | any formula in source | (translation handled in plan) |
+
+#### 22.2.3 Target range calculation
+
+`computeTargetRange(sourceRange, draggedCell): { targetRange, direction } | null`:
+
+- Direction = the axis (row/col) with the larger offset between source and dragged cell.
+- Returns `null` when the dragged cell falls inside the source range (cancel).
+- Never overlaps the source range — the target is always the *new* cells beyond the source boundary.
+- Supports all four directions: up / down / left / right; reverse fills (up/left) generate values by decrementing the inferred step.
+
+#### 22.2.4 Formula translation
+
+`translateFormulaForTarget(formula, sourceCell, targetCell, colCount, rowCount, colToLabel)` wraps the existing `shiftFormulaRefs()`, passing `targetCol - sourceCol` / `targetRow - sourceRow` as offsets. The `$` absolute/ mixed rules are handled entirely by `shiftFormulaRefs`.
+
+#### 22.2.5 Merge compatibility
+
+`validateMergeCompatibility(sourceRange, targetRange, merges): boolean`:
+
+- `true` when no merges intersect either range, or every intersected merge is fully contained by the source/target range (whole-block fill).
+- `false` when a merge partially intersects the source or target range — the fill handle greys out and drag is disabled (conservative first version).
+
+#### 22.2.6 applyAutoFillPlan
+
+`applyAutoFillPlan(sourceRange, targetRange, sheet, direction, locale, colCount, rowCount, colToLabel): FillResult`:
+
+- Returns a `{ cells, merges }` increment — does **not** mutate the input sheet.
+- For each column (vertical fill) or row (horizontal fill) in the source range, independently infers the pattern from the source cells in that line, then generates values for the target cells in that line.
+- Formula cells are translated via `translateFormulaForTarget`; the source/target cell correspondence is by offset within the fill line.
+- Copies the source cell's `styleId` (no deep style clone) — reuses the style pool.
+- For reverse fills (up/left), the pattern step is negated so values decrement from the source start.
+
+### 22.3 Interaction Layer (`composables/interactions.ts`)
+
+#### 22.3.1 Fill handle rendering
+
+`drawFillHandle(ctx, cs)` draws a `FILL_HANDLE_SIZE` square at the bottom-right corner of the current selection's end cell (via `cellToScreenRect`), filled with `cs.activeCellBorder` (theme primary), or `cs.scrollTrack` (grey) when the selection partially intersects a merge. Called at the end of both `render()` and `renderFrozenOverlay()` so the handle shows above frozen content. A 1px white stroke improves visibility.
+
+`drawAutoFillPreview(ctx, cs)` renders the `targetRange` as a semi-transparent fill (`cs.selectionBg`) with a dashed border (`cs.activeCellBorder`) during an active drag. Also called in both render paths.
+
+#### 22.3.2 Hit-test
+
+`isFillHandleHit(x, y): boolean`:
+
+- Returns `false` when there is no selection, the editor is open, or the selection partially intersects a merge.
+- Hit area = `FILL_HANDLE_SIZE + 2 × FILL_HANDLE_HIT_PADDING` (14×14px) centred on the handle's corner — large enough for touch without enlarging the visual size.
+- Called in `onMouseDown`/`onTouchStart` **after** the resize-handle checks and **before** the cell-click branch; called in `onMouseMove` hover branch to switch to `crosshair` cursor.
+
+#### 22.3.3 State machine
+
+A dedicated `autofilling` state (`s.autoFillState`) is mutually exclusive with selection drag / editor / resize:
+
+| Phase | Trigger | State change |
+|-------|---------|--------------|
+| Start | `mousedown` on handle | `autoFillState = { active: true, sourceRange: sel, targetRange: null, direction: null, preview: true }` |
+| Move | `mousemove` / `touchmove` | `updateAutoFillPreview(x, y)` → `computeTargetRange` → update `targetRange` + `direction` |
+| Commit | `mouseup` / `touchend` | `commitAutoFill()` → `applyAutoFill(source, target, direction)` → reset state |
+| Cancel | ESC / pointercancel | reset state + `cancelAutoScroll()` |
+
+#### 22.3.4 Edge auto-scroll
+
+When the mouse is within 30px of any viewport edge during an active drag:
+
+- A single `requestAnimationFrame` loop (`autoScrollStep`) scrolls via `clampScroll` and recomputes the target range from the current mouse coordinates.
+- Single-instance guard (`autoScrollRAF !== null` check) prevents multiple loops.
+- Stopped on `mouseup` / ESC / `onMouseLeave` via `cancelAutoScroll()`.
+
+#### 22.3.5 Touch
+
+Touch shares the exact same `autoFillState` / `updateAutoFillPreview` / `commitAutoFill` path as mouse — no separate implementation. The 14×14px hit area prevents accidental touch-selection triggering.
+
+### 22.4 Commit (`composables/core-state.ts`)
+
+`applyAutoFill(sourceRange, targetRange, direction)`:
+
+1. `saveUndo()` — one snapshot before any mutation.
+2. `ensureCapacity(targetRange.endCol, targetRange.endRow)` — dynamic expansion, folded into the same undo step.
+3. `applyAutoFillPlan(...)` — compute the pure `{ cells, merges }` increment.
+4. Write each target cell: set `value` + `styleId`; update `formulaDeps` (parse refs if formula, clear otherwise); `markDirty` for recalculation.
+5. `selectRange(union of source + target)` — selection updates to the full filled range.
+6. `scheduleRender()` + `emitModelData()`.
+
+### 22.5 Integration Notes
+
+- **Formula recalculation**: after commit, `formulaDeps.markDirty` + `clearEvalCache` ensure dependent formulas re-evaluate on the next render.
+- **Style pool**: target cells reuse source `styleId` directly — no new style registration needed unless the source itself changes.
+- **Border system**: AutoFill copies `styleId` (which carries `borderId`); shared-border resolution at render time is unchanged — no neighbour mutation introduced.
+- **Freeze panes**: all coordinates go through `cellToScreenRect` / `screenToCell`; the handle is drawn in both `render` and `renderFrozenOverlay`, so it stays visible above frozen content.
+- **Dynamic expansion**: `ensureCapacity` is called before `applyAutoFillPlan`, and the pure plan does not enforce bounds — the caller guarantees capacity.
+- **Undo/Redo**: one `saveUndo()` per drag; the snapshot includes `colCount`/`rowCount` so dynamic expansion is reversible.
 

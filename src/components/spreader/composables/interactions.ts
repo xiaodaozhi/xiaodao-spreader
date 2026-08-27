@@ -1,5 +1,5 @@
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount, type Ref, type ComputedRef } from 'vue';
-import { HEADER_HEIGHT, HEADER_WIDTH, SB_SIZE, DEFAULT_COL_WIDTH, MIN_COL_WIDTH, MIN_ROW_HEIGHT, MAX_COL_WIDTH, MAX_ROW_HEIGHT, DEFAULT_FONT_FAMILY, t } from '../core/constants';
+import { HEADER_HEIGHT, HEADER_WIDTH, SB_SIZE, DEFAULT_COL_WIDTH, MIN_COL_WIDTH, MIN_ROW_HEIGHT, MAX_COL_WIDTH, MAX_ROW_HEIGHT, DEFAULT_FONT_FAMILY, FILL_HANDLE_SIZE, FILL_HANDLE_HIT_PADDING, t } from '../core/constants';
 import { colToLabel, resolveSize, getCanvasXY } from '../core/utils';
 import type { CoreState } from './core-state';
 import type { UndoStylesState } from './undo-styles';
@@ -8,8 +8,9 @@ import { migrateCells } from '../core/style-pool';
 import { migrateBordersInStyles } from '../core/border-pool';
 import type { BordersMergeState } from './borders-merge';
 import type { SheetsOpsState } from './sheets-ops';
-import type { ContextMenuItem, BorderSide } from '../core/types';
+import type { ContextMenuItem, BorderSide, ThemeColors } from '../core/types';
 import { resolveSharedBorder } from '../core/border-resolve';
+import { computeTargetRange, validateMergeCompatibility } from '../core/autofill';
 
 export interface InteractionsState {
   // 渲染器
@@ -895,6 +896,9 @@ export function createInteractions(
     rCtx.moveTo(HW + 0.5, HH);
     rCtx.lineTo(HW + 0.5, H);
     rCtx.stroke();
+    // 填充柄 + AutoFill 预览（绘制在 selection / active cell 之后、editor 之前）
+    drawFillHandle(rCtx, cs);
+    drawAutoFillPreview(rCtx, cs);
   }
 
   function renderFrozenOverlay() {
@@ -1062,6 +1066,45 @@ export function createInteractions(
     frozenCtx.strokeStyle = cs.headerSep;
     frozenCtx.lineWidth = 1;
     frozenCtx.strokeRect(0.5, 0.5, HW - 0.5, HH - 0.5);
+    // 冻结层填充柄 + AutoFill 预览（确保冻结区域内的填充柄不被 Body 覆盖）
+    drawFillHandle(frozenCtx, cs);
+    drawAutoFillPreview(frozenCtx, cs);
+  }
+
+  // ============ 填充柄绘制 ============
+  /** 绘制填充柄：selection 右下角单元格的右下角小方块 */
+  function drawFillHandle(ctx: CanvasRenderingContext2D, cs: ThemeColors) {
+    const sel = s.selection.value;
+    if (!sel || s.editingCell.value) return;
+    const rect = s.cellToScreenRect(sel.endRow, sel.endCol);
+    // Merge 兼容：源区域与 merge 部分相交时填充柄变灰，不可拖拽
+    const mergeOk = validateMergeCompatibility(sel, sel, s.merges);
+    const hx = rect.x + rect.width - FILL_HANDLE_SIZE / 2;
+    const hy = rect.y + rect.height - FILL_HANDLE_SIZE / 2;
+    ctx.fillStyle = mergeOk ? cs.activeCellBorder : cs.scrollTrack;
+    ctx.fillRect(hx, hy, FILL_HANDLE_SIZE, FILL_HANDLE_SIZE);
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(hx + 0.5, hy + 0.5, FILL_HANDLE_SIZE - 1, FILL_HANDLE_SIZE - 1);
+  }
+
+  /** 绘制 AutoFill 拖拽预览：半透明填充 + 虚线边框 */
+  function drawAutoFillPreview(ctx: CanvasRenderingContext2D, cs: ThemeColors) {
+    const st = s.autoFillState.value;
+    if (!st.active || !st.preview || !st.targetRange) return;
+    const tr = st.targetRange;
+    const r0 = s.cellToScreenRect(tr.startRow, tr.startCol);
+    const r1 = s.cellToScreenRect(tr.endRow, tr.endCol);
+    const x = r0.x, y = r0.y;
+    const w = r1.x + r1.width - x;
+    const h = r1.y + r1.height - y;
+    ctx.fillStyle = cs.selectionBg;
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = cs.activeCellBorder;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([4, 3]);
+    ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+    ctx.setLineDash([]);
   }
 
   // ============ 编辑栏 ============
@@ -1947,6 +1990,110 @@ export function createInteractions(
   let tZone: 'cell' | 'col' | 'row' | 'all' = 'cell';
   let ltT = 0, ltC = -1, ltR = -1;
 
+  // ============ AutoFill 状态 ============
+  let autoScrollRAF: number | null = null;
+  let autoScrollDir: { x: number; y: number } | null = null;
+  let autoFillMouseX = 0;
+  let autoFillMouseY = 0;
+
+  /** 填充柄命中测试：命中区域为填充柄视觉矩形 + FILL_HANDLE_HIT_PADDING */
+  function isFillHandleHit(x: number, y: number): boolean {
+    const sel = s.selection.value;
+    if (!sel || s.editingCell.value) return false;
+    // Merge 部分相交时禁用填充柄
+    if (!validateMergeCompatibility(sel, sel, s.merges)) return false;
+    const rect = s.cellToScreenRect(sel.endRow, sel.endCol);
+    const hx = rect.x + rect.width - FILL_HANDLE_SIZE;
+    const hy = rect.y + rect.height - FILL_HANDLE_SIZE;
+    const pad = FILL_HANDLE_HIT_PADDING;
+    return x >= hx - pad && x <= hx + FILL_HANDLE_SIZE + pad
+      && y >= hy - pad && y <= hy + FILL_HANDLE_SIZE + pad;
+  }
+
+  /** 启动边缘自动滚动 rAF 循环（单一实例） */
+  function startAutoScroll() {
+    autoScrollRAF = requestAnimationFrame(autoScrollStep);
+  }
+
+  /** AutoFill 自动滚动单帧：clampScroll + 重新计算 targetRange + scheduleRender */
+  function autoScrollStep() {
+    if (!s.autoFillState.value.active || !autoScrollDir) {
+      autoScrollRAF = null;
+      return;
+    }
+    const speed = 8;
+    so.clampScroll(
+      s.scrollX.value + autoScrollDir.x * speed * 0.1,
+      s.scrollY.value + autoScrollDir.y * speed * 0.1,
+    );
+    const hit = s.screenToCell(autoFillMouseX, autoFillMouseY);
+    const src = s.autoFillState.value.sourceRange;
+    if (hit && src) {
+      const result = computeTargetRange(src, { col: hit.col, row: hit.row });
+      if (result) {
+        s.autoFillState.value = { ...s.autoFillState.value, targetRange: result.targetRange, direction: result.direction };
+      } else {
+        s.autoFillState.value = { ...s.autoFillState.value, targetRange: null, direction: null };
+      }
+    }
+    scheduleRender();
+    autoScrollRAF = requestAnimationFrame(autoScrollStep);
+  }
+
+  /** 取消边缘自动滚动 */
+  function cancelAutoScroll() {
+    if (autoScrollRAF !== null) {
+      cancelAnimationFrame(autoScrollRAF);
+      autoScrollRAF = null;
+    }
+    autoScrollDir = null;
+  }
+
+  /** 更新 AutoFill 预览：根据当前鼠标位置计算 targetRange / direction，必要时启动边缘自动滚动 */
+  function updateAutoFillPreview(x: number, y: number) {
+    autoFillMouseX = x;
+    autoFillMouseY = y;
+    const hit = s.screenToCell(x, y);
+    const src = s.autoFillState.value.sourceRange;
+    if (hit && src) {
+      const result = computeTargetRange(src, { col: hit.col, row: hit.row });
+      if (result) {
+        s.autoFillState.value = { ...s.autoFillState.value, targetRange: result.targetRange, direction: result.direction };
+      } else {
+        s.autoFillState.value = { ...s.autoFillState.value, targetRange: null, direction: null };
+      }
+    }
+    // 边缘自动滚动：鼠标接近视口边缘 30px 内时启动
+    const EDGE = 30;
+    const vw = so.viewSize.w, vh = so.viewSize.h;
+    let dx = 0, dy = 0;
+    if (x < HEADER_WIDTH + EDGE) dx = -(HEADER_WIDTH + EDGE - x);
+    else if (x > vw - SB_SIZE - EDGE) dx = x - (vw - SB_SIZE - EDGE);
+    if (y < HEADER_HEIGHT + EDGE) dy = -(HEADER_HEIGHT + EDGE - y);
+    else if (y > vh - SB_SIZE - EDGE) dy = y - (vh - SB_SIZE - EDGE);
+    if (dx !== 0 || dy !== 0) {
+      autoScrollDir = { x: dx, y: dy };
+      if (autoScrollRAF === null) startAutoScroll();
+    } else {
+      autoScrollDir = null;
+      if (autoScrollRAF !== null) {
+        cancelAnimationFrame(autoScrollRAF);
+        autoScrollRAF = null;
+      }
+    }
+    scheduleRender();
+  }
+
+  /** 提交 AutoFill：调用 applyAutoFill 写入并重置状态 */
+  function commitAutoFill() {
+    cancelAutoScroll();
+    const st = s.autoFillState.value;
+    if (st.targetRange && st.direction && st.sourceRange) {
+      s.applyAutoFill(st.sourceRange, st.targetRange, st.direction);
+    }
+    s.autoFillState.value = { active: false, sourceRange: null, targetRange: null, direction: null, preview: false };
+  }
+
   function onMouseDown(e: MouseEvent) {
     if (e.button !== 0) return;
     e.preventDefault();
@@ -1979,6 +2126,21 @@ export function createInteractions(
         scheduleRender();
         return;
       }
+    }
+    // 填充柄命中：进入 autofilling 状态（在 resize handle 之后、cell click 之前）
+    if (isFillHandleHit(p.x, p.y)) {
+      const sel = s.selection.value;
+      if (sel) {
+        s.autoFillState.value = {
+          active: true,
+          sourceRange: { ...sel },
+          targetRange: null,
+          direction: null,
+          preview: true,
+        };
+        scheduleRender();
+      }
+      return;
     }
     if (p.x < HEADER_WIDTH || p.y < HEADER_HEIGHT) {
       // 点击行列头/全选区：只有"在编辑中 / 公式栏正在 focus / 用户改过公式栏"才先提交，否则纯选区切换跳过（避免误清空原 activeCell）
@@ -2052,6 +2214,12 @@ export function createInteractions(
       scheduleRender();
       return;
     }
+    // autofilling 状态：更新预览 + 边缘自动滚动
+    if (s.autoFillState.value.active) {
+      const afp = getCanvasXY(e, so.canvasRef.value);
+      updateAutoFillPreview(afp.x, afp.y);
+      return;
+    }
     if (!isDragging) {
       const cvs = so.canvasRef.value;
       if (!cvs) return;
@@ -2075,6 +2243,11 @@ export function createInteractions(
           cvs.style.cursor = 'row-resize';
           return;
         }
+      }
+      // hover 命中填充柄时切换为 crosshair
+      if (isFillHandleHit(p.x, p.y)) {
+        cvs.style.cursor = 'crosshair';
+        return;
       }
       cvs.style.cursor = 'cell';
       return;
@@ -2111,11 +2284,17 @@ export function createInteractions(
     isResizingC = false;
     isResizingR = false;
     if (w) so.scheduleOptEmit();
+    // autofilling 提交（在 resize/drag 重置之后、paintFormat 之前）
+    if (s.autoFillState.value.active) {
+      commitAutoFill();
+      return;
+    }
     if (us.paintFmt.value) {
       us.applyPaintFormat();
     }
   }
   function onMouseLeave() {
+    cancelAutoScroll();
     const w = isResizingC || isResizingR;
     isDragging = false;
     isResizingC = false;
@@ -2192,6 +2371,28 @@ export function createInteractions(
     if (!cvs) return;
     const rect = cvs.getBoundingClientRect();
     const x = t.clientX - rect.left, y = t.clientY - rect.top;
+    // 填充柄命中：进入 autofilling（与 mouse 共用 autoFillState），不启动滚动
+    if (isFillHandleHit(x, y)) {
+      e.preventDefault();
+      const sel = s.selection.value;
+      if (sel) {
+        s.autoFillState.value = {
+          active: true,
+          sourceRange: { ...sel },
+          targetRange: null,
+          direction: null,
+          preview: true,
+        };
+        isTouch = true;
+        tMoved = false;
+        tZone = 'cell';
+        tSX = x;
+        tSY = y;
+        tSSX = s.scrollX.value;
+        tSSY = s.scrollY.value;
+      }
+      return;
+    }
     if (x >= HEADER_WIDTH && y >= HEADER_HEIGHT) {
       // 单元格区域：记录起点，移动时平移滚动，抬手时选中单元格
       e.preventDefault();
@@ -2235,6 +2436,12 @@ export function createInteractions(
     if (!cvs) return;
     const rect = cvs.getBoundingClientRect();
     const x = t.clientX - rect.left, y = t.clientY - rect.top;
+    // autofilling：更新预览 + 边缘自动滚动（优先于滚动）
+    if (s.autoFillState.value.active) {
+      e.preventDefault();
+      updateAutoFillPreview(x, y);
+      return;
+    }
     if (Math.abs(x - tSX) > 8 || Math.abs(y - tSY) > 8) {
       tMoved = true;
       e.preventDefault();
@@ -2244,6 +2451,12 @@ export function createInteractions(
   }
   function onTouchEnd() {
     if (!isTouch) return;
+    // autofilling 提交
+    if (s.autoFillState.value.active) {
+      commitAutoFill();
+      isTouch = false;
+      return;
+    }
     isTouch = false;
     if (tMoved) return;
     if (tZone === 'cell' && tSC >= 0 && tSR >= 0) {
@@ -2286,6 +2499,16 @@ export function createInteractions(
     return e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey;
   }
   function onKeydown(e: KeyboardEvent) {
+    // autofilling 期间：ESC 取消并重置状态，其他键忽略
+    if (s.autoFillState.value.active) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        cancelAutoScroll();
+        s.autoFillState.value = { active: false, sourceRange: null, targetRange: null, direction: null, preview: false };
+        scheduleRender();
+      }
+      return;
+    }
     if (s.editingCell.value) return;
     const ctl = e.ctrlKey || e.metaKey, sh = e.shiftKey;
     switch (true) {

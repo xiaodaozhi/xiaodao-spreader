@@ -61,6 +61,7 @@ xiaodao-spreader/
                 ├── border-resolve.ts  # 公共边冲突解析（resolveSharedBorder）
                 ├── formula.ts         # 公式引擎（解析、求值、依赖追踪）
                 ├── find-replace-core.ts # 查找/替换纯算法（零 Vue 依赖，可单测）
+                ├── autofill.ts        # 自动填充纯引擎（模式推断、填充柄逻辑，零 Vue 依赖）
                 ├── number-format.ts    # 数字格式引擎（Excel 风格显示格式化）
                 ├── theme.ts           # 主题 CSS 变量构建
                 └── utils.ts           # 纯工具函数（列标转换、命中测试等）
@@ -244,6 +245,8 @@ HEADER_HEIGHT = 24   (列头高度)
 SB_SIZE       = 11   (滚动条宽/高)
 ARROW_SIZE    = 11   (滚动条箭头按钮尺寸)
 SCROLL_STEP   = 50   (每次点击滚动量)
+FILL_HANDLE_SIZE       = 6   (填充柄视觉尺寸，px)
+FILL_HANDLE_HIT_PADDING = 4   (填充柄命中区扩展，px)
 DEFAULT_COL_WIDTH  = 100
 DEFAULT_ROW_HEIGHT = 24
 MIN_COL_WIDTH  = 30
@@ -388,6 +391,7 @@ Canvas CSS 坐标（逻辑像素）
 | 点击角方块 | 全选 |
 | 拖动列头右边缘 | 调整列宽 |
 | 拖动行头下边缘 | 调整行高 |
+| 拖拽填充柄（选区右下角） | 自动填充（见 [第 22 节](#22-自动填充)） |
 | 鼠标滚轮 | 滚动 |
 | 右键 | 上下文菜单（按区域区分） |
 
@@ -499,7 +503,7 @@ Canvas CSS 坐标（逻辑像素）
 ### 13.2 渲染层
 - **冻结窗格** —— *已实现，见 [第 21 节](#21-冻结窗格)*
 - **条件格式**：渲染循环中加入样式规则匹配
-- **自动填充**：活动单元格右下角拖拽手柄
+- **自动填充** —— *已实现，见 [第 22 节](#22-自动填充)*
 
 ### 13.3 交互层
 - **查找/替换** — *已实现，见[第 16 节](#16-查找与替换)*
@@ -918,4 +922,133 @@ function findLastDataExtents(): { lastCol: number; lastRow: number }
 
 - 冻结独立于其他滚动数学（`maxScrollX/Y`、命中测试）—— 冻结行/列简单排除在滚动视口外。
 - 切换工作表会自动恢复各表自己的 `freeze`。
+
+---
+
+## 22. 自动填充
+
+一套类 Excel 的填充柄机制。纯引擎位于 `spreader/core/autofill.ts`（零 Vue/Canvas 依赖，`test/autofill.test.ts` 有 54 个用例完整单测）；画布/交互层位于 `composables/interactions.ts`；提交入口 `applyAutoFill` 位于 `composables/core-state.ts`。
+
+### 22.1 设计原则
+
+- **算法/UI 分离**：纯函数（`parseFillValue` / `inferFillPattern` / `generateFillValue` / `applyAutoFillPlan` / `computeTargetRange` / `translateFormulaForTarget` / `validateMergeCompatibility`）不依赖 Vue/Canvas，便于单测与复用到 `Ctrl+D`/`Ctrl+R`、粘贴填充、右键填充等场景。
+- **拖拽期间不修改数据**：拖拽过程中只更新 `autoFillState.targetRange` 用于预览渲染；真正的单元格写入仅在 `mouseup` 时发生一次。
+- **每次拖拽仅一个撤销步骤**：提交时调用一次 `saveUndo()`；动态 `ensureCapacity()` 折叠进同一步骤。
+- **复用既有能力**：公式平移调用 `shiftFormulaRefs()`（未新建第二套公式引擎）；样式复制通过 `styleId` 经样式池复用；边框处理沿用 `border-resolve.ts` 路径；冻结兼容通过既有 `cellToScreenRect` / `screenToCell` API 处理。
+
+### 22.2 纯引擎（`core/autofill.ts`）
+
+#### 22.2.1 FillValue —— 值分类
+
+`parseFillValue(value, locale): FillValue` 将原始单元格值分类（优先级：公式 > 日期 > 文本数字 > 数字 > 文本）：
+
+| 类型 | 匹配条件 | 存储数据 |
+|------|----------|----------|
+| `formula` | 值以 `=` 开头 | 公式字符串 |
+| `date` | `parseDateTimeInput` 成功 | Excel 1900 日期系统序列号 |
+| `text-number` | 非空前缀 + 末尾数字 | `{ prefix, num, digits }` |
+| `number` | `isNumericValue` | 数值 |
+| `text` | 兜底 | 原始字符串 |
+
+#### 22.2.2 模式推断
+
+`inferFillPattern(sourceValues: FillValue[]): FillPattern`：
+
+| 模式 | 触发条件 | 参数 |
+|------|----------|------|
+| `copy` | 单值、非等差、混合类型 | `sourceValues` |
+| `linear` | 全为数字且等差 | `{ step, base, sourceLen }` |
+| `date-linear` | 全为日期且等差（单日期 → step=1） | `{ step, baseSerial, sourceLen }` |
+| `text-number` | 全为文本数字、prefix 相同、数字部分等差 | `{ prefix, step, base, digits, sourceLen }` |
+| `text-series` | 单个 ASCII 字母且 charCode 等差 | `{ step, baseCharCode, sourceLen }` |
+| `formula` | 源中含任意公式 | （平移在 plan 中处理） |
+
+#### 22.2.3 目标区域计算
+
+`computeTargetRange(sourceRange, draggedCell): { targetRange, direction } | null`：
+
+- 方向 = 源与拖拽单元格之间偏移较大的轴（行/列）。
+- 拖拽单元格落在源区域内时返回 `null`（取消）。
+- 永不与源区域重叠 —— 目标始终是源边界之外的*新增*单元格。
+- 支持四方向：上 / 下 / 左 / 右；反向填充（上/左）通过将推断的 step 取负生成递减值。
+
+#### 22.2.4 公式平移
+
+`translateFormulaForTarget(formula, sourceCell, targetCell, colCount, rowCount, colToLabel)` 封装既有 `shiftFormulaRefs()`，传入 `targetCol - sourceCol` / `targetRow - sourceRow` 作为偏移。`$` 绝对/混合规则全部由 `shiftFormulaRefs` 处理。
+
+#### 22.2.5 合并兼容性
+
+`validateMergeCompatibility(sourceRange, targetRange, merges): boolean`：
+
+- 当无合并与任一区域相交，或所有相交合并都被源/目标区域完全包含（整块填充）时返回 `true`。
+- 当合并与源或目标区域部分相交时返回 `false` —— 填充柄变灰且拖拽禁用（第一版保守策略）。
+
+#### 22.2.6 applyAutoFillPlan
+
+`applyAutoFillPlan(sourceRange, targetRange, sheet, direction, locale, colCount, rowCount, colToLabel): FillResult`：
+
+- 返回 `{ cells, merges }` 增量 —— **不** mutate 输入 sheet。
+- 对源区域内每一列（纵向填充）或每一行（横向填充）独立从该线的源单元格推断模式，再为该线的目标单元格生成值。
+- 公式单元格经 `translateFormulaForTarget` 平移；源/目标单元格的对应关系按填充线内的偏移确定。
+- 复制源单元格的 `styleId`（不深拷贝 style 对象）—— 经样式池复用。
+- 反向填充（上/左）时模式 step 取负，值从源起始处递减。
+
+### 22.3 交互层（`composables/interactions.ts`）
+
+#### 22.3.1 填充柄渲染
+
+`drawFillHandle(ctx, cs)` 在当前选区结束单元格（经 `cellToScreenRect`）右下角绘制 `FILL_HANDLE_SIZE` 方块，填充 `cs.activeCellBorder`（主题主色）；当选区与合并部分相交时填充 `cs.scrollTrack`（灰色）。在 `render()` 与 `renderFrozenOverlay()` 末尾均调用，保证冻结内容之上的柄可见。1px 白色描边提升辨识度。
+
+`drawAutoFillPreview(ctx, cs)` 在活动拖拽期间将 `targetRange` 渲染为半透明填充（`cs.selectionBg`）+ 虚线边框（`cs.activeCellBorder`）。同样在两条渲染路径中调用。
+
+#### 22.3.2 命中测试
+
+`isFillHandleHit(x, y): boolean`：
+
+- 无选区、编辑器开启、或选区与合并部分相交时返回 `false`。
+- 命中区 = `FILL_HANDLE_SIZE + 2 × FILL_HANDLE_HIT_PADDING`（14×14px），以柄角为中心 —— 足够触摸命中而不增大视觉尺寸。
+- 在 `onMouseDown`/`onTouchStart` 中于 resize 句柄检查**之后**、单元格点击分支**之前**调用；在 `onMouseMove` 悬停分支中调用以切换为 `crosshair` 光标。
+
+#### 22.3.3 状态机
+
+独立的 `autofilling` 状态（`s.autoFillState`）与选区拖拽 / 编辑器 / resize 互斥：
+
+| 阶段 | 触发 | 状态变化 |
+|------|------|----------|
+| 开始 | 在柄上 `mousedown` | `autoFillState = { active: true, sourceRange: sel, targetRange: null, direction: null, preview: true }` |
+| 移动 | `mousemove` / `touchmove` | `updateAutoFillPreview(x, y)` → `computeTargetRange` → 更新 `targetRange` + `direction` |
+| 提交 | `mouseup` / `touchend` | `commitAutoFill()` → `applyAutoFill(source, target, direction)` → 重置状态 |
+| 取消 | ESC / pointercancel | 重置状态 + `cancelAutoScroll()` |
+
+#### 22.3.4 边缘自动滚动
+
+活动拖拽期间鼠标距任意视口边缘 30px 以内时：
+
+- 单一 `requestAnimationFrame` 循环（`autoScrollStep`）通过 `clampScroll` 滚动，并按当前鼠标坐标重新计算目标区域。
+- 单实例守卫（`autoScrollRAF !== null` 检查）防止多循环并存。
+- 在 `mouseup` / ESC / `onMouseLeave` 时经 `cancelAutoScroll()` 停止。
+
+#### 22.3.5 触摸
+
+触摸与鼠标共用完全相同的 `autoFillState` / `updateAutoFillPreview` / `commitAutoFill` 路径——无独立实现。14×14px 命中区防止触摸选区误触。
+
+### 22.4 提交（`composables/core-state.ts`）
+
+`applyAutoFill(sourceRange, targetRange, direction)`：
+
+1. `saveUndo()` —— 任何修改前一次快照。
+2. `ensureCapacity(targetRange.endCol, targetRange.endRow)` —— 动态扩展，折叠进同一撤销步骤。
+3. `applyAutoFillPlan(...)` —— 计算纯 `{ cells, merges }` 增量。
+4. 写入每个目标单元格：设置 `value` + `styleId`；更新 `formulaDeps`（公式则解析引用，否则清除）；`markDirty` 触发重算。
+5. `selectRange(源 + 目标并集)` —— 选区更新为完整填充范围。
+6. `scheduleRender()` + `emitModelData()`。
+
+### 22.5 集成说明
+
+- **公式重算**：提交后 `formulaDeps.markDirty` + `clearEvalCache` 确保依赖公式在下次渲染时重新求值。
+- **样式池**：目标单元格直接复用源 `styleId` —— 无需新注册样式，除非源本身变化。
+- **边框系统**：AutoFill 复制 `styleId`（携带 `borderId`）；渲染时的公共边解析不变——不引入邻居修改。
+- **冻结窗格**：所有坐标走 `cellToScreenRect` / `screenToCell`；柄在 `render` 与 `renderFrozenOverlay` 中均绘制，保持冻结内容之上可见。
+- **动态扩展**：`ensureCapacity` 在 `applyAutoFillPlan` 之前调用，纯 plan 不校验边界——由调用方保证容量。
+- **撤销/重做**：每次拖拽一次 `saveUndo()`；快照包含 `colCount`/`rowCount`，动态扩展可逆。
 
