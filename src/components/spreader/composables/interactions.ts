@@ -2148,6 +2148,10 @@ export function createInteractions(
   // 触摸起点所在区域：cell 单元格 / col 列表头 / row 行表头 / all 左上角全选按钮
   let tZone: 'cell' | 'col' | 'row' | 'all' = 'cell';
   let ltT = 0, ltC = -1, ltR = -1;
+  // 触屏框选（长按进入）：长按单元格锚定起点，拖动扩展矩形选区；未进入前拖动为滚动
+  let tLongTimer: number | null = null;
+  let tSelecting = false;
+  let tSelAnchorC = 0, tSelAnchorR = 0;
 
   // ============ AutoFill 状态 ============
   let autoScrollRAF: number | null = null;
@@ -2606,10 +2610,11 @@ export function createInteractions(
       }
     }
     if (x >= HEADER_WIDTH && y >= HEADER_HEIGHT) {
-      // 单元格区域：记录起点，移动时平移滚动，抬手时选中单元格
+      // 单元格区域：记录起点；默认拖动为滚动，长按进入框选模式（锚定起点后拖动扩展矩形选区）
       e.preventDefault();
       isTouch = true;
       tMoved = false;
+      tSelecting = false;
       tZone = 'cell';
       tSX = x;
       tSY = y;
@@ -2617,6 +2622,16 @@ export function createInteractions(
       tSSY = s.scrollY.value;
       tSC = screenXToCol(x);
       tSR = screenYToRow(y);
+      if (tLongTimer !== null) clearTimeout(tLongTimer);
+      tLongTimer = window.setTimeout(() => {
+        tSelecting = true;
+        tSelAnchorC = tSC;
+        tSelAnchorR = tSR;
+        if (tSC >= 0 && tSR >= 0) {
+          s.selectCell(tSC, tSR);
+          scheduleRender();
+        }
+      }, 450);
     } else if (x >= 0 && y >= 0 && (x < HEADER_WIDTH || y < HEADER_HEIGHT)) {
       // 列表头 / 行表头 / 左上角全选按钮：同样支持平移滚动与点按选择
       e.preventDefault();
@@ -2673,6 +2688,18 @@ export function createInteractions(
       scheduleRender();
       return;
     }
+    // 长按进入的框选模式：拖动扩展矩形选区（不滚动）
+    if (tSelecting) {
+      e.preventDefault();
+      const c = screenXToCol(x), r = screenYToRow(y);
+      if (c >= 0 && r >= 0 && tSelAnchorC >= 0 && tSelAnchorR >= 0) {
+        s.selectRange(tSelAnchorC, tSelAnchorR, c, r);
+        scheduleRender();
+      }
+      return;
+    }
+    // 开始明显拖动 → 取消可能 pending 的长按计时（转滚动而非框选）
+    if (tLongTimer !== null) { clearTimeout(tLongTimer); tLongTimer = null; }
     if (Math.abs(x - tSX) > 8 || Math.abs(y - tSY) > 8) {
       tMoved = true;
       e.preventDefault();
@@ -2682,6 +2709,7 @@ export function createInteractions(
   }
   function onTouchEnd() {
     if (!isTouch) return;
+    if (tLongTimer !== null) { clearTimeout(tLongTimer); tLongTimer = null; }
     // autofilling 提交
     if (s.autoFillState.value.active) {
       commitAutoFill();
@@ -2693,6 +2721,12 @@ export function createInteractions(
       isResizingC = false;
       isResizingR = false;
       so.scheduleOptEmit();
+      isTouch = false;
+      return;
+    }
+    // 框选结束（长按进入的选择模式）
+    if (tSelecting) {
+      tSelecting = false;
       isTouch = false;
       return;
     }
