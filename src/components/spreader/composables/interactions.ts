@@ -949,6 +949,23 @@ export function createInteractions(
     rCtx.moveTo(HW + 0.5, HH);
     rCtx.lineTo(HW + 0.5, H);
     rCtx.stroke();
+
+    // 左上角全选按钮区（行头 × 列头交汇）：用 headerBg 填充与表头统一，并绘制指向左上的全选三角。
+    // 否则该区域仅被整屏清屏填充为 cs.bg，与列头/行头颜色不一致、且无按钮视觉，显得被遮盖。
+    rCtx.fillStyle = cs.headerBg;
+    rCtx.fillRect(0, 0, HW, HH);
+    rCtx.strokeStyle = cs.headerSep;
+    rCtx.lineWidth = 1;
+    rCtx.strokeRect(0.5, 0.5, HW - 1, HH - 1);
+    const tSize = Math.min(HW, HH) * 0.32;
+    rCtx.fillStyle = cs.headerText;
+    rCtx.beginPath();
+    rCtx.moveTo(HW - 1, HH - 1 - tSize);
+    rCtx.lineTo(HW - 1 - tSize, HH - 1);
+    rCtx.lineTo(HW - 1, HH - 1);
+    rCtx.closePath();
+    rCtx.fill();
+
     // 填充柄 + AutoFill 预览（绘制在 selection / active cell 之后、editor 之前）
     drawFillHandle(rCtx, cs);
     drawAutoFillPreview(rCtx, cs);
