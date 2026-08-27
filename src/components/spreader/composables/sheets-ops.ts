@@ -780,7 +780,7 @@ export function createSheetsOps(
     const sel = s.selection.value;
     const anchorMerge = s.findMerge(ac.col, ac.row);
     if (anchorMerge && anchorMerge.anchor === s.cellKey(ac.col, ac.row)
-        && (!sel || (sel.startCol === ac.col && sel.startRow === ac.row && sel.endCol === ac.col && sel.endRow === ac.row))) {
+      && (!sel || (sel.startCol === ac.col && sel.startRow === ac.row && sel.endCol === ac.col && sel.endRow === ac.row))) {
       s.selectCell(ac.col, ac.row);
     }
     s.scrollX.value = sh.scrollX;

@@ -22,6 +22,7 @@ A high-performance, canvas-based spreadsheet component for Vue 3 — bringing an
 - **Multi-Sheet Workbook** — Tab bar with add, rename, duplicate, delete, reorder
 - **Formula Engine** — `=SUM()`, `=AVERAGE()`, `=COUNT()`, `=IF()`, `=VLOOKUP()`, `=CONCATENATE()` with dependency tracking and circular-reference detection; toolbar and context menu provide one-click sum/average/count
 - **Merge Cells** — Merge & Center, Merge Across, Unmerge; merged-region borders stored at the anchor, shared borders resolved at render time
+- **Freeze Panes** — Pin frozen top rows / left columns so they keep visible while the body scrolls. The toolbar "Freeze Panes" dropdown exposes *Freeze Panes* (freezes at the top-left corner of the current selection / active cell — Excel's "Freeze Panes" behavior), *Freeze First Row*, *Freeze First Column*, and *Unfreeze* (shown only when a pane is already frozen, replacing the "Freeze Panes" entry). Per-sheet view state (`freeze: { rows, cols }`) persisted through v-model; merged cells straddling the freeze line are handled correctly — only the frozen portion stays pinned, the rest scrolls away
 - **Rich Cell Formatting** — Font family, font size (5–72), bold, italic, underline, strikethrough, text color, fill color, horizontal & vertical alignment, wrap text
 - **Borders** — Top / bottom / left / right / outside / all / none with 5 predefined styles and custom color; stored in a dedicated border pool, shared borders resolved at render time
 - **Undo / Redo** — Full state snapshots for cells, column widths, and row heights (50 steps)
@@ -153,6 +154,7 @@ interface SheetModelData {
     styleId?: number;
   }>;
   merges?: Record<string, SelectionRange>;
+  freeze?: { rows: number; cols: number };
   colWidths?: Record<number, number>;
   rowHeights?: Record<number, number>;
   /** Logic column count (0-based exclusive). Defaults to 26 when omitted. */
@@ -166,6 +168,7 @@ interface SheetModelData {
 - **`borders`**: Border pool — `borders[0]` is always the default empty border `{}`. Styles reference borders by index (`borderId`); auto-migrated from legacy inline border props when omitted.
 - **`cells`**: Key is `"col,row"` (e.g., `"0,0"` for cell A1). `styleId` references into the `styles` array; `styleId=0` or omitted means default style.
 - **`merges`**: Merge cell definitions, keyed by merge anchor cell.
+- **`freeze`**: View state for frozen panes — `{ rows, cols }` freezes the top `rows` rows and the left `cols` columns; `{ rows: 0, cols: 0 }` means no freeze. Persisted per sheet and restored on sheet switch.
 - **`colWidths` / `rowHeights`**: Sparse maps — only stores non-default values.
 
 ### Type Exports
@@ -465,7 +468,7 @@ The project includes a GitHub Actions workflow (`.github/workflows/publish.yml`)
 
 ### Mid-term
 
-- [ ] Frozen panes (freeze rows/columns)
+- [x] Frozen panes (freeze rows/columns) — *see [Freeze Panes](#features)*
 - [ ] Data validation (dropdown lists, input constraints)
 - [ ] Column / row grouping and collapsing
 - [x] Sort & filter — sort by displayed content with Excel-style Sort Warning dialog (expand selection / current selection only); see [Sorting & Sort Warning](#features)

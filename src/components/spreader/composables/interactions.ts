@@ -119,10 +119,10 @@ export function createInteractions(
   // ============ 渲染器 ============
   let rp = false;
   let rCtx: CanvasRenderingContext2D | null = null;
-  let frozenCtx: CanvasRenderingContext2D | null = null;
   let rDpr = 1;
   let drawCells: (rCtx: CanvasRenderingContext2D, sC2: number, eC2: number, sR2: number, eR2: number, rHs: number[]) => void = () => {};
   let drawBorders: (rCtx: CanvasRenderingContext2D, sC2: number, eC2: number, sR2: number, eR2: number, rHs: number[]) => void = () => {};
+  let drawMergedCells: (ctx: CanvasRenderingContext2D, vx: number, vy: number, vw: number, vh: number) => void = () => {};
 
   function scheduleRender() {
     if (!rp) {
@@ -205,8 +205,14 @@ export function createInteractions(
     }
     // 并集区间（含冻结区域），供 drawCells/drawBorders 迭代后按区域裁剪
     let sC = bodySC, eC = bodyEC, sR = bodySR, eR = bodyER;
-    if (frozenColumnsWidth > 0) { sC = 0; eC = Math.max(eC, frozenEC); }
-    if (frozenRowsHeight > 0) { sR = 0; eR = Math.max(eR, frozenER); }
+    if (frozenColumnsWidth > 0) {
+      sC = 0;
+      eC = Math.max(eC, frozenEC);
+    }
+    if (frozenRowsHeight > 0) {
+      sR = 0;
+      eR = Math.max(eR, frozenER);
+    }
 
     // 合并单元格的内容只在锚点处绘制；若锚点被滚出可视区域而合并区域仍与可视区相交，
     // 需要把循环起点回退到锚点位置，否则该合并区域会整体消失（Bug 修复）
@@ -236,146 +242,145 @@ export function createInteractions(
 
     // 第一步：绘制背景色、选中状态、文本内容（抽取为局部函数 drawCells，坐标改用 cellToScreenRect 以兼容冻结）
     drawCells = (rCtx: CanvasRenderingContext2D, sC2: number, eC2: number, sR2: number, eR2: number, rHs: number[]): void => {
-    for (let row = sR2; row <= eR2; row++) {
-      for (let col = sC2; col <= eC2; col++) {
-        const mergeInfo = s.findMerge(col, row);
-        if (mergeInfo && !(col === mergeInfo.range.startCol && row === mergeInfo.range.startRow)) {
-          continue;
-        }
-        const rect2 = s.cellToScreenRect(row, col);
-        const x = rect2.x, y = rect2.y, cw = rect2.width, rh = rect2.height;
-        if (x + cw < HW || y + rh < HH || x > W || y > H) continue;
+      for (let row = sR2; row <= eR2; row++) {
+        for (let col = sC2; col <= eC2; col++) {
+          const mergeInfo = s.findMerge(col, row);
+          // 合并单元格统一交由 drawMergedCells 按各 pane 视口相交绘制（支持跨冻结线拆分）
+          if (mergeInfo) continue;
+          const rect2 = s.cellToScreenRect(row, col);
+          const x = rect2.x, y = rect2.y, cw = rect2.width, rh = rect2.height;
+          if (x + cw < HW || y + rh < HH || x > W || y > H) continue;
 
-        // 查找高亮：整体填充（在背景色之后、选区/文本之前绘制）
-        const hl = s.findHighlight ? s.findHighlight(col, row) : null;
+          // 查找高亮：整体填充（在背景色之后、选区/文本之前绘制）
+          const hl = s.findHighlight ? s.findHighlight(col, row) : null;
 
-        const resolvedBg = s.resolveStyle(s.cells[s.cellKey(col, row)]);
-        const bgColor = typeof resolvedBg?.backgroundColor === 'string' ? resolvedBg.backgroundColor : '';
-        if (bgColor) {
-          rCtx.fillStyle = bgColor;
-          rCtx.fillRect(x, y, cw, rh);
-        }
-        if (hl) {
-          rCtx.fillStyle = hl === 'active' ? cs.findActiveBg : cs.findMatchBg;
-          rCtx.fillRect(x, y, cw, rh);
-        }
-        if (s.isSelected(col, row)) {
-          rCtx.fillStyle = cs.selectionBg;
-          // row/col 选择模式下按单个 cell 大小填色（Excel 风格「穿透合并单元格」）：
-          // 即便 anchor 当前 cw/rh 是合并后的大小，也只填当前 cell(col,row) 对应的 cW[col]/rH[row]。
-          if (s.selectionMode.value === 'row' || s.selectionMode.value === 'col') {
-            rCtx.fillRect(x, y, cW[col]!, rHs[row]!);
-          } else {
+          const resolvedBg = s.resolveStyle(s.cells[s.cellKey(col, row)]);
+          const bgColor = typeof resolvedBg?.backgroundColor === 'string' ? resolvedBg.backgroundColor : '';
+          if (bgColor) {
+            rCtx.fillStyle = bgColor;
             rCtx.fillRect(x, y, cw, rh);
           }
-        }
-        if (s.activeCell.value.col === col && s.activeCell.value.row === row) {
-          rCtx.strokeStyle = cs.activeCellBorder;
-          rCtx.lineWidth = 2;
-          rCtx.strokeRect(x + 1, y + 1, cw - 2, rh - 2);
-        }
-        if (hl === 'active') {
+          if (hl) {
+            rCtx.fillStyle = hl === 'active' ? cs.findActiveBg : cs.findMatchBg;
+            rCtx.fillRect(x, y, cw, rh);
+          }
+          if (s.isSelected(col, row)) {
+            rCtx.fillStyle = cs.selectionBg;
+            // row/col 选择模式下按单个 cell 大小填色（Excel 风格「穿透合并单元格」）：
+            // 即便 anchor 当前 cw/rh 是合并后的大小，也只填当前 cell(col,row) 对应的 cW[col]/rH[row]。
+            if (s.selectionMode.value === 'row' || s.selectionMode.value === 'col') {
+              rCtx.fillRect(x, y, cW[col]!, rHs[row]!);
+            } else {
+              rCtx.fillRect(x, y, cw, rh);
+            }
+          }
+          if (s.activeCell.value.col === col && s.activeCell.value.row === row) {
+            rCtx.strokeStyle = cs.activeCellBorder;
+            rCtx.lineWidth = 2;
+            rCtx.strokeRect(x + 1, y + 1, cw - 2, rh - 2);
+          }
+          if (hl === 'active') {
           // 当前匹配项：额外描边强化视觉效果（覆盖在选区之上）
-          rCtx.strokeStyle = cs.findActiveBg;
-          rCtx.lineWidth = 2;
-          rCtx.strokeRect(x + 1, y + 1, cw - 2, rh - 2);
-        }
-        rCtx.strokeStyle = cs.gridLine;
-        rCtx.lineWidth = 0.5;
-        rCtx.strokeRect(x + 0.25, y + 0.25, cw - 0.5, rh - 0.5);
-        if (!(ed && ed.col === col && ed.row === row)) {
-          const st = s.resolveStyle(s.cells[s.cellKey(col, row)]);
-          const rawV = s.getCellValue(col, row);
-          const nf = typeof st?.numberFormat === 'string' ? st.numberFormat : '';
-          const v = rawV ? formatNumber(rawV, nf, s.locale.value) : '';
-          if (v) {
-            const fsz = s.cellFontSize(col, row);
-            const ffa = typeof st?.fontFamily === 'string' && st.fontFamily ? st.fontFamily : DEFAULT_FONT_FAMILY;
-            const fw = st?.fontWeight === 'bold' ? 'bold' : 'normal';
-            const fstyle = st?.fontStyle === 'italic' ? 'italic' : 'normal';
-            const hasU = st?.underline === 'underline';
-            const hasS = st?.strikethrough === 'line-through';
-            const txtColor = typeof st?.color === 'string' ? st.color : '';
-            // 默认水平对齐：仅显示时生效（不落 style）— 数值类格式/常规数字 右对齐，其他左对齐
-            const hAlign = typeof st?.textAlign === 'string' ? st.textAlign : (shouldAlignRightByDefault(rawV, nf) ? 'right' : 'left');
-            const vAlign = typeof st?.verticalAlign === 'string' ? st.verticalAlign : 'top';
-            rCtx.fillStyle = txtColor || cs.cellText;
-            rCtx.font = `${fstyle} ${fw} ${fsz}px ${ffa}`;
-            rCtx.textBaseline = 'alphabetic';
-            rCtx.save();
-            rCtx.beginPath();
-            rCtx.rect(x + 5, y + 1, cw - 10, rh - 2);
-            rCtx.clip();
-            const stWrap = st?.wrap === 'wrap';
-            // ---- Excel 风格 '#####' 填充处理（仅显示，不改 value / style） ----
-            // 1) 非法值 sentinel（date 越界 / duration 负数）：不论列宽直接整格填 #
-            // 2) 指定格式（非 General、非 @、非纯文本）+ 非 wrap + 任一非空行测量宽度 > cw-10 → 填 #
-            const availW = cw - 10;
-            let displayV = v;
-            const needOverflowHashes = !stWrap && isFormatOverflowsToHashes(nf);
-            const invalidValue = v === NF_INVALID_VALUE || isInvalidDisplayValue(rawV, nf);
-            if (invalidValue || needOverflowHashes) {
-              if (invalidValue) {
+            rCtx.strokeStyle = cs.findActiveBg;
+            rCtx.lineWidth = 2;
+            rCtx.strokeRect(x + 1, y + 1, cw - 2, rh - 2);
+          }
+          rCtx.strokeStyle = cs.gridLine;
+          rCtx.lineWidth = 0.5;
+          rCtx.strokeRect(x + 0.25, y + 0.25, cw - 0.5, rh - 0.5);
+          if (!(ed && ed.col === col && ed.row === row)) {
+            const st = s.resolveStyle(s.cells[s.cellKey(col, row)]);
+            const rawV = s.getCellValue(col, row);
+            const nf = typeof st?.numberFormat === 'string' ? st.numberFormat : '';
+            const v = rawV ? formatNumber(rawV, nf, s.locale.value) : '';
+            if (v) {
+              const fsz = s.cellFontSize(col, row);
+              const ffa = typeof st?.fontFamily === 'string' && st.fontFamily ? st.fontFamily : DEFAULT_FONT_FAMILY;
+              const fw = st?.fontWeight === 'bold' ? 'bold' : 'normal';
+              const fstyle = st?.fontStyle === 'italic' ? 'italic' : 'normal';
+              const hasU = st?.underline === 'underline';
+              const hasS = st?.strikethrough === 'line-through';
+              const txtColor = typeof st?.color === 'string' ? st.color : '';
+              // 默认水平对齐：仅显示时生效（不落 style）— 数值类格式/常规数字 右对齐，其他左对齐
+              const hAlign = typeof st?.textAlign === 'string' ? st.textAlign : (shouldAlignRightByDefault(rawV, nf) ? 'right' : 'left');
+              const vAlign = typeof st?.verticalAlign === 'string' ? st.verticalAlign : 'top';
+              rCtx.fillStyle = txtColor || cs.cellText;
+              rCtx.font = `${fstyle} ${fw} ${fsz}px ${ffa}`;
+              rCtx.textBaseline = 'alphabetic';
+              rCtx.save();
+              rCtx.beginPath();
+              rCtx.rect(x + 5, y + 1, cw - 10, rh - 2);
+              rCtx.clip();
+              const stWrap = st?.wrap === 'wrap';
+              // ---- Excel 风格 '#####' 填充处理（仅显示，不改 value / style） ----
+              // 1) 非法值 sentinel（date 越界 / duration 负数）：不论列宽直接整格填 #
+              // 2) 指定格式（非 General、非 @、非纯文本）+ 非 wrap + 任一非空行测量宽度 > cw-10 → 填 #
+              const availW = cw - 10;
+              let displayV = v;
+              const needOverflowHashes = !stWrap && isFormatOverflowsToHashes(nf);
+              const invalidValue = v === NF_INVALID_VALUE || isInvalidDisplayValue(rawV, nf);
+              if (invalidValue || needOverflowHashes) {
+                if (invalidValue) {
                 // 填充：按可用宽度与当前字体的 '#' 像素宽度，算可放多少个 '#'（至少 1 个，Excel 视觉就是整格密密麻麻）
-                const hashW = Math.max(1, rCtx!.measureText('#').width);
-                const count = Math.max(1, Math.floor(availW / hashW));
-                displayV = '#'.repeat(count);
-              } else {
-                // needOverflowHashes：先量原始 v 单行/按 wrap 切行后每一行是否超宽
-                // split text lines before overflow check (no auto-wrap)
-                const preLines = s.getWrappedLines(rCtx!, v, 1e9, false);
-                const anyOverflow = preLines.some((line) => line && rCtx!.measureText(line).width > availW);
-                if (anyOverflow) {
                   const hashW = Math.max(1, rCtx!.measureText('#').width);
                   const count = Math.max(1, Math.floor(availW / hashW));
                   displayV = '#'.repeat(count);
+                } else {
+                // needOverflowHashes：先量原始 v 单行/按 wrap 切行后每一行是否超宽
+                // split text lines before overflow check (no auto-wrap)
+                  const preLines = s.getWrappedLines(rCtx!, v, 1e9, false);
+                  const anyOverflow = preLines.some((line) => line && rCtx!.measureText(line).width > availW);
+                  if (anyOverflow) {
+                    const hashW = Math.max(1, rCtx!.measureText('#').width);
+                    const count = Math.max(1, Math.floor(availW / hashW));
+                    displayV = '#'.repeat(count);
+                  }
                 }
               }
-            }
-            const textLines = s.getWrappedLines(rCtx!, displayV, availW, stWrap);
-            // 使用统一字体度量（优先 fontBoundingBoxAscent/Descent，浏览器字体级内容无关度量），
-            // 确保纯英文、含中文、含重音等任意内容使用完全相同的 ascent/descent，基线对齐一致。
-            const { ascent: maxAsc, descent: maxDesc } = s.measureFontMetrics(ffa, fsz, fw, fstyle);
-            // 行距与自动行高公式（BASE_CELL_VPAD*2 + n*(asc+desc)）保持一致
-            const lineH = maxAsc + maxDesc;
-            const totalH = textLines.length * lineH;
-            let ty: number;
-            if (vAlign === 'middle') ty = y + (rh - totalH) / 2 + maxAsc;
-            else if (vAlign === 'bottom') ty = y + rh - s.BASE_CELL_VPAD - maxDesc - (textLines.length - 1) * lineH;
-            else ty = y + s.BASE_CELL_VPAD + maxAsc;
-            for (let li = 0; li < textLines.length; li++) {
-              const line = textLines[li]!;
-              const lineTy = ty + li * lineH;
-              const m = rCtx.measureText(line);
-              let tx: number;
-              if (hAlign === 'center') tx = x + cw / 2 - m.width / 2;
-              else if (hAlign === 'right') tx = x + cw - 5 - m.width;
-              else tx = x + 5;
-              rCtx.fillText(line, tx, lineTy);
-              if (hasU) {
-                rCtx.strokeStyle = txtColor || cs.cellText;
-                rCtx.lineWidth = 1;
-                rCtx.beginPath();
-                rCtx.moveTo(tx, lineTy + maxDesc + 1);
-                rCtx.lineTo(tx + m.width, lineTy + maxDesc + 1);
-                rCtx.stroke();
+              const textLines = s.getWrappedLines(rCtx!, displayV, availW, stWrap);
+              // 使用统一字体度量（优先 fontBoundingBoxAscent/Descent，浏览器字体级内容无关度量），
+              // 确保纯英文、含中文、含重音等任意内容使用完全相同的 ascent/descent，基线对齐一致。
+              const { ascent: maxAsc, descent: maxDesc } = s.measureFontMetrics(ffa, fsz, fw, fstyle);
+              // 行距与自动行高公式（BASE_CELL_VPAD*2 + n*(asc+desc)）保持一致
+              const lineH = maxAsc + maxDesc;
+              const totalH = textLines.length * lineH;
+              let ty: number;
+              if (vAlign === 'middle') ty = y + (rh - totalH) / 2 + maxAsc;
+              else if (vAlign === 'bottom') ty = y + rh - s.BASE_CELL_VPAD - maxDesc - (textLines.length - 1) * lineH;
+              else ty = y + s.BASE_CELL_VPAD + maxAsc;
+              for (let li = 0; li < textLines.length; li++) {
+                const line = textLines[li]!;
+                const lineTy = ty + li * lineH;
+                const m = rCtx.measureText(line);
+                let tx: number;
+                if (hAlign === 'center') tx = x + cw / 2 - m.width / 2;
+                else if (hAlign === 'right') tx = x + cw - 5 - m.width;
+                else tx = x + 5;
+                rCtx.fillText(line, tx, lineTy);
+                if (hasU) {
+                  rCtx.strokeStyle = txtColor || cs.cellText;
+                  rCtx.lineWidth = 1;
+                  rCtx.beginPath();
+                  rCtx.moveTo(tx, lineTy + maxDesc + 1);
+                  rCtx.lineTo(tx + m.width, lineTy + maxDesc + 1);
+                  rCtx.stroke();
+                }
+                if (hasS) {
+                  rCtx.strokeStyle = txtColor || cs.cellText;
+                  rCtx.lineWidth = 1;
+                  // 删除线位置：字形中部（从字形顶部往下 42%），与统一度量一致
+                  const strikeY = lineTy - maxAsc + lineH * 0.42;
+                  rCtx.beginPath();
+                  rCtx.moveTo(tx, strikeY);
+                  rCtx.lineTo(tx + m.width, strikeY);
+                  rCtx.stroke();
+                }
               }
-              if (hasS) {
-                rCtx.strokeStyle = txtColor || cs.cellText;
-                rCtx.lineWidth = 1;
-                // 删除线位置：字形中部（从字形顶部往下 42%），与统一度量一致
-                const strikeY = lineTy - maxAsc + lineH * 0.42;
-                rCtx.beginPath();
-                rCtx.moveTo(tx, strikeY);
-                rCtx.lineTo(tx + m.width, strikeY);
-                rCtx.stroke();
-              }
+              rCtx.restore();
             }
-            rCtx.restore();
           }
         }
       }
-    }
     };
 
     // 第二步 + 第三步：绘制边框 + 角方块（基于 resolveSharedBorder 统一冲突解析）
@@ -388,142 +393,27 @@ export function createInteractions(
       return s.getCellBorderSide(s.cells[s.cellKey(col, row)], side);
     };
     drawBorders = (rCtx: CanvasRenderingContext2D, sC2: number, eC2: number, sR2: number, eR2: number, _rHs: number[]): void => {
-    rCtx.fillStyle = BORDER_COLOR;
-    for (let row = sR2; row <= eR2; row++) {
-      for (let col = sC2; col <= eC2; col++) {
-        const mergeInfo = s.findMerge(col, row);
-        // 跳过 merge 内部 cell（非 anchor）
-        if (mergeInfo && !(col === mergeInfo.range.startCol && row === mergeInfo.range.startRow)) continue;
+      rCtx.fillStyle = BORDER_COLOR;
+      for (let row = sR2; row <= eR2; row++) {
+        for (let col = sC2; col <= eC2; col++) {
+          const mergeInfo = s.findMerge(col, row);
+          // 合并单元格（含 anchor）统一交由 drawMergedCells / drawMergeBorder 绘制，
+          // 避免旧坐标（anchor 不叠加 scrollX）导致 right 边/角方块钉在原位
+          if (mergeInfo) continue;
 
-        const rect2 = s.cellToScreenRect(row, col);
-        const x = rect2.x, y = rect2.y, cw = rect2.width, rh = rect2.height;
-        if (x + cw < HW || y + rh < HH || x > W || y > H) continue;
+          const rect2 = s.cellToScreenRect(row, col);
+          const x = rect2.x, y = rect2.y, cw = rect2.width, rh = rect2.height;
+          if (x + cw < HW || y + rh < HH || x > W || y > H) continue;
 
-        const cell = s.cells[s.cellKey(col, row)];
-        const ownBorder: Record<string, BorderSide | undefined> = {
-          top: s.getCellBorderSide(cell, 'top'),
-          right: s.getCellBorderSide(cell, 'right'),
-          bottom: s.getCellBorderSide(cell, 'bottom'),
-          left: s.getCellBorderSide(cell, 'left'),
-        };
+          const cell = s.cells[s.cellKey(col, row)];
+          const ownBorder: Record<string, BorderSide | undefined> = {
+            top: s.getCellBorderSide(cell, 'top'),
+            right: s.getCellBorderSide(cell, 'right'),
+            bottom: s.getCellBorderSide(cell, 'bottom'),
+            left: s.getCellBorderSide(cell, 'left'),
+          };
 
-        if (mergeInfo) {
-          const sR = mergeInfo.range.startRow, eRm = mergeInfo.range.endRow;
-          const sC = mergeInfo.range.startCol, eCm = mergeInfo.range.endCol;
-
-          // ── 横边 · Top：沿合并上沿逐列分段绘制 ──
-          for (let cc = sC; cc <= eCm; cc++) {
-            if (s.isSameMergeInternal(cc, sR - 1, cc, sR)) continue;
-            const neighborBottom = getBorderSideAt(cc, sR - 1, 'bottom');
-            const resolved = resolveSharedBorder(neighborBottom, ownBorder.top, 'cell', 'merge');
-            if (resolved && resolved.width && resolved.width > 0) {
-              const sxSeg = cc < s.freeze.cols ? (HW + cP[cc]!) : (HW + cP[cc]! - sx);
-              rCtx.fillStyle = resolved.color || BORDER_COLOR;
-              rCtx.fillRect(sxSeg, y, cW[cc]!, resolved.width);
-            }
-          }
-
-          // ── 横边 · Bottom：沿合并下沿逐列分段绘制 ──
-          for (let cc = sC; cc <= eCm; cc++) {
-            if (s.isSameMergeInternal(cc, eRm, cc, eRm + 1)) continue;
-            const neighborTop = getBorderSideAt(cc, eRm + 1, 'top');
-            const resolved = resolveSharedBorder(ownBorder.bottom, neighborTop, 'merge', 'cell');
-            if (resolved && resolved.width && resolved.width > 0) {
-              const sxSeg = cc < s.freeze.cols ? (HW + cP[cc]!) : (HW + cP[cc]! - sx);
-              rCtx.fillStyle = resolved.color || BORDER_COLOR;
-              rCtx.fillRect(sxSeg, y + rh - resolved.width, cW[cc]!, resolved.width);
-            }
-          }
-
-          // ── 竖边 · Left：沿合并左沿逐行分段绘制 ──
-          for (let rr = sR; rr <= eRm; rr++) {
-            if (s.isSameMergeInternal(sC - 1, rr, sC, rr)) continue;
-            const neighborRight = getBorderSideAt(sC - 1, rr, 'right');
-            const resolved = resolveSharedBorder(neighborRight, ownBorder.left, 'cell', 'merge');
-            if (resolved && resolved.width && resolved.width > 0) {
-              const sySeg = rr < s.freeze.rows ? (HH + rP[rr]!) : (HH + rP[rr]! - sy);
-              const rhSeg = rP[rr + 1]! - rP[rr]!;
-              rCtx.fillStyle = resolved.color || BORDER_COLOR;
-              rCtx.fillRect(x, sySeg, resolved.width, rhSeg);
-            }
-          }
-
-          // ── 竖边 · Right：沿合并右沿逐行分段绘制 ──
-          for (let rr = sR; rr <= eRm; rr++) {
-            if (s.isSameMergeInternal(eCm, rr, eCm + 1, rr)) continue;
-            const neighborLeft = getBorderSideAt(eCm + 1, rr, 'left');
-            const resolved = resolveSharedBorder(ownBorder.right, neighborLeft, 'merge', 'cell');
-            if (resolved && resolved.width && resolved.width > 0) {
-              const sySeg = rr < s.freeze.rows ? (HH + rP[rr]!) : (HH + rP[rr]! - sy);
-              const rhSeg = rP[rr + 1]! - rP[rr]!;
-              rCtx.fillStyle = resolved.color || BORDER_COLOR;
-              rCtx.fillRect(x + cw - resolved.width, sySeg, resolved.width, rhSeg);
-            }
-          }
-
-          // ── 第三步：合并格角方块 ──
-          // 左上角 (sC, sR)
-          {
-            const topSeg = !s.isSameMergeInternal(sC, sR - 1, sC, sR)
-              ? resolveSharedBorder(getBorderSideAt(sC, sR - 1, 'bottom'), ownBorder.top, 'cell', 'merge')
-              : ownBorder.top;
-            const leftSeg = !s.isSameMergeInternal(sC - 1, sR, sC, sR)
-              ? resolveSharedBorder(getBorderSideAt(sC - 1, sR, 'right'), ownBorder.left, 'cell', 'merge')
-              : ownBorder.left;
-            const wT = topSeg?.width ?? 0;
-            const wL = leftSeg?.width ?? 0;
-            if (wT > 0 && wL > 0) {
-              rCtx.fillStyle = topSeg?.color || leftSeg?.color || BORDER_COLOR;
-              rCtx.fillRect(x - wL, y - wT, wL, wT);
-            }
-          }
-          // 右上角 (eC, sR)
-          {
-            const topSeg = !s.isSameMergeInternal(eCm, sR - 1, eCm, sR)
-              ? resolveSharedBorder(getBorderSideAt(eCm, sR - 1, 'bottom'), ownBorder.top, 'cell', 'merge')
-              : ownBorder.top;
-            const rightSeg = !s.isSameMergeInternal(eCm, sR, eCm + 1, sR)
-              ? resolveSharedBorder(ownBorder.right, getBorderSideAt(eCm + 1, sR, 'left'), 'merge', 'cell')
-              : ownBorder.right;
-            const wT = topSeg?.width ?? 0;
-            const wR = rightSeg?.width ?? 0;
-            if (wT > 0 && wR > 0) {
-              rCtx.fillStyle = topSeg?.color || rightSeg?.color || BORDER_COLOR;
-              rCtx.fillRect(x + cw, y - wT, wR, wT);
-            }
-          }
-          // 左下角 (sC, eR)
-          {
-            const bottomSeg = !s.isSameMergeInternal(sC, eRm, sC, eRm + 1)
-              ? resolveSharedBorder(ownBorder.bottom, getBorderSideAt(sC, eRm + 1, 'top'), 'merge', 'cell')
-              : ownBorder.bottom;
-            const leftSeg = !s.isSameMergeInternal(sC - 1, eRm, sC, eRm)
-              ? resolveSharedBorder(getBorderSideAt(sC - 1, eRm, 'right'), ownBorder.left, 'cell', 'merge')
-              : ownBorder.left;
-            const wB = bottomSeg?.width ?? 0;
-            const wL = leftSeg?.width ?? 0;
-            if (wB > 0 && wL > 0) {
-              rCtx.fillStyle = bottomSeg?.color || leftSeg?.color || BORDER_COLOR;
-              rCtx.fillRect(x - wL, y + rh, wL, wB);
-            }
-          }
-          // 右下角 (eC, eR)
-          {
-            const bottomSeg = !s.isSameMergeInternal(eCm, eRm, eCm, eRm + 1)
-              ? resolveSharedBorder(ownBorder.bottom, getBorderSideAt(eCm, eRm + 1, 'top'), 'merge', 'cell')
-              : ownBorder.bottom;
-            const rightSeg = !s.isSameMergeInternal(eCm, eRm, eCm + 1, eRm)
-              ? resolveSharedBorder(ownBorder.right, getBorderSideAt(eCm + 1, eRm, 'left'), 'merge', 'cell')
-              : ownBorder.right;
-            const wB = bottomSeg?.width ?? 0;
-            const wR = rightSeg?.width ?? 0;
-            if (wB > 0 && wR > 0) {
-              rCtx.fillStyle = bottomSeg?.color || rightSeg?.color || BORDER_COLOR;
-              rCtx.fillRect(x + cw, y + rh, wR, wB);
-            }
-          }
-        } else {
-          // ── 普通单格：4 条边各自用 resolveSharedBorder 解析 ──
+          // 普通单格：4 条边各自用 resolveSharedBorder 解析
           const neighbors = {
             top: getBorderSideAt(col, row - 1, 'bottom'),
             left: getBorderSideAt(col - 1, row, 'right'),
@@ -573,7 +463,283 @@ export function createInteractions(
           }
         }
       }
-    }
+    };
+
+    // ---- 合并单元格：按各 pane 视口相交分段绘制 ----
+    // 每个 pane 调用时只绘制与自身视口 [vx,vy,vw,vh] 相交的那一段：
+    // 背景/网格/文本锚定在合并左上角（anchor），因此文本只会在包含 anchor 的 pane 中可见，
+    // 其余 pane 仅显示该段的背景与边框——实现「冻结部分冻结、非冻结部分随 body 滚动」。
+    // 合并文本：布局始终基于「逻辑宽高」(logicW/logicH)——即合并未滚动时的完整尺寸，
+    // 不随 scrollX/Y 变化；绘制起点 (drawX/drawY) 按 pane 平移：冻结 pane 用 anchor 原位置（不叠加滚动），
+    // body pane 用 anchor - scroll，靠两层 clip 拼出「冻结段固定显示开头 + body 段随滚动移动」。
+    const drawMergeText = (ctx: CanvasRenderingContext2D, col: number, row: number, logicW: number, logicH: number, drawX: number, drawY: number): void => {
+      const st = s.resolveStyle(s.cells[s.cellKey(col, row)]);
+      const rawV = s.getCellValue(col, row);
+      const nf = typeof st?.numberFormat === 'string' ? st.numberFormat : '';
+      const v = rawV ? formatNumber(rawV, nf, s.locale.value) : '';
+      if (!v) return;
+      const fsz = s.cellFontSize(col, row);
+      const ffa = typeof st?.fontFamily === 'string' && st.fontFamily ? st.fontFamily : DEFAULT_FONT_FAMILY;
+      const fw = st?.fontWeight === 'bold' ? 'bold' : 'normal';
+      const fstyle = st?.fontStyle === 'italic' ? 'italic' : 'normal';
+      const hasU = st?.underline === 'underline';
+      const hasS = st?.strikethrough === 'line-through';
+      const txtColor = typeof st?.color === 'string' ? st.color : '';
+      const hAlign = typeof st?.textAlign === 'string' ? st.textAlign : (shouldAlignRightByDefault(rawV, nf) ? 'right' : 'left');
+      const vAlign = typeof st?.verticalAlign === 'string' ? st.verticalAlign : 'top';
+      ctx.fillStyle = txtColor || cs.cellText;
+      ctx.font = `${fstyle} ${fw} ${fsz}px ${ffa}`;
+      ctx.textBaseline = 'alphabetic';
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(drawX + 5, drawY + 1, logicW - 10, logicH - 2);
+      ctx.clip();
+      const stWrap = st?.wrap === 'wrap';
+      const availW = logicW - 10;
+      let displayV = v;
+      const needOverflowHashes = !stWrap && isFormatOverflowsToHashes(nf);
+      const invalidValue = v === NF_INVALID_VALUE || isInvalidDisplayValue(rawV, nf);
+      if (invalidValue || needOverflowHashes) {
+        if (invalidValue) {
+          const hashW = Math.max(1, ctx.measureText('#').width);
+          const count = Math.max(1, Math.floor(availW / hashW));
+          displayV = '#'.repeat(count);
+        } else {
+          const preLines = s.getWrappedLines(ctx, v, 1e9, false);
+          const anyOverflow = preLines.some((line) => line && ctx.measureText(line).width > availW);
+          if (anyOverflow) {
+            const hashW = Math.max(1, ctx.measureText('#').width);
+            const count = Math.max(1, Math.floor(availW / hashW));
+            displayV = '#'.repeat(count);
+          }
+        }
+      }
+      const textLines = s.getWrappedLines(ctx, displayV, availW, stWrap);
+      const { ascent: maxAsc, descent: maxDesc } = s.measureFontMetrics(ffa, fsz, fw, fstyle);
+      const lineH = maxAsc + maxDesc;
+      const totalH = textLines.length * lineH;
+      let ty: number;
+      if (vAlign === 'middle') ty = drawY + (logicH - totalH) / 2 + maxAsc;
+      else if (vAlign === 'bottom') ty = drawY + logicH - s.BASE_CELL_VPAD - maxDesc - (textLines.length - 1) * lineH;
+      else ty = drawY + s.BASE_CELL_VPAD + maxAsc;
+      for (let li = 0; li < textLines.length; li++) {
+        const line = textLines[li]!;
+        const lineTy = ty + li * lineH;
+        const lm = ctx.measureText(line);
+        let tx: number;
+        if (hAlign === 'center') tx = drawX + logicW / 2 - lm.width / 2;
+        else if (hAlign === 'right') tx = drawX + logicW - 5 - lm.width;
+        else tx = drawX + 5;
+        ctx.fillText(line, tx, lineTy);
+        if (hasU) {
+          ctx.strokeStyle = txtColor || cs.cellText;
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(tx, lineTy + maxDesc + 1);
+          ctx.lineTo(tx + lm.width, lineTy + maxDesc + 1);
+          ctx.stroke();
+        }
+        if (hasS) {
+          ctx.strokeStyle = txtColor || cs.cellText;
+          ctx.lineWidth = 1;
+          const strikeY = lineTy - maxAsc + lineH * 0.42;
+          ctx.beginPath();
+          ctx.moveTo(tx, strikeY);
+          ctx.lineTo(tx + lm.width, strikeY);
+          ctx.stroke();
+        }
+      }
+      ctx.restore();
+    };
+
+    // 合并单元格边框（基于 resolveSharedBorder），仅绘制与视口相交的部分（依赖外层 clip）。
+    // ax/ay/aw/ah 为合并整体屏幕矩形（已由 drawMergedCells 按 anchor+endCell 合成，
+    // 正确处理跨冻结线时 body 端叠加 scrollX）。
+    // hFrozenPane/vFrozenPane：当前 pane 在水平/垂直方向是否为冻结区（vx<bodyLeft / vy<bodyTop）。
+    // 冻结 pane 只绘制属于自己的「冻结段」边框：跨冻结线时 right 边与右上/右下角归属 body pane，
+    // bottom 边与左下/右下角归属 body pane；否则滚动后这些边会错误地画进冻结段内部。
+    const drawMergeBorder = (ctx: CanvasRenderingContext2D, m: { startCol: number; startRow: number; endCol: number; endRow: number }, ax: number, ay: number, aw: number, ah: number, hFrozenPane: boolean, vFrozenPane: boolean): void => {
+      const sC = m.startCol, eCm = m.endCol, sR = m.startRow, eRm = m.endRow;
+      const y = ay, rh = ah;
+      const skipRightAll = hFrozenPane && eCm >= s.freeze.cols;
+      const skipBottomAll = vFrozenPane && eRm >= s.freeze.rows;
+      const cell = s.cells[s.cellKey(sC, sR)];
+      const ownBorder: Record<string, BorderSide | undefined> = {
+        top: s.getCellBorderSide(cell, 'top'),
+        right: s.getCellBorderSide(cell, 'right'),
+        bottom: s.getCellBorderSide(cell, 'bottom'),
+        left: s.getCellBorderSide(cell, 'left'),
+      };
+      ctx.fillStyle = BORDER_COLOR;
+      for (let cc = sC; cc <= eCm; cc++) {
+        if (hFrozenPane && cc >= s.freeze.cols) continue;
+        if (s.isSameMergeInternal(cc, sR - 1, cc, sR)) continue;
+        const neighborBottom = getBorderSideAt(cc, sR - 1, 'bottom');
+        const resolved = resolveSharedBorder(neighborBottom, ownBorder.top, 'cell', 'merge');
+        if (resolved && resolved.width && resolved.width > 0) {
+          const sxSeg = cc < s.freeze.cols ? (HW + cP[cc]!) : (HW + cP[cc]! - sx);
+          ctx.fillStyle = resolved.color || BORDER_COLOR;
+          ctx.fillRect(sxSeg, y, cW[cc]!, resolved.width);
+        }
+      }
+      if (!skipBottomAll) {
+        for (let cc = sC; cc <= eCm; cc++) {
+          if (hFrozenPane && cc >= s.freeze.cols) continue;
+          if (s.isSameMergeInternal(cc, eRm, cc, eRm + 1)) continue;
+          const neighborTop = getBorderSideAt(cc, eRm + 1, 'top');
+          const resolved = resolveSharedBorder(ownBorder.bottom, neighborTop, 'merge', 'cell');
+          if (resolved && resolved.width && resolved.width > 0) {
+            const sxSeg = cc < s.freeze.cols ? (HW + cP[cc]!) : (HW + cP[cc]! - sx);
+            ctx.fillStyle = resolved.color || BORDER_COLOR;
+            ctx.fillRect(sxSeg, y + rh - resolved.width, cW[cc]!, resolved.width);
+          }
+        }
+      }
+      for (let rr = sR; rr <= eRm; rr++) {
+        if (vFrozenPane && rr >= s.freeze.rows) continue;
+        if (s.isSameMergeInternal(sC - 1, rr, sC, rr)) continue;
+        const neighborRight = getBorderSideAt(sC - 1, rr, 'right');
+        const resolved = resolveSharedBorder(neighborRight, ownBorder.left, 'cell', 'merge');
+        if (resolved && resolved.width && resolved.width > 0) {
+          const sySeg = rr < s.freeze.rows ? (HH + rP[rr]!) : (HH + rP[rr]! - sy);
+          const rhSeg = rP[rr + 1]! - rP[rr]!;
+          ctx.fillStyle = resolved.color || BORDER_COLOR;
+          ctx.fillRect(ax, sySeg, resolved.width, rhSeg);
+        }
+      }
+      if (!skipRightAll) {
+        for (let rr = sR; rr <= eRm; rr++) {
+          if (vFrozenPane && rr >= s.freeze.rows) continue;
+          if (s.isSameMergeInternal(eCm, rr, eCm + 1, rr)) continue;
+          const neighborLeft = getBorderSideAt(eCm + 1, rr, 'left');
+          const resolved = resolveSharedBorder(ownBorder.right, neighborLeft, 'merge', 'cell');
+          if (resolved && resolved.width && resolved.width > 0) {
+            const sySeg = rr < s.freeze.rows ? (HH + rP[rr]!) : (HH + rP[rr]! - sy);
+            const rhSeg = rP[rr + 1]! - rP[rr]!;
+            ctx.fillStyle = resolved.color || BORDER_COLOR;
+            ctx.fillRect(ax + aw - resolved.width, sySeg, resolved.width, rhSeg);
+          }
+        }
+      }
+
+      // ── 合并格四角方块（合并矩形外侧转角，坐标用合成矩形 ax/ay/aw/ah，随 scrollX/Y 平移）──
+      // 左上角 (sC, sR)
+      {
+        const topSeg = !s.isSameMergeInternal(sC, sR - 1, sC, sR)
+          ? resolveSharedBorder(getBorderSideAt(sC, sR - 1, 'bottom'), ownBorder.top, 'cell', 'merge')
+          : ownBorder.top;
+        const leftSeg = !s.isSameMergeInternal(sC - 1, sR, sC, sR)
+          ? resolveSharedBorder(getBorderSideAt(sC - 1, sR, 'right'), ownBorder.left, 'cell', 'merge')
+          : ownBorder.left;
+        const wT = topSeg?.width ?? 0;
+        const wL = leftSeg?.width ?? 0;
+        if (wT > 0 && wL > 0) {
+          ctx.fillStyle = topSeg?.color || leftSeg?.color || BORDER_COLOR;
+          ctx.fillRect(ax - wL, ay - wT, wL, wT);
+        }
+      }
+      // 右上角 (eC, sR)：属 body 段边界，冻结 pane 不画
+      if (!skipRightAll) {
+        const topSeg = !s.isSameMergeInternal(eCm, sR - 1, eCm, sR)
+          ? resolveSharedBorder(getBorderSideAt(eCm, sR - 1, 'bottom'), ownBorder.top, 'cell', 'merge')
+          : ownBorder.top;
+        const rightSeg = !s.isSameMergeInternal(eCm, sR, eCm + 1, sR)
+          ? resolveSharedBorder(ownBorder.right, getBorderSideAt(eCm + 1, sR, 'left'), 'merge', 'cell')
+          : ownBorder.right;
+        const wT = topSeg?.width ?? 0;
+        const wR = rightSeg?.width ?? 0;
+        if (wT > 0 && wR > 0) {
+          ctx.fillStyle = topSeg?.color || rightSeg?.color || BORDER_COLOR;
+          ctx.fillRect(ax + aw, ay - wT, wR, wT);
+        }
+      }
+      // 左下角 (sC, eR)：属 body 段边界，冻结 pane 不画
+      if (!skipBottomAll) {
+        const bottomSeg = !s.isSameMergeInternal(sC, eRm, sC, eRm + 1)
+          ? resolveSharedBorder(ownBorder.bottom, getBorderSideAt(sC, eRm + 1, 'top'), 'merge', 'cell')
+          : ownBorder.bottom;
+        const leftSeg = !s.isSameMergeInternal(sC - 1, eRm, sC, eRm)
+          ? resolveSharedBorder(getBorderSideAt(sC - 1, eRm, 'right'), ownBorder.left, 'cell', 'merge')
+          : ownBorder.left;
+        const wB = bottomSeg?.width ?? 0;
+        const wL = leftSeg?.width ?? 0;
+        if (wB > 0 && wL > 0) {
+          ctx.fillStyle = bottomSeg?.color || leftSeg?.color || BORDER_COLOR;
+          ctx.fillRect(ax - wL, ay + ah, wL, wB);
+        }
+      }
+      // 右下角 (eC, eR)：同时属 body 段右/下边界
+      if (!skipRightAll && !skipBottomAll) {
+        const bottomSeg = !s.isSameMergeInternal(eCm, eRm, eCm, eRm + 1)
+          ? resolveSharedBorder(ownBorder.bottom, getBorderSideAt(eCm, eRm + 1, 'top'), 'merge', 'cell')
+          : ownBorder.bottom;
+        const rightSeg = !s.isSameMergeInternal(eCm, eRm, eCm + 1, eRm)
+          ? resolveSharedBorder(ownBorder.right, getBorderSideAt(eCm + 1, eRm, 'left'), 'merge', 'cell')
+          : ownBorder.right;
+        const wB = bottomSeg?.width ?? 0;
+        const wR = rightSeg?.width ?? 0;
+        if (wB > 0 && wR > 0) {
+          ctx.fillStyle = bottomSeg?.color || rightSeg?.color || BORDER_COLOR;
+          ctx.fillRect(ax + aw, ay + ah, wR, wB);
+        }
+      }
+    };
+
+    // 按视口相交绘制合并单元格：背景 + 网格框 + 合并边框 + 文本。
+    // 跨冻结线的合并单元格在此被「拆段」渲染：
+    //  - 冻结段（anchor 至冻结分隔线）在冻结 pane 中背景/网格右边界固定为 bodyLeft/bodyTop，不随滚动；
+    //  - body 段随 scrollX/Y 平移，在 body pane 中由视口相交裁剪；
+    //  - 文本布局基于逻辑尺寸（不随滚动），绘制起点按 pane 平移，靠两层 clip 拼出完整标题。
+    drawMergedCells = (ctx: CanvasRenderingContext2D, vx: number, vy: number, vw: number, vh: number): void => {
+      const vx2 = vx + vw;
+      const vy2 = vy + vh;
+      const hFrozenPane = vx < bodyLeft;
+      const vFrozenPane = vy < bodyTop;
+      for (const key in s.merges) {
+        const m = s.merges[key];
+        if (!m) continue;
+        const aC = m.startCol;
+        const aR = m.startRow;
+        const eC = m.endCol;
+        const eR = m.endRow;
+        // 关键：合并的屏幕矩形不能直接套 anchor 的 cellToScreenRect——
+        // anchor 在冻结列时不叠加 sx，但 endCol 跨到 body 列会叠加 sx，
+        // 所以宽度必须用 (eCell.right - aCell.left) 算出，而非 anchor 自身的 width。
+        const aRect = s.cellToScreenRect(aR, aC);
+        const eRect = s.cellToScreenRect(eR, eC);
+        const ax = aRect.x, ay = aRect.y;
+        const aw = (eRect.x + eRect.width) - ax;
+        const ah = (eRect.y + eRect.height) - ay;
+        // 冻结段右/下边界：跨冻结线的合并，其冻结段边界固定为冻结分隔线（不随滚动）；
+        // 未跨线或非冻结 pane 用真实合并边界（被 pane 视口截断）。
+        const segRight = (hFrozenPane && eC >= s.freeze.cols)
+          ? Math.min(vx2, bodyLeft)
+          : Math.min(ax + aw, vx2);
+        const segBottom = (vFrozenPane && eR >= s.freeze.rows)
+          ? Math.min(vy2, bodyTop)
+          : Math.min(ay + ah, vy2);
+        const ix = Math.max(ax, vx);
+        const iy = Math.max(ay, vy);
+        if (segRight <= ix || segBottom <= iy) continue;
+        const bg = s.resolveStyle(s.cells[s.cellKey(aC, aR)])?.backgroundColor;
+        if (bg) {
+          ctx.fillStyle = bg;
+          ctx.fillRect(ix, iy, segRight - ix, segBottom - iy);
+        }
+        ctx.strokeStyle = cs.gridLine;
+        ctx.lineWidth = 0.5;
+        ctx.strokeRect(ax + 0.25, ay + 0.25, (segRight - ax) - 0.5, (segBottom - ay) - 0.5);
+        drawMergeBorder(ctx, m, ax, ay, aw, ah, hFrozenPane, vFrozenPane);
+        if (!(s.editingCell.value && s.editingCell.value.col === aC && s.editingCell.value.row === aR)) {
+          // 文本布局宽/高用逻辑尺寸（不随滚动）；绘制起点按 pane 平移：
+          // 冻结 pane 画在 anchor 原位置（冻结段固定显示标题开头），body pane 画在 anchor - scroll。
+          const logicW = cP[eC + 1]! - cP[aC]!;
+          const logicH = rP[eR + 1]! - rP[aR]!;
+          const drawX = hFrozenPane ? ax : ax - sx;
+          const drawY = vFrozenPane ? ay : ay - sy;
+          drawMergeText(ctx, aC, aR, logicW, logicH, drawX, drawY);
+        }
+      }
     };
 
     // PASS 1：body 区域裁剪
@@ -583,6 +749,7 @@ export function createInteractions(
     rCtx.clip();
     drawCells(rCtx, iterC, eC, iterR, eR, rH);
     drawBorders(rCtx, iterC, eC, iterR, eR, rH);
+    drawMergedCells(rCtx, bodyLeft, bodyTop, bodyWidth, bodyHeight);
     rCtx.restore();
 
     // 冻结分隔线（直接绘制，不属于 border pool）
@@ -744,7 +911,6 @@ export function createInteractions(
     const cs = so.themeColors.value;
     const cP = s.colPositions.value;
     const rP = s.rowPositions.value;
-    const cW = s.colWidths.value;
     const sx = s.scrollX.value;
     const sy = s.scrollY.value;
 
@@ -776,8 +942,14 @@ export function createInteractions(
       bodyER = r;
     }
     let sC = bodySC, eC = bodyEC, sR = bodySR, eR = bodyER;
-    if (frozenColumnsWidth > 0) { sC = 0; eC = Math.max(eC, frozenEC); }
-    if (frozenRowsHeight > 0) { sR = 0; eR = Math.max(eR, frozenER); }
+    if (frozenColumnsWidth > 0) {
+      sC = 0;
+      eC = Math.max(eC, frozenEC);
+    }
+    if (frozenRowsHeight > 0) {
+      sR = 0;
+      eR = Math.max(eR, frozenER);
+    }
     let iterC = sC;
     let iterR = sR;
     for (const key in s.merges) {
@@ -826,10 +998,22 @@ export function createInteractions(
           const wL = rL?.width ?? 0;
           const wB = rB?.width ?? 0;
           const wR = rR?.width ?? 0;
-          if (wT > 0) { ctx.fillStyle = rT?.color || '#444'; ctx.fillRect(x, y, cw, wT); }
-          if (wB > 0) { ctx.fillStyle = rB?.color || '#444'; ctx.fillRect(x, y + rh - wB, cw, wB); }
-          if (wL > 0) { ctx.fillStyle = rL?.color || '#444'; ctx.fillRect(x, y, wL, rh); }
-          if (wR > 0) { ctx.fillStyle = rR?.color || '#444'; ctx.fillRect(x + cw - wR, y, wR, rh); }
+          if (wT > 0) {
+            ctx.fillStyle = rT?.color || '#444';
+            ctx.fillRect(x, y, cw, wT);
+          }
+          if (wB > 0) {
+            ctx.fillStyle = rB?.color || '#444';
+            ctx.fillRect(x, y + rh - wB, cw, wB);
+          }
+          if (wL > 0) {
+            ctx.fillStyle = rL?.color || '#444';
+            ctx.fillRect(x, y, wL, rh);
+          }
+          if (wR > 0) {
+            ctx.fillStyle = rR?.color || '#444';
+            ctx.fillRect(x + cw - wR, y, wR, rh);
+          }
         }
       }
     };
@@ -843,6 +1027,7 @@ export function createInteractions(
       frozenCtx.fillRect(x, y, w, h);
       drawCells(frozenCtx, cS, cE, rS, rE, rH);
       drawBorders(frozenCtx, cS, cE, rS, rE);
+      drawMergedCells(frozenCtx, x, y, w, h);
       frozenCtx.restore();
     };
     // 每个 pane 只绘制自己负责的区域：
@@ -1614,7 +1799,6 @@ export function createInteractions(
     const hAlign = typeof st?.textAlign === 'string' ? st.textAlign : (shouldAlignRightByDefault(rawVForEdit, nfForEdit) ? 'right' : 'left');
     const vAlign = typeof st?.verticalAlign === 'string' ? st.verticalAlign : 'top';
     const m = s.findMerge(c, r);
-    const cwVal = m ? s.colPositions.value[m.range.endCol + 1]! - s.colPositions.value[c]! : s.colWidths.value[c]!;
     const rhVal = m ? s.rowPositions.value[m.range.endRow + 1]! - s.rowPositions.value[r]! : s.getRowHeight(r);
     const BORDER = 2;
     const { ascent: asc, descent: desc } = s.measureFontMetrics(ffa, fsz, fw, fstyle);
@@ -2472,7 +2656,7 @@ export function createInteractions(
       const selW = s.selection.value;
       const mergeW = s.findMerge(acW.col, acW.row);
       if (mergeW && mergeW.anchor === s.cellKey(acW.col, acW.row)
-          && (!selW || (selW.startCol === acW.col && selW.startRow === acW.row && selW.endCol === acW.col && selW.endRow === acW.row))) {
+        && (!selW || (selW.startCol === acW.col && selW.startRow === acW.row && selW.endCol === acW.col && selW.endRow === acW.row))) {
         s.selectCell(acW.col, acW.row);
       }
       scheduleRender();

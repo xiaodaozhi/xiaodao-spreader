@@ -62,6 +62,12 @@ const SORT_ARROW_PATHS: Record<SortOrder, string> = {
 // 冻结窗格图标：田字格 + 左上角实心，表示冻结的 corner 区域
 // 外框 + 横/竖分界线（描边）+ 左上角实心块（fill）
 const FREEZE_ICON = '<svg viewBox="0 0 1024 1024" fill="currentColor"><path fill="none" stroke="currentColor" stroke-width="64" stroke-linejoin="round" stroke-linecap="round" d="M160 160 H864 V864 H160 Z" /><path fill="none" stroke="currentColor" stroke-width="64" stroke-linecap="round" d="M160 448 H864" /><path fill="none" stroke="currentColor" stroke-width="64" stroke-linecap="round" d="M448 160 V864" /><path d="M192 192 H416 V416 H192 Z" /></svg>';
+// 冻结首行图标：田字格外框 + 行分界线 + 顶部整行实心
+const FREEZE_FIRST_ROW_ICON = '<svg viewBox="0 0 1024 1024" fill="currentColor"><path fill="none" stroke="currentColor" stroke-width="64" stroke-linejoin="round" stroke-linecap="round" d="M160 160 H864 V864 H160 Z" /><path fill="none" stroke="currentColor" stroke-width="64" stroke-linecap="round" d="M160 448 H864" /><path d="M192 192 H832 V416 H192 Z" /></svg>';
+// 冻结首列图标：田字格外框 + 列分界线 + 左侧整列实心
+const FREEZE_FIRST_COL_ICON = '<svg viewBox="0 0 1024 1024" fill="currentColor"><path fill="none" stroke="currentColor" stroke-width="64" stroke-linejoin="round" stroke-linecap="round" d="M160 160 H864 V864 H160 Z" /><path fill="none" stroke="currentColor" stroke-width="64" stroke-linecap="round" d="M448 160 V864" /><path d="M192 192 H416 V832 H192 Z" /></svg>';
+// 取消冻结图标：田字格外框 + 分界线（无实心块）+ 左上角 X（表示已取消冻结）
+const UNFREEZE_ICON = '<svg viewBox="0 0 1024 1024" fill="currentColor"><path fill="none" stroke="currentColor" stroke-width="64" stroke-linejoin="round" stroke-linecap="round" d="M160 160 H864 V864 H160 Z" /><path fill="none" stroke="currentColor" stroke-width="64" stroke-linecap="round" d="M160 448 H864" /><path fill="none" stroke="currentColor" stroke-width="64" stroke-linecap="round" d="M448 160 V864" /><path fill="none" stroke="currentColor" stroke-width="48" stroke-linecap="round" d="M224 224 L416 416" /><path fill="none" stroke="currentColor" stroke-width="48" stroke-linecap="round" d="M416 224 L224 416" /></svg>';
 
 // ============ 工具栏溢出 → 「更多」菜单 ============
 // 工具项顺序与 data-key 一一对应
@@ -296,6 +302,8 @@ const props = defineProps<{
   mergeMenuOpen: boolean;
   calcMenuOpen: boolean;
   isSingleCell: boolean;
+  /** 当前 worksheet 是否已有冻结行或列 */
+  hasFreeze: boolean;
   themeVars?: Record<string, string>;
   // 数字格式
   selNumberFormat: string;
@@ -307,13 +315,12 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'undo' | 'redo' | 'paint-format' | 'clear-format' | 'font-size-blur' | 'font-size-toggle' | 'font-size-step-up' | 'font-size-step-down' | 'bold-toggle' | 'italic-toggle' | 'underline-toggle' | 'strikethrough-toggle' | 'apply-text-color' | 'apply-fill-color' | 'apply-border' | 'apply-sort' | 'wrap-toggle' | 'apply-merge' | 'calc-sum' | 'calc-avg' | 'calc-count' | 'find' | 'increase-decimals' | 'decrease-decimals'): void;
   (e: 'font-family-change' | 'font-size-change' | 'h-align-change' | 'v-align-change', v: string | number): void;
-  (e: 'font-size-input' | 'text-color-change' | 'fill-color-change' | 'number-format-change', v: string): void;
+  (e: 'font-size-input' | 'text-color-change' | 'fill-color-change' | 'number-format-change' | 'freeze-change', v: string): void;
   (e: 'font-size-keydown', ev: KeyboardEvent): void;
   (e: 'update:font-size-menu-open' | 'update:text-color-menu-open' | 'update:fill-color-menu-open' | 'update:border-menu-open' | 'update:sort-menu-open' | 'update:merge-menu-open' | 'update:calc-menu-open', v: boolean): void;
   (e: 'border-change', v: BorderType): void;
   (e: 'sort-change', v: SortOrder): void;
   (e: 'merge-change', v: MergeType): void;
-  (e: 'freeze-change', v: string): void;
 }>();
 
 // 数字格式：选区格式不一致时触发器显示「混合」
@@ -321,13 +328,21 @@ const nfFallbackLabel = computed(() =>
   props.selNumberFormat === NF_MIXED ? t(props.locale, 'nfMixed') : '',
 );
 
-// 冻结窗格选项
-const freezeOptions = computed<FontOption[]>(() => [
-  { label: t(props.locale, 'freezePanes'), value: 'panes' },
-  { label: t(props.locale, 'freezeFirstRow'), value: 'firstRow' },
-  { label: t(props.locale, 'freezeFirstCol'), value: 'firstCol' },
-  { label: t(props.locale, 'unfreezePanes'), value: 'unfreeze' },
-]);
+// 冻结窗格选项：
+// - 未冻结：显示 [冻结窗格, 冻结首行, 冻结首列]（不显示「取消冻结」）
+// - 已冻结：不显示「冻结窗格」，在其位置显示「取消冻结」→ [取消冻结, 冻结首行, 冻结首列]
+const freezeOptions = computed<FontOption[]>(() => {
+  const opts: FontOption[] = [
+    { label: t(props.locale, 'freezeFirstRow'), value: 'firstRow', icon: FREEZE_FIRST_ROW_ICON },
+    { label: t(props.locale, 'freezeFirstCol'), value: 'firstCol', icon: FREEZE_FIRST_COL_ICON },
+  ];
+  if (props.hasFreeze) {
+    opts.unshift({ label: t(props.locale, 'unfreezePanes'), value: 'unfreeze', icon: UNFREEZE_ICON });
+  } else {
+    opts.unshift({ label: t(props.locale, 'freezePanes'), value: 'panes', icon: FREEZE_ICON });
+  }
+  return opts;
+});
 </script>
 
 <template>

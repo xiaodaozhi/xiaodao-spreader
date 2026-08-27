@@ -205,6 +205,7 @@ interface ThemeColors { /* See Section 10 for full list */ }
 | `activeCell` | `ref<CellCoord>` | Active cell |
 | `scrollX/Y` | `ref<number>` | Grid area scroll offset |
 | `editingCell` | `ref<CellCoord \| null>` | Cell being edited |
+| `freeze` | `reactive<FreezePane>` | Frozen-pane view state `{ rows, cols }` (`{0,0}` = no freeze). Mutators `setFreeze(rows, cols)` / `clearFreeze()` / `getFreeze()` exposed via CoreState. See [Section 21](#21-freeze-panes) |
 | `editValue` | `ref<string>` | Real-time text in the edit overlay |
 | `colWidths` | `ref<number[]>` | Width of each column (default 100px), auto-expanded with `dims.colCount` |
 | `rowHeights` | `ref<number[]>` | Height of each row (default 24px), auto-expanded with `dims.rowCount` |
@@ -271,6 +272,8 @@ Dynamic expansion via ensureCapacity(minCol, minRow) with buffer steps (8 column
 │  Horizontal Scrollbar (bottom 11px) │ Vertical Scrollbar (right 11px) │
 └──────────────────────────────────────────────┘
 ```
+
+When a sheet has frozen panes, the top-left `freeze.cols × freeze.rows` block (and its header edges) is pinned above/beside the scrollable grid — see [Section 21](#21-freeze-panes).
 
 ### 5.2 Coordinate Transformation
 
@@ -495,7 +498,7 @@ The `ThemeColors` interface includes:
 - **Merged Cells**: Extend data model to store merge information
 
 ### 13.2 Rendering Layer
-- **Frozen Panes**: `frozenCols`/`frozenRows` state, split fixed and scrollable areas
+- **Frozen Panes** — *now implemented, see [Section 21](#21-freeze-panes)*
 - **Conditional Formatting**: Add style rule matching in render loop
 - **Auto-Fill**: Drag handle at bottom-right of active cell
 
@@ -851,3 +854,69 @@ These utilities handle header rendering, cell reference parsing, and formula col
 - **Canvas rendering** iterates only the visible area via virtual scrolling; expansion does not impact rendering performance.
 - **Selection** (including select-all) uses `dims` for boundary calculation, so expanded ranges are fully selectable.
 - **Copy-paste** operations respect dynamic boundaries; the clipboard protocol (TSV) is unchanged.
+
+---
+
+## 21. Freeze Panes
+
+Located in `composables/core-state.ts` (state + `setFreeze` / `clearFreeze` / `getFreeze`), `composables/sheets-ops.ts` (per-sheet persistence + insert/delete clamping), `components/spreader.vue` (dedicated overlay canvas + toolbar event routing), `components/toolbar.vue` (menu), and `composables/interactions.ts` (cross-freeze merged-cell rendering).
+
+### 21.1 State Model
+
+Each sheet holds a reactive `freeze: FreezePane` where `FreezePane = { rows: number; cols: number }` — the number of frozen top rows and left columns. `{ rows: 0, cols: 0 }` means no freeze.
+
+- `setFreeze(rows, cols)` — clamps both to `[0, rowCount]` / `[0, colCount]` and assigns; designed to **preserve the other axis** when widening (e.g. *Freeze First Row* keeps any already-frozen columns).
+- `clearFreeze()` — resets both to 0.
+- `getFreeze()` — returns a plain snapshot `{ rows, cols }`.
+
+### 21.2 Persistence
+
+`freeze` is per-sheet **view state**, persisted alongside cell data:
+
+- Saved into `SheetState.freeze` and serialized to `SheetModelData.freeze?: FreezePane` during v-model emit / sheet save (`sheets-ops.ts` copies the reactive `s.freeze` into `sh.freeze`).
+- Restored on sheet load, clamped to the new `[rowCount, colCount]`.
+- Explicitly **excluded from undo/redo** — `undo-styles.ts` re-applies the live `currentFreeze` after every restore, so freezing/unfreezing never pollutes the cell-data undo stack.
+- Row/column insert/delete deterministically keep frozen rows/cols within the new range (`sheets-ops.ts` clamps `freeze.rows` / `freeze.cols` after each op).
+
+### 21.3 Toolbar Entry
+
+The "Freeze Panes" dropdown (`freezeOptions` in `toolbar.vue`) adapts to the current state:
+
+| State | Menu items |
+|---|---|
+| No freeze | 冻结窗格 (Freeze Panes) · 冻结首行 (Freeze First Row) · 冻结首列 (Freeze First Column) |
+| Already frozen | 取消冻结 (Unfreeze) · 冻结首行 · 冻结首列 |
+
+- **Freeze Panes** (`panes`) freezes at the **top-left corner of the current selection / active cell** (`rows = sel.startRow`, `cols = sel.startCol`) — Excel's "Freeze Panes" semantics.
+- **Unfreeze** replaces the "Freeze Panes" entry (mutual exclusion) and calls `clearFreeze()`.
+- Every item carries an SVG icon; the trigger button itself uses the freeze icon, and first-row / first-col / unfreeze have their own dedicated SVGs.
+- Selecting *Freeze First Row* / *Freeze First Column* keeps the existing frozen axis (freezing first row preserves frozen columns and vice-versa).
+
+Routing: `toolbar.vue` emits `freeze-change`, `spreader.vue`'s `onFreezeChange` maps `panes` → `setFreeze(startRow, startCol)`, `firstRow` → `setFreeze(1, cur.cols)`, `firstCol` → `setFreeze(cur.rows, 1)`, `unfreeze` → `clearFreeze()`, then `scheduleRender()`.
+
+### 21.4 Rendering Architecture
+
+Freeze panes are drawn on a **separate overlay canvas** (`freezeCanvasRef`, `z-index: 1`) layered above the body canvas (`z-index: 0`). For each frame, `renderFrozenOverlay` composites three panes, each clipped to its own viewport:
+
+- **Corner pane** — the frozen-rows × frozen-cols top-left block
+- **Top frozen-rows pane** — the band of frozen rows across the scrollable width
+- **Left frozen-cols pane** — the band of frozen columns across the scrollable height
+
+`cellToScreenRect(row, col)` is freeze-aware: a cell in a frozen direction **does not** add `scrollX`/`scrollY`, while a body-direction cell does. This pins frozen cells while the body scrolls underneath. Both canvases share the same coordinate system, so the overlay aligns perfectly with the body.
+
+### 21.5 Cross-Freeze-Line Merged Cells
+
+A merged cell that straddles the freeze line is drawn by `drawMergedCells(ctx, vx, vy, vw, vh)` using **region-intersection** against the current pane's viewport, instead of relying on clip alone:
+
+- The merge's full screen rectangle is synthesized from its **anchor** (top-left, frozen-aware) and **end cell** (bottom-right, body-aware) — its width is `(endCell.right − anchor.left)`, which naturally shrinks by `scrollX` on the body side.
+- **Background**: in a frozen pane the visible segment's right boundary is fixed at the freeze divider; in a body pane it follows `scrollX`.
+- **Text**: laid out from the merge's *logical* width (independent of scroll) so wrapping / overflow / alignment stay stable; drawn at the frozen anchor for frozen panes and at `anchor − scroll` for body panes — the two layers' clips splice into one continuous title (frozen part pinned, body part scrolling).
+- **Borders**: top/bottom/left/right edges are segmented per column/row (already freeze-aware); the **right edge and the top-right / bottom-right corner blocks belong to the body segment** and are drawn only where the merge crosses into the body, so they scroll away correctly.
+
+This guarantees the frozen portion stays pinned and the non-frozen portion scrolls off, including merged cells spanning the divide.
+
+### 21.6 Integration Notes
+
+- Freeze is independent of the scroll math elsewhere (`maxScrollX/Y`, hit-testing) — frozen rows/cols are simply excluded from the scrollable viewport.
+- Switching sheets restores each sheet's own `freeze` automatically.
+

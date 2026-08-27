@@ -205,6 +205,7 @@ interface ThemeColors { /* 完整列表见第 10 节 */ }
 | `activeCell` | `ref<CellCoord>` | 活动单元格 |
 | `scrollX/Y` | `ref<number>` | 网格区滚动偏移 |
 | `editingCell` | `ref<CellCoord \| null>` | 正在编辑的单元格 |
+| `freeze` | `reactive<FreezePane>` | 冻结窗格视图状态 `{ rows, cols }`（值为 `{0,0}` 表示无冻结）。通过 CoreState 暴露 `setFreeze(rows, cols)` / `clearFreeze()` / `getFreeze()`。详见[第 21 节](#21-冻结窗格) |
 | `editValue` | `ref<string>` | 编辑浮层实时文本 |
 | `colWidths` | `ref<number[]>` | 各列宽度（默认 100px），随 `dims.colCount` 自动扩展 |
 | `rowHeights` | `ref<number[]>` | 各行高度（默认 24px），随 `dims.rowCount` 自动扩展 |
@@ -270,6 +271,8 @@ MIN_ROW_HEIGHT = 24
 │  横向滚动条（底部 11px）  │  纵向滚动条（右侧 11px） │
 └──────────────────────────────────────────────┘
 ```
+
+当工作表存在冻结窗格时，左上角 `freeze.cols × freeze.rows` 区块（及其表头边）固定在滚动网格之上/之侧 —— 详见 [第 21 节](#21-冻结窗格)。
 
 ### 5.2 坐标变换
 
@@ -494,7 +497,7 @@ Canvas CSS 坐标（逻辑像素）
 - **合并单元格**：扩展数据模型存储合并信息
 
 ### 13.2 渲染层
-- **冻结窗格**：`frozenCols`/`frozenRows` 状态，拆分固定区与滚动区
+- **冻结窗格** —— *已实现，见 [第 21 节](#21-冻结窗格)*
 - **条件格式**：渲染循环中加入样式规则匹配
 - **自动填充**：活动单元格右下角拖拽手柄
 
@@ -850,3 +853,69 @@ function findLastDataExtents(): { lastCol: number; lastRow: number }
 - **Canvas 渲染**仅通过虚拟滚动绘制可视区域；扩展不影响渲染性能。
 - **选区**（含全选）使用 `dims` 进行边界计算，扩展范围完全可选。
 - **复制粘贴**操作遵循动态边界；剪贴板协议（TSV）不变。
+
+---
+
+## 21. 冻结窗格
+
+代码分布于 `composables/core-state.ts`（状态 + `setFreeze` / `clearFreeze` / `getFreeze`）、`composables/sheets-ops.ts`（按工作表持久化 + 行列增删钳制）、`components/spreader.vue`（独立 overlay 画布 + 工具栏事件路由）、`components/toolbar.vue`（菜单）、`composables/interactions.ts`（跨冻结线合并单元格渲染）。
+
+### 21.1 状态模型
+
+每个工作表持有响应式 `freeze: FreezePane`，其中 `FreezePane = { rows: number; cols: number }` —— 冻结的顶部行数与左侧列数。`{ rows: 0, cols: 0 }` 表示无冻结。
+
+- `setFreeze(rows, cols)` —— 将两者钳制到 `[0, rowCount]` / `[0, colCount]` 后赋值；设计上**保留另一轴**（例如「冻结首行」会保留已有的冻结列）。
+- `clearFreeze()` —— 两者归零。
+- `getFreeze()` —— 返回普通快照 `{ rows, cols }`。
+
+### 21.2 持久化
+
+`freeze` 是按工作表的**视图状态**，随单元格数据一起持久化：
+
+- 存入 `SheetState.freeze`，并在 v-model 发射 / 保存工作表时序列化为 `SheetModelData.freeze?: FreezePane`（`sheets-ops.ts` 从响应式 `s.freeze` 拷贝进 `sh.freeze`）。
+- 切换工作表时恢复，并按新 `[rowCount, colCount]` 钳制。
+- **明确排除在撤销/重做之外** —— `undo-styles.ts` 在每次恢复后重新套用实时 `currentFreeze`，因此冻结/取消冻结不会污染单元格数据的撤销栈。
+- 行列插入/删除操作会确定性地把冻结行/列控制在新的范围内（`sheets-ops.ts` 在每次操作后钳制 `freeze.rows` / `freeze.cols`）。
+
+### 21.3 工具栏入口
+
+「冻结窗格」下拉（`toolbar.vue` 的 `freezeOptions`）根据当前状态自适应：
+
+| 状态 | 菜单项 |
+|---|---|
+| 无冻结 | 冻结窗格 · 冻结首行 · 冻结首列 |
+| 已冻结 | 取消冻结 · 冻结首行 · 冻结首列 |
+
+- **冻结窗格**（`panes`）以**当前选区/活动单元格左上角**为冻结点（`rows = sel.startRow`，`cols = sel.startCol`）—— 等同 Excel 的 Freeze Panes。
+- **取消冻结**替换「冻结窗格」项（互斥）并调用 `clearFreeze()`。
+- 每个菜单项都带 SVG 图标；触发器按钮本身使用冻结图标，冻结首行/首列/取消冻结各有专属 SVG。
+- 选择「冻结首行」/「冻结首列」会保留已有的冻结轴（冻结首行保留冻结列，反之亦然）。
+
+路由：`toolbar.vue` 发射 `freeze-change`，`spreader.vue` 的 `onFreezeChange` 将 `panes` → `setFreeze(startRow, startCol)`、`firstRow` → `setFreeze(1, cur.cols)`、`firstCol` → `setFreeze(cur.rows, 1)`、`unfreeze` → `clearFreeze()`，随后 `scheduleRender()`。
+
+### 21.4 渲染架构
+
+冻结窗格绘制在**独立的 overlay 画布**（`freezeCanvasRef`，`z-index: 1`）上，叠在主体画布（`z-index: 0`）之上。每帧由 `renderFrozenOverlay` 合成三个 pane，各自裁剪到自身视口：
+
+- **角区块** —— 冻结行 × 冻结列的左上块
+- **顶部冻结行带** —— 跨滚动宽度的冻结行带
+- **左侧冻结列带** —— 跨滚动高度的冻结列带
+
+`cellToScreenRect(row, col)` 感知冻结：处于冻结方向的单元格**不**叠加 `scrollX`/`scrollY`，处于主体方向的叠加。这令冻结单元格固定、主体在其下滚动。两块画布共用同一坐标系，overlay 与主体完美对齐。
+
+### 21.5 跨冻结线合并单元格
+
+跨冻结线的合并单元格由 `drawMergedCells(ctx, vx, vy, vw, vh)` 通过对当前 pane 视口做**区域相交**绘制，而非仅靠 clip：
+
+- 合并的整屏矩形由**锚点**（左上，感知冻结）与**endCell**（右下，感知主体）合成 —— 其宽度为 `(endCell.right − anchor.left)`，`scrollX` 在主体一侧自然相减。
+- **背景**：冻结 pane 中可见段的右边界固定在冻结分隔线；主体 pane 中随 `scrollX` 走。
+- **文本**：按合并的*逻辑*宽度（不随滚动）布局，保证换行/溢出/对齐稳定；绘制起点在冻结 pane 取锚点、在主体 pane 取 `anchor − scroll` —— 两层 clip 拼接成连续标题（冻结部分固定、主体部分滚动）。
+- **边框**：上/下/左/右四边按列/行分段（已感知冻结）；**右边与右上/右下角方块属于主体段**，仅在合并跨入主体处绘制，因此能正确随滚动移出。
+
+这保证冻结部分固定、非冻结部分滚出，即便合并单元格横跨分界线也成立。
+
+### 21.6 集成说明
+
+- 冻结独立于其他滚动数学（`maxScrollX/Y`、命中测试）—— 冻结行/列简单排除在滚动视口外。
+- 切换工作表会自动恢复各表自己的 `freeze`。
+

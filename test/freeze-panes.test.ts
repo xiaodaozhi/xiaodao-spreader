@@ -661,3 +661,104 @@ test('极端列宽下 getFrozenMetrics 正确累加', () => {
   const m = s.getFrozenMetrics();
   assert.equal(m.frozenColumnsWidth, 10001);
 });
+
+// =================================================================
+// 十四、合并单元格跨冻结线几何
+// =================================================================
+
+test('合并单元格跨冻结列 + 隐藏列：cellToScreenRect 几何正确', () => {
+  const s = freshState();
+  // 模拟截图：A 冻结，B-E 隐藏，F-K 可见
+  s.colWidths.value[1] = 0;
+  s.colWidths.value[2] = 0;
+  s.colWidths.value[3] = 0;
+  s.colWidths.value[4] = 0;
+  s.setFreeze(0, 1);
+  // 合并 A1:K1（col 0..10, row 0）
+  s.merges[s.cellKey(0, 0)] = { startCol: 0, startRow: 0, endCol: 10, endRow: 0 };
+  s.cells[s.cellKey(0, 0)] = { value: '落霞峰 弟子名录' };
+  s.scrollX.value = 0;
+
+  const rA = s.cellToScreenRect(0, 0);
+  const rF = s.cellToScreenRect(0, 5);
+
+  // A 列宽（隐藏列宽为 0）
+  const aW = DEFAULT_COL_WIDTH;
+
+  // anchor A1：x = HEADER_WIDTH，width = cP[11] - cP[0] = 7 倍列宽（隐藏列宽为 0）
+  // （11 列：col 0(A, 100) + col 1-4(B-E, 0) + col 5-10(F-K, 100×6) = 700）
+  assert.equal(rA.x, HEADER_WIDTH);
+  assert.equal(rA.width, 7 * aW);
+  assert.equal(rA.y, HEADER_HEIGHT);
+
+  // F1（非 anchor、body 列、合并内）：cellToScreenRect 返回「子矩形」——
+  // x = HW + A 宽度（隐藏列宽为 0，F 紧贴在冻结分隔线右）；width = cP[11]-cP[5]
+  assert.equal(rF.x, HEADER_WIDTH + aW);
+  assert.equal(rF.width, 6 * aW);
+});
+
+// 验证关键修复点：合并内 body 列的 cellToScreenRect 正确叠加 scrollX，
+// 由 drawMergedCells 通过 (eRect.x + eRect.width) - aRect.x 算出真实合并宽。
+test('冻结首列 + scrollX>0：合并内 body 列的 cellToScreenRect 正确叠加 scrollX', () => {
+  const s = freshState(11, 5);
+  // 隐藏 B-E
+  for (let c = 1; c <= 4; c++) s.colWidths.value[c] = 0;
+  // 冻结首列（rows=0, cols=1）
+  s.setFreeze(0, 1);
+  // 合并 A1:K1
+  s.merges[s.cellKey(0, 0)] = { startCol: 0, startRow: 0, endCol: 10, endRow: 0 };
+
+  const rA0 = s.cellToScreenRect(0, 0);
+  const rF0 = s.cellToScreenRect(0, 5);
+  // 滚动到 sx = 2*A 宽
+  const sx = 2 * DEFAULT_COL_WIDTH;
+  s.scrollX.value = sx;
+  const rA = s.cellToScreenRect(0, 0);
+  const rF = s.cellToScreenRect(0, 5);
+
+  // anchor A1：冻结列，scrollX 不影响
+  assert.equal(rA.x, rA0.x, 'A1.x 不应随 scrollX 改变');
+  assert.equal(rA.width, rA0.width, 'A1.width 不应随 scrollX 改变');
+
+  // F1（非 anchor，body 列，合并内）：screenX 随 scrollX 同步减少
+  assert.equal(rF0.x - rF.x, sx, 'F1.x 应减少 = scrollX');
+  assert.equal(rF.width, rF0.width, 'F1.width 不应改变（子矩形宽 = cP[end+1]-cP[F]）');
+
+  // 关键：drawMergedCells 用 (rH.x + rH.width) - rA.x 算出合并宽度，
+  // 必须正确处理 endCell 在 body 区叠加 scrollX 而 anchor 在冻结区不叠加的情况。
+  const rK = s.cellToScreenRect(0, 10); // K1（endCol），非 anchor，body 列
+  const mergedWidth = (rK.x + rK.width) - rA.x;
+  assert.equal(mergedWidth, 7 * DEFAULT_COL_WIDTH - sx, '合并宽度 = K1 右边界 - A1 左边界（body 部分已减 sx）');
+});
+
+// 本次修复核心：跨冻结线合并的「逻辑宽」cP[endCol+1]-cP[startCol] 不随 scrollX 变化——
+// drawMergedCells 用它做文本布局（换行/溢出/对齐）与冻结段背景，保证 A1 冻结段
+// 位置+宽度恒定完整，不会随滚动缩小或变空。
+test('跨冻结线合并：逻辑宽与冻结段位置不随 scrollX 变化', () => {
+  const s = freshState(11, 5);
+  // 隐藏 B-E（与截图场景一致：冻结首列 + 合并跨到 body 列）
+  for (let c = 1; c <= 4; c++) s.colWidths.value[c] = 0;
+  s.setFreeze(0, 1);
+  s.merges[s.cellKey(0, 0)] = { startCol: 0, startRow: 0, endCol: 10, endRow: 0 };
+
+  const frozenW = s.colPositions.value[1]! - s.colPositions.value[0]!; // A 列宽
+  const bodyLeft = HEADER_WIDTH + frozenW; // 冻结分隔线屏幕 x（固定）
+
+  // scrollX = 0 基准
+  const rA0 = s.cellToScreenRect(0, 0);
+  const logicW0 = s.colPositions.value[11]! - s.colPositions.value[0]!;
+  assert.equal(logicW0, 7 * frozenW, '逻辑宽 = 可见列总宽（隐藏列不计）');
+  assert.equal(rA0.x + rA0.width, HEADER_WIDTH + 7 * frozenW, '未滚动时合并右边界 = HW + 逻辑宽');
+
+  // 滚动后：逻辑宽不变；anchor（冻结段）位置与宽度不变
+  s.scrollX.value = 2 * frozenW;
+  const rA = s.cellToScreenRect(0, 0);
+  const logicW = s.colPositions.value[11]! - s.colPositions.value[0]!;
+  assert.equal(logicW, logicW0, '逻辑宽不随 scrollX 变化（文本布局/冻结段背景的依据）');
+  assert.equal(rA.x, rA0.x, 'A1 冻结段左边界不随 scrollX 变化');
+  assert.equal(rA.width, rA0.width, 'A1 冻结段宽度不随 scrollX 变化');
+  // 冻结段渲染右边界固定为 bodyLeft：跨线合并整体右边界必越过冻结线，
+  // 保证 freeze pane 中背景/网格右边界 = bodyLeft（A1 永远占满整列，不缩小不变空）
+  assert.ok(HEADER_WIDTH + 7 * frozenW >= bodyLeft, '跨线合并整体矩形覆盖冻结段');
+  assert.equal(bodyLeft, HEADER_WIDTH + frozenW, '冻结分隔线固定');
+});

@@ -269,6 +269,7 @@ const setDimInputRef = (el: unknown) => {
       :merge-menu-open="bordersMerge.mergeMenuOpen"
       :calc-menu-open="bordersMerge.calcMenuOpen"
       :is-single-cell="isSingleCell"
+      :has-freeze="coreState.freeze.rows > 0 || coreState.freeze.cols > 0"
       :sel-number-format="undoStyles.selNumberFormatDisplay"
       :nf-options="undoStyles.nfOptions"
       :can-increase-decimals="undoStyles.canIncreaseDecimals"
