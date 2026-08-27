@@ -30,6 +30,7 @@ A high-performance, canvas-based spreadsheet component for Vue 3: bringing an Ex
 - **Number Format**: Excel-style number formatting (General / Text / Number / Currency / Accounting / Percent / Scientific / Date / Time / DateTime / Duration) with a custom format dialog; display-only, never mutates the stored cell value
 - **Smart Data Recognition**: Typing `100%`, `1,234`, `¥1,234.56` auto-converts the text to a number and applies the matching format; common date/time text auto-converts to dates: matching Excel input behavior
 - **Sorting & Sort Warning**: Sort any column by its **displayed content** (numbers / dates / text); sorting moves data only, never cell styles; ranges containing merged cells or formulas are auto-disabled; when adjacent data sits outside the selection, an Excel-style **Sort Warning** dialog lets you choose "Expand the selection" or "Sort the current selection only"
+- **Auto Filter (AutoFilter)**: Excel-style auto filter on a normal range. Enable via the toolbar **Data → Filter** or `Ctrl+Shift+L`; select a data cell (or a single-row multi-column range) and the filter is created by intelligently probing the contiguous data region **downward** from that header row. Each column header shows a filter drop-down arrow; opening it reveals the filter panel (values / text / number / date / search / blanks / multi-column AND). Clearing one column's criteria clears only that column; removing the AutoFilter clears everything. Only columns inside the Filter Range get an arrow; selecting a single merged cell with no active filter disables the filter button — *see [Auto Filter (AutoFilter)](#auto-filter-autofilter)*
 - **Find & Replace**: Open via the toolbar find button or `Ctrl/Cmd+F` (also `Ctrl/Cmd+H`); three scopes: current sheet / entire workbook / current selection; match case and match entire cell; highlights all matches and locates the active one with wrap-around navigation; single and replace-all both integrate with undo/redo, mutating only the raw `value` (always kept a string), never format / border / merge
 - **Auto Fill (Fill Handle)**: Excel-style fill handle at the bottom-right corner of the active selection. Drag it up/down/left/right to fill cells: single values copy, number/date/text-number sequences auto-continue (e.g. `1,2 → 3,4,5`), formula references adjust per relative/absolute/mixed rules (e.g. `=A1*2` → `=A2*2`), and source `styleId` is reused via the style pool. Live preview during drag, edge auto-scroll, dynamic sheet expansion, freeze-pane compatibility, and a single undo step per operation: *see [Auto Fill](#auto-fill)*
 
@@ -292,6 +293,7 @@ src/
 | `Ctrl+C` / `Ctrl+X` / `Ctrl+V` | Copy / Cut / Paste |
 | `Ctrl+Z` / `Ctrl+Y` | Undo / Redo |
 | `Ctrl+A` | Select all |
+| `Ctrl+Shift+L` | Toggle Auto Filter |
 
 ### Formatting
 
@@ -435,6 +437,36 @@ The pure engine (`core/autofill.ts`) has zero Vue/Canvas dependencies and is ful
 
 ---
 
+## Auto Filter (AutoFilter)
+
+An Excel-style auto filter on a normal range: filtering is a **Sheet-level feature bound to a data Range**, not a per-column-header filter. The header arrows are drawn on the Canvas (no DOM); the filter panel uses Vue DOM.
+
+### Enable & toggle
+
+- Toolbar **Data → Filter** or `Ctrl+Shift+L` invokes `toggleAutoFilter()`.
+- **Not enabled → create**: select a data cell or a single-row multi-column range, then the filter is created by probing the contiguous data region **downward** from that header row; a completely empty sheet creates no invalid filter.
+- **Enabled → remove entirely**: restores hidden rows, clears all column criteria, and removes header arrows. The toolbar button's highlighted state exactly matches its click behavior (highlight = enabled, click = turn off).
+- Selecting a single merged cell (a multi-cell merge) with no active filter disables the filter button (a merged cell cannot serve as a valid data-region header).
+
+### Header arrow
+
+- Shown only on the header row of the Filter Range and only for columns inside the range; not shown when disabled or outside the range.
+- Styled as a "drop-down button with background on the right border": grey background + dark arrow when not filtered, blue background + white arrow when filtered (distinguishes "enabled" from "this column filtered").
+- Clicking the arrow opens only the filter panel, never a normal selection; with frozen panes the arrow renders correctly on the frozen header.
+
+### Filter panel
+
+Reuses the existing engine: the title shows the column's header text (not the column letter); unchecking items takes effect only on **OK**, never immediately. Supports value / text / number / date filters, search, blanks, and multi-column AND; candidate values come from the corresponding column inside the Filter Range, generated from already-filtered rows when other columns are filtered (Excel cascading behavior).
+
+### Compatibility
+
+- Hidden rows use the existing `filteredOutRows` + visible-row mapping; rows are **never deleted or copied**.
+- Row/column insert/delete adjust the range via `adjustFilterRows` / `adjustFilterCols`; deleting the entire filter region auto-cancels the filter.
+- After sorting, filtered rows are recomputed; original row indices are preserved.
+- Persisted through v-model, fully retaining range, arrows, criteria, and hidden rows.
+
+---
+
 ## Border System
 
 A dedicated border storage & rendering mechanism (`spreader/core/border-pool.ts` + `border-resolve.ts`).
@@ -549,6 +581,7 @@ The project includes a GitHub Actions workflow (`.github/workflows/publish.yml`)
 - [ ] Data validation (dropdown lists, input constraints)
 - [ ] Column / row grouping and collapsing
 - [x] Sort & filter: sort by displayed content with Excel-style Sort Warning dialog (expand selection / current selection only); see [Sorting & Sort Warning](#features)
+- [x] Auto Filter (AutoFilter): toolbar "Filter" / `Ctrl+Shift+L` to enable, header drop-down arrows, intelligent downward data probing, value/text/number/date multi-type filters, separate clear-column vs remove-all; see [Auto Filter (AutoFilter)](#auto-filter-autofilter)
 - [ ] Cell comments / notes
 - [ ] Print layout
 

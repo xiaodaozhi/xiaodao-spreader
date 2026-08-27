@@ -353,7 +353,11 @@ export function createInteractions(
               // ---- Excel 风格 '#####' 填充处理（仅显示，不改 value / style） ----
               // 1) 非法值 sentinel（date 越界 / duration 负数）：不论列宽直接整格填 #
               // 2) 指定格式（非 General、非 @、非纯文本）+ 非 wrap + 任一非空行测量宽度 > cw-10 → 填 #
-              const availW = cw - 10;
+              let availW = cw - 10;
+              // Filter Range 表头行的文字右侧为筛选按钮预留宽度，避免被按钮背景遮挡
+              if (f && row === f.range.startRow && col >= f.range.startCol && col <= f.range.endCol) {
+                availW = cw - 10 - FILTER_BTN_W;
+              }
               let displayV = v;
               const needOverflowHashes = !stWrap && isFormatOverflowsToHashes(nf);
               const invalidValue = v === NF_INVALID_VALUE || isInvalidDisplayValue(rawV, nf);
@@ -1522,35 +1526,48 @@ export function createInteractions(
   /** 当前打开的筛选弹窗：关联的列与屏幕锚点；null 表示未打开 */
   const filterPopup = ref<{ col: number; x: number; y: number } | null>(null);
 
-  /** 列头筛选按钮尺寸（正方形） */
-  const FILTER_BTN = 15;
+  /** 列头筛选按钮宽度 */
+  const FILTER_BTN_W = 18;
+  /** 筛选按钮外边距 / 圆角 */
+  const FILTER_BTN_M = 2;
+  const FILTER_BTN_R = 2;
+  /** toolbar 下拉框同款下箭头 caret（viewBox 0 0 1024 1024），复用为筛选箭头图标 */
+  const CARET_PATH = new Path2D(
+    'M180.053333 361.386667a32 32 0 0 1 45.226667 0L512 648.106667l286.72-286.72a32 32 0 1 1 45.226667 45.226666l-309.333334 309.333334a32 32 0 0 1-45.226666 0L180.053333 406.613333a32 32 0 0 1 0-45.226666z'
+  );
 
-  /** 在 Header 单元格右侧绘制筛选按钮（漏斗图标）。active=true 表示该列已应用筛选（高亮主题色）。
-   *  (cellX, cellY, cellW, cellH) 为 Header 单元格的屏幕矩形。 */
-  function drawFilterButton(ctx: CanvasRenderingContext2D, cellX: number, cellY: number, cellW: number, cellH: number, active: boolean, _cs: ThemeColors) {
-    const cx = cellX + cellW - 9;
-    const cy = cellY + cellH / 2;
-    ctx.save();
+  /** 圆角矩形路径（兼容降级，避免依赖 ctx.roundRect） */
+  function roundRectPath(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+    const rr = Math.min(r, w / 2, h / 2);
     ctx.beginPath();
-    // 漏斗：顶部宽口 → 收窄 → 底部小口（Excel 风格），以 (cx, cy) 为中心
-    ctx.moveTo(cx - 4, cy - 2.5);
-    ctx.lineTo(cx + 4, cy - 2.5);
-    ctx.lineTo(cx + 1.6, cy + 0.8);
-    ctx.lineTo(cx + 1.6, cy + 3);
-    ctx.lineTo(cx - 1.6, cy + 3);
-    ctx.lineTo(cx - 1.6, cy + 0.8);
+    ctx.moveTo(x + rr, y);
+    ctx.arcTo(x + w, y, x + w, y + h, rr);
+    ctx.arcTo(x + w, y + h, x, y + h, rr);
+    ctx.arcTo(x, y + h, x, y, rr);
+    ctx.arcTo(x, y, x + w, y, rr);
     ctx.closePath();
-    // 始终描边（保证可见）；已筛选列额外填充蓝色以区分
-    ctx.lineWidth = 1.1;
-    ctx.lineJoin = 'round';
-    if (active) {
-      ctx.fillStyle = '#0078d7';
-      ctx.fill();
-      ctx.strokeStyle = '#0078d7';
-    } else {
-      ctx.strokeStyle = '#5a5a5a';
-    }
-    ctx.stroke();
+  }
+
+  /** 在 Header 单元格右侧绘制筛选按钮：带背景色块（2px 圆角、2px 外边距）+ toolbar 同款下箭头 caret。
+   *  active=true（该列已应用筛选）→ 蓝色背景 + 白色箭头；否则浅灰背景 + 深灰箭头。
+   *  (cellX, cellY, cellW, cellH) 为 Header 单元格的屏幕矩形。 */
+  function drawFilterButton(ctx: CanvasRenderingContext2D, cellX: number, cellY: number, cellW: number, cellH: number, active: boolean, cs: ThemeColors) {
+    const btnW = Math.min(cellW, FILTER_BTN_W) - FILTER_BTN_M;
+    const bx = cellX + cellW - btnW - FILTER_BTN_M;
+    const by = cellY + FILTER_BTN_M;
+    const bh = cellH - 2 * FILTER_BTN_M;
+    ctx.save();
+    // 背景（2px 圆角）
+    ctx.fillStyle = active ? cs.activeCellBorder : '#ececec';
+    roundRectPath(ctx, bx, by, btnW, bh, FILTER_BTN_R);
+    ctx.fill();
+    // 下箭头 caret（toolbar 下拉框同款 svg 图标），居中绘制
+    const sz = Math.min(btnW, bh) * 0.72;
+    ctx.translate(bx + btnW / 2, by + bh / 2);
+    ctx.scale(sz / 1024, sz / 1024);
+    ctx.translate(-512, -512);
+    ctx.fillStyle = active ? '#ffffff' : '#5a5a5a';
+    ctx.fill(CARET_PATH);
     ctx.restore();
   }
 
@@ -1566,10 +1583,10 @@ export function createInteractions(
     if (row !== f.range.startRow) return -1;
     if (col < f.range.startCol || col > f.range.endCol) return -1;
     const rect = s.cellToScreenRect(row, col);
-    const arrowW = Math.min(rect.width, 18);
-    const btnLeft = rect.x + rect.width - arrowW;
-    const btnRight = rect.x + rect.width;
-    if (x >= btnLeft && x <= btnRight && y >= rect.y && y <= rect.y + rect.height) return col;
+    const arrowW = Math.min(rect.width, FILTER_BTN_W) - FILTER_BTN_M;
+    const btnLeft = rect.x + rect.width - arrowW - FILTER_BTN_M;
+    const btnRight = rect.x + rect.width - FILTER_BTN_M;
+    if (x >= btnLeft && x <= btnRight && y >= rect.y + FILTER_BTN_M && y <= rect.y + rect.height - FILTER_BTN_M) return col;
     return -1;
   }
 
@@ -1584,7 +1601,7 @@ export function createInteractions(
     // 锚点 = Header 单元格右侧箭头左上角（屏幕坐标）
     filterPopup.value = {
       col,
-      x: cr.left + rect.x + rect.width - FILTER_BTN - 3,
+      x: cr.left + rect.x + rect.width - FILTER_BTN_W, // 按钮右侧（贴右边框外缘）
       y: cr.top + rect.y + 2,
     };
   }

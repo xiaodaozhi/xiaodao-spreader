@@ -145,6 +145,17 @@ const canSort = computed(() => {
   return sheetsOpsRaw.canSortColumns(sel.startCol, sel.endCol);
 });
 
+// 筛选可用条件：已存在筛选态时始终可用（可清除/切换）；否则若活动单元格落在跨多格的合并区域内则禁用
+const canFilter = computed(() => {
+  if (coreState.getFilter() !== null) return true;
+  const ac = coreState.activeCell;
+  const m = coreState.findMerge(ac.col, ac.row);
+  if (m && (m.range.startCol !== m.range.endCol || m.range.startRow !== m.range.endRow)) {
+    return false;
+  }
+  return true;
+});
+
 // 数字格式对话框初始格式：选区一致时用该格式；混合或自定义标记（NF_CUSTOM）时回退到活动单元格的真实格式代码，再不行则常规
 const nfDialogCurrentFormat = computed(() => {
   const sel = undoStyles.selNumberFormat;
@@ -278,6 +289,7 @@ const setDimInputRef = (el: unknown) => {
       :sort-menu-open="sortMenuOpen"
       :cached-sort-order="cachedSortOrder"
       :can-sort="canSort"
+      :can-filter="canFilter"
       :filter-active="coreState.getFilter() !== null"
       :h-align-options="undoStyles.hAlignOptions"
       :v-align-options="undoStyles.vAlignOptions"

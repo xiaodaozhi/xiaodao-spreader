@@ -513,7 +513,8 @@ Canvas CSS 坐标（逻辑像素）
 
 ### 13.3 交互层
 - **查找/替换**: *已实现，见[第 16 节](#16-查找与替换)*
-- **数据排序/筛选**: *已实现，见[第 19 节](#19-排序)*
+- **数据排序**: *已实现，见[第 19 节](#19-排序)*
+- **自动筛选（AutoFilter）**: *已实现，见[第 23 节](#23-自动筛选autofilter)*
 - **图表**
 
 ### 13.4 性能优化
@@ -1057,4 +1058,76 @@ function findLastDataExtents(): { lastCol: number; lastRow: number }
 - **冻结窗格**：所有坐标走 `cellToScreenRect` / `screenToCell`；柄在 `render` 与 `renderFrozenOverlay` 中均绘制，保持冻结内容之上可见。
 - **动态扩展**：`ensureCapacity` 在 `applyAutoFillPlan` 之前调用，纯 plan 不校验边界，由调用方保证容量。
 - **撤销/重做**：每次拖拽一次 `saveUndo()`；快照包含 `colCount`/`rowCount`，动态扩展可逆。
+
+---
+
+## 23. 自动筛选（AutoFilter）
+
+一套类 Excel 的普通区域自动筛选。设计为「作用于数据区域 Range 的 Sheet 功能」，而非「每个列头自带的筛选功能」。筛选按钮绘制在 Canvas 表头行（无 DOM），筛选弹窗使用 Vue DOM。
+
+### 23.1 数据模型
+
+筛选状态作为单个 `SheetFilter` 对象挂在每个工作表上（`SheetState.filter` / `SheetModelData.filter`），一个工作表同时只允许一个 AutoFilter 区域：
+
+```typescript
+interface SheetFilter {
+  range: SelectionRange;            // 筛选区域（含表头行），如 A1:F100
+  columns: Record<number, FilterColumn>;  // 列键 → 该列筛选条件；不存在的键表示该列未筛选
+}
+
+// 单列条件（保留既有 value/text/number/date 多类型能力）
+type FilterColumn =
+  | { type: 'values'; values: string[] }       // 按值勾选（含 FILTER_BLANK 表示空值）
+  | { type: 'text'; condition: TextCondition }  // 文本筛选（包含/开头/结尾/等于…）
+  | { type: 'number'; condition: NumberCondition } // 数值筛选（大于/小于/介于…）
+  | { type: 'date'; condition: DateCondition };   // 日期筛选
+```
+
+- `range.startRow` 为表头行（Header），永远显示、不被过滤；只隐藏 `startRow+1 … endRow` 的数据行。
+- 只有 `range` 覆盖范围内的列才拥有筛选箭头（`isColumnInFilterRange` 判定），范围外的列（含 A 列 / G 列等）不显示按钮。
+- 隐藏行机制沿用既有 `filteredOutRows` + 可见行映射，**不删除、不复制**原始行：原始行索引保持不变。
+
+### 23.2 启用与切换
+
+通过工具栏「数据 → 筛选」或 `Ctrl+Shift+L` 触发 `toggleAutoFilter()`：
+
+- **未启用 → 创建**：范围探测优先级为「当前多格选区」→「活动单元格当前行向下探测连续数据区」→ 整体数据占用区（`getDataRange`）；完全无数据时返回 `null`，不创建无效 AutoFilter。
+- **已启用 → 整体移除**：恢复所有隐藏行、清除全部列条件、移除表头箭头。工具栏按钮的高亮态与点击行为严格一致（高亮=已启用，点击=关闭）。
+- 单选单元格 / 单行多选：选中行即作为表头行，列范围取选区（单选=该列），再从表头行**向下**逐行探测连续有内容的最后一行。
+- 单选已合并单元格（跨多格合并区域）且无筛选态时，工具栏筛选按钮 `canFilter=false` 禁用，因为合并单元格无法作为合法的数据区域表头。
+- 旧数据兼容：`normalizeLoadedFilter` 在加载时把旧版 `column → filter` 结构迁移为 `range + columns`；缺 `range` 时按列键 + 数据最大行推断。
+
+### 23.3 表头箭头与命中测试
+
+- 箭头为「右边框带背景的下箭头按钮」样式：贴表头单元格右边框绘制 2px 圆角、2px 外边距的按钮色块；未筛选浅灰底 + 深灰箭头，已筛选蓝底 + 白箭头（区分「已启用」与「该列已筛选」）。
+- 仅当单元格属于 `filter.range` 的表头行（`row === range.startRow`）且列落在 `range` 内时才绘制；未启用 / 范围外不绘制。
+- 命中测试 `isFilterButtonHit` 在单元格选择、行/列头选择、resize 之前优先判断箭头区域：点击箭头只打开弹窗，不触发普通选区。
+- 弹窗锚点随按钮盒子（含外边距）定位；冻结窗格下统一走 `cellToScreenRect`，箭头在冻结表头正确显示。
+- 下箭头图标复用 toolbar 下拉框的 caret svg（`M180.053 361.387…`，viewBox `0 0 1024 1024`），经 `Path2D` 缩放绘制。
+
+### 23.4 筛选弹窗
+
+`filter-popup.vue` 复用既有引擎能力，标题显示该列表头内容（非列字母）。本地态（`selected` / `blankChecked`）仅在点「确定」时经 `syncValuesFilter()` 提交到 sheet，取消对勾即时不影响表格。支持值筛选、文本筛选、数值筛选、日期筛选、搜索、空值、多列 AND，候选值来自 `range` 内对应列（其它列已筛选时基于过滤后行生成，符合 Excel 级联行为）。
+
+### 23.5 内部 API（`composables/core-state.ts`）
+
+```
+getAutoFilter()          // 取当前 Sheet 的 AutoFilter（null=未启用）
+isFilterEnabled()        // 是否已启用
+getFilterRange()         // 取筛选区域
+isColumnInFilterRange(c) // 列是否在筛选区域内
+isColumnFiltered(c)      // 该列是否已应用条件
+detectFilterRange()      // 自动探测筛选区域
+toggleAutoFilter()       // 切换（创建 / 整体移除）
+setFilterColumn(c, crit) // 设置某列条件（null=清除）
+clearFilterColumn(c)     // 清除某列条件（保留其它列）
+clearFilter()            // 整体移除 AutoFilter
+```
+
+### 23.6 兼容性
+
+- **冻结窗格**：箭头随表头行绘制，冻结时命中测试与弹窗锚点走统一 `cellToScreenRect` / `screenToCell`，冻结表头上箭头正确显示。
+- **行列增删**：插入/删除行/列经 `adjustFilterRows` / `adjustFilterCols` 同步调整 `filter.range`；删除整片筛选区域自动取消 AutoFilter。
+- **排序**：筛选隐藏行保持，排序只移动数据、不搬运样式；排序后重新计算 filtered rows，原行索引不丢失。
+- **持久化**：`SheetFilter` 经 v-model 序列化；`serialize` / `load` 完整保留 range、表头箭头、条件与隐藏行。
 

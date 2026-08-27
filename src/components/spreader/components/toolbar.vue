@@ -239,6 +239,12 @@ function onFindClick() {
   emit('find');
 }
 
+// 点击溢出菜单中的「筛选」项：触发切换后自动关闭溢出菜单
+function onFilterClick() {
+  overflowOpen.value = false;
+  emit('toggle-filter');
+}
+
 onMounted(() => {
   scheduleRecompute();
   if (rootEl.value) {
@@ -294,6 +300,8 @@ const props = defineProps<{
   sortMenuOpen: boolean;
   cachedSortOrder: SortOrder;
   canSort: boolean;
+  /** 工具栏「筛选」按钮是否可用（单选合并单元格且无筛选态时禁用） */
+  canFilter: boolean;
   /** 当前 worksheet 是否已启用筛选 */
   filterActive: boolean;
   selHAlign: string;
@@ -1185,8 +1193,9 @@ const freezeOptions = computed<FontOption[]>(() => {
         <button
           class="toolbar-btn"
           :class="{ 'toolbar-btn--active': filterActive }"
+          :disabled="!canFilter"
           :title="filterActive ? t(locale, 'clearFilter') : t(locale, 'filter')"
-          @click="emit('toggle-filter')"
+          @click="onFilterClick"
         >
           <svg
             viewBox="0 0 1024 1024"

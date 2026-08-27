@@ -514,7 +514,8 @@ The `ThemeColors` interface includes:
 
 ### 13.3 Interaction Layer
 - **Find/Replace**: *now implemented, see [Section 16](#16-find--replace)*
-- **Data Sort/Filter**: *now implemented, see [Section 19](#19-sorting)*
+- **Data Sort**: *now implemented, see [Section 19](#19-sorting)*
+- **Auto Filter (AutoFilter)**: *now implemented, see [Section 23](#23-auto-filter-autofilter)*
 - **Charts**
 
 ### 13.4 Performance Optimization
@@ -1058,4 +1059,75 @@ Touch shares the exact same `autoFillState` / `updateAutoFillPreview` / `commitA
 - **Freeze panes**: all coordinates go through `cellToScreenRect` / `screenToCell`; the handle is drawn in both `render` and `renderFrozenOverlay`, so it stays visible above frozen content.
 - **Dynamic expansion**: `ensureCapacity` is called before `applyAutoFillPlan`, and the pure plan does not enforce bounds: the caller guarantees capacity.
 - **Undo/Redo**: one `saveUndo()` per drag; the snapshot includes `colCount`/`rowCount` so dynamic expansion is reversible.
+
+---
+
+## 23. Auto Filter (AutoFilter)
+
+An Excel-style auto filter on a normal range. Designed as a "Sheet-level feature bound to a data Range", not a "per-column-header filter". The filter arrow is drawn on the Canvas header (no DOM); the filter panel uses Vue DOM.
+
+### 23.1 Data Model
+
+The filter state lives as a single `SheetFilter` object per sheet (`SheetState.filter` / `SheetModelData.filter`); a sheet allows only one AutoFilter range at a time:
+
+```typescript
+interface SheetFilter {
+  range: SelectionRange;            // filter region (incl. header row), e.g. A1:F100
+  columns: Record<number, FilterColumn>;  // column key → criteria; absent key = column not filtered
+}
+
+type FilterColumn =
+  | { type: 'values'; values: string[] }       // by value (FILTER_BLANK = blanks)
+  | { type: 'text'; condition: TextCondition }
+  | { type: 'number'; condition: NumberCondition }
+  | { type: 'date'; condition: DateCondition };
+```
+
+- `range.startRow` is the header row (always visible, never filtered); only rows `startRow+1 … endRow` are hidden.
+- Only columns inside `range` get an arrow (`isColumnInFilterRange`); outside columns (incl. column A / G) show none.
+- Hidden rows use the existing `filteredOutRows` + visible-row mapping; rows are **never deleted or copied** — original row indices are preserved.
+
+### 23.2 Enable & toggle
+
+Triggered by the toolbar **Data → Filter** or `Ctrl+Shift+L` → `toggleAutoFilter()`:
+
+- **Not enabled → create**: probe priority is "current multi-cell selection" → "active cell's current row probing downward for the contiguous data region" → whole data-used region (`getDataRange`); empty sheet returns `null`, no invalid filter created.
+- **Enabled → remove entirely**: restores hidden rows, clears all column criteria, removes header arrows. The toolbar button's highlighted state exactly matches its click behavior (highlight = enabled, click = off).
+- Single cell / single-row multi-column: the selected row is the header row, the column range is the selection (single = that column), then probe **downward** row by row for the last contiguous data row.
+- A single merged cell (multi-cell merge) with no active filter sets `canFilter=false` (a merged cell cannot be a valid data-region header).
+- Backward compat: `normalizeLoadedFilter` migrates the old `column → filter` shape into `range + columns` on load; missing `range` is inferred from column keys + the max data row.
+
+### 23.3 Header arrow & hit-test
+
+- Styled as a "drop-down button with background on the right border": a 2px-rounded, 2px-margin button block on the cell's right border; grey bg + dark arrow when not filtered, blue bg + white arrow when filtered (distinguishes "enabled" from "this column filtered").
+- Drawn only when the cell is the header row of `filter.range` (`row === range.startRow`) and the column is inside `range`; not drawn when disabled or outside the range.
+- Hit-test `isFilterButtonHit` runs before cell/row/column selection and resize: clicking the arrow opens only the panel, no normal selection.
+- The popup anchor follows the button box (incl. margin); frozen panes reuse `cellToScreenRect`, so the arrow renders correctly on the frozen header.
+- The down-arrow icon reuses the toolbar dropdown caret svg (`M180.053 361.387…`, viewBox `0 0 1024 1024`), drawn scaled via `Path2D`.
+
+### 23.4 Filter panel
+
+`filter-popup.vue` reuses the existing engine; the title shows the column's header text (not the column letter). Local state (`selected` / `blankChecked`) is committed to the sheet via `syncValuesFilter()` only on **OK** — unchecking items never affects the grid immediately. Supports value / text / number / date filters, search, blanks, and multi-column AND; candidate values come from the corresponding column inside `range`, generated from already-filtered rows when other columns are filtered (Excel cascading behavior).
+
+### 23.5 Internal API (`composables/core-state.ts`)
+
+```
+getAutoFilter()          // current Sheet AutoFilter (null = disabled)
+isFilterEnabled()        // enabled?
+getFilterRange()         // filter range
+isColumnInFilterRange(c) // column inside filter range?
+isColumnFiltered(c)      // column has criteria?
+detectFilterRange()      // auto-detect range
+toggleAutoFilter()       // toggle (create / remove entirely)
+setFilterColumn(c, crit) // set column criteria (null = clear)
+clearFilterColumn(c)     // clear one column (keep others)
+clearFilter()            // remove AutoFilter entirely
+```
+
+### 23.6 Compatibility
+
+- **Freeze panes**: the arrow follows the header row; frozen hit-test & popup anchor reuse `cellToScreenRect` / `screenToCell`, so the arrow shows correctly on the frozen header.
+- **Row/column insert/delete**: `adjustFilterRows` / `adjustFilterCols` sync `filter.range`; deleting the whole filter region auto-cancels the filter.
+- **Sorting**: hidden rows are preserved; sorting moves data only, never styles; after sorting, filtered rows are recomputed and original row indices are not lost.
+- **Persistence**: `SheetFilter` is serialized through v-model; range, header arrows, criteria, and hidden rows are fully retained on `serialize` / `load`.
 
