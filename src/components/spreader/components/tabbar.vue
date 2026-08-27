@@ -286,10 +286,10 @@ onBeforeUnmount(() => {
 .tab-list { display: flex; align-items: flex-start; flex: 1; overflow: hidden; gap: 1px; padding: 0 1px; }
 .tab-item { display: flex; align-items: center; height: 28px; min-width: 0; max-width: 120px; padding: 0 10px; cursor: pointer; border: 1px solid var(--sp-tab-inactive-border); background: var(--sp-tab-inactive-bg); color: var(--sp-tab-inactive-color); font-size: 14px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; white-space: nowrap; transition: background 0.1s; }
 .tab-item:hover { background: var(--sp-tab-hover-bg); }
-.tab-item--active { height: 28px; background: var(--sp-tab-active-bg); color: var(--sp-tab-active-color); border-color: var(--sp-tab-active-bg) var(--sp-tab-bar-border) var(--sp-tab-bar-border); border-top: 2px solid var(--sp-tab-active-border); font-size: 16px; }
+.tab-item--active { height: 28px; background: var(--sp-tab-active-bg); color: var(--sp-tab-active-color); border-color: var(--sp-tab-active-bg) var(--sp-tab-bar-border) var(--sp-tab-bar-border); border-top: 2px solid var(--sp-tab-active-border); }
 .tab-item--active:hover { background: var(--sp-tab-active-bg); }
 .tab-item__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tab-rename-input { width: 100%; height: 18px; border: none; border-radius: 0; outline: none; padding: 0; font-size: 16px; font-family: inherit; background: var(--sp-tab-active-bg); color: var(--sp-tab-active-color); box-sizing: border-box; }
+.tab-rename-input { width: 100%; height: 18px; border: none; border-radius: 0; outline: none; padding: 0; font-size: 14px; font-family: inherit; background: var(--sp-tab-active-bg); color: var(--sp-tab-active-color); box-sizing: border-box; }
 .tab-bar__list-btn { display: flex; align-items: center; justify-content: center; width: 24px; min-width: 24px; height: 24px; margin: 0 2px 3px 3px; border: none; background: transparent; color: var(--sp-tab-add-btn-color); cursor: pointer; padding: 0; align-self: flex-end; }
 .tab-bar__list-btn:hover, .tab-bar__list-btn--active { background: var(--sp-tab-add-btn-hover-bg); }
 .tab-bar__list-btn svg { width: 14px; height: 14px; }

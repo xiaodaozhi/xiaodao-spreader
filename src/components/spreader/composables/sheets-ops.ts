@@ -1,12 +1,72 @@
 import { ref, reactive, computed, watch, nextTick, type Ref, type ComputedRef } from 'vue';
 import { DEFAULT_COL_WIDTH, lightTheme, darkTheme } from '../core/constants';
-import type { ThemeColors, SheetState, SheetModelData, CellData, SelectionRange } from '../core/types';
+import type { ThemeColors, SheetState, SheetModelData, CellData, SelectionRange, SheetFilter } from '../core/types';
 import { resolveSize } from '../core/utils';
 import { buildOuterStyle } from '../core/theme';
 import { clearEvalCache } from '../core/formula';
 import { parseSortKeyByDisplay, buildSortedRowOrder, looksLikeHeader, type SortOrder, type SortKey } from '../core/sort-core';
 import type { CoreState } from './core-state';
 import type { UndoStylesState } from './undo-styles';
+
+/** 深拷贝筛选状态（纯 JSON 结构），避免 sheet 间共享引用 */
+function cloneFilter(f: SheetFilter | null | undefined): SheetFilter | null {
+  if (!f) return null;
+  return JSON.parse(JSON.stringify(f)) as SheetFilter;
+}
+
+/** 行增删后调整筛选范围与列筛选映射（保持筛选跟随数据移动） */
+function adjustFilterRows(f: SheetFilter | null, rS: number, rE: number, inserted: boolean): SheetFilter | null {
+  if (!f) return null;
+  const n = rE - rS + 1;
+  const range = { ...f.range };
+  if (inserted) {
+    if (rS <= range.endRow) {
+      if (rS <= range.startRow) range.startRow += n;
+      range.endRow += n;
+    }
+  } else {
+    if (rE < range.startRow) {
+      range.startRow -= n;
+      range.endRow -= n;
+    } else if (rS <= range.endRow) {
+      range.endRow -= Math.min(n, range.endRow - rS + 1);
+      if (range.endRow < range.startRow) range.endRow = range.startRow;
+    }
+  }
+  return { range, columns: f.columns };
+}
+
+/** 列增删后调整筛选范围并平移/丢弃列筛选定义 */
+function adjustFilterCols(f: SheetFilter | null, cS: number, cE: number, inserted: boolean): SheetFilter | null {
+  if (!f) return null;
+  const n = cE - cS + 1;
+  const range = { ...f.range };
+  const columns: Record<number, import('../core/types').FilterColumn> = {};
+  if (inserted) {
+    if (cS <= range.endCol) {
+      if (cS <= range.startCol) range.startCol += n;
+      range.endCol += n;
+    }
+    for (const key in f.columns) {
+      const c = Number(key);
+      columns[c >= cS ? c + n : c] = f.columns[key]!;
+    }
+  } else {
+    if (cE < range.startCol) {
+      range.startCol -= n;
+      range.endCol -= n;
+    } else if (cS <= range.endCol) {
+      range.endCol -= Math.min(n, range.endCol - cS + 1);
+      if (range.endCol < range.startCol) range.endCol = range.startCol;
+    }
+    for (const key in f.columns) {
+      const c = Number(key);
+      if (c >= cS && c <= cE) continue; // 被删除的列：丢弃其筛选
+      columns[c > cE ? c - n : c] = f.columns[key]!;
+    }
+  }
+  return { range, columns };
+}
 
 export interface SheetsOpsState {
   // 行列增删
@@ -129,6 +189,8 @@ export function createSheetsOps(
     // 冻结窗格 clamp：删除行后确保 freeze.rows 不超出新的 rowCount（直接修改避免重复 emit）
     s.freeze.rows = Math.max(0, Math.min(s.freeze.rows, s.rowCount));
     s.freeze.cols = Math.max(0, Math.min(s.freeze.cols, s.colCount));
+    // 筛选范围跟随删除行收缩
+    s.setFilter(adjustFilterRows(s.getFilter(), rS, rE, false));
   }
 
   function insertRows(rS: number, rE: number) {
@@ -180,6 +242,8 @@ export function createSheetsOps(
     // 冻结窗格 clamp：插入行后 rowCount 已增长，freeze.rows 语义不变（保持前 N 行），仅需防御性 clamp
     s.freeze.rows = Math.max(0, Math.min(s.freeze.rows, s.rowCount));
     s.freeze.cols = Math.max(0, Math.min(s.freeze.cols, s.colCount));
+    // 筛选范围跟随插入行扩展（新行按条件自动判定可见性）
+    s.setFilter(adjustFilterRows(s.getFilter(), rS, rE, true));
   }
 
   function insertCols(cS: number, cE: number) {
@@ -231,6 +295,8 @@ export function createSheetsOps(
     // 冻结窗格 clamp：插入列后 colCount 已增长，freeze.cols 语义不变（保持前 N 列），仅需防御性 clamp
     s.freeze.rows = Math.max(0, Math.min(s.freeze.rows, s.rowCount));
     s.freeze.cols = Math.max(0, Math.min(s.freeze.cols, s.colCount));
+    // 筛选范围与列筛选定义跟随插入列平移
+    s.setFilter(adjustFilterCols(s.getFilter(), cS, cE, true));
   }
 
   function deleteCols(cS: number, cE: number) {
@@ -274,6 +340,8 @@ export function createSheetsOps(
     // 冻结窗格 clamp：删除列后确保 freeze.cols 不超出新的 colCount（直接修改避免重复 emit）
     s.freeze.rows = Math.max(0, Math.min(s.freeze.rows, s.rowCount));
     s.freeze.cols = Math.max(0, Math.min(s.freeze.cols, s.colCount));
+    // 筛选范围收缩、被删列的筛选定义丢弃
+    s.setFilter(adjustFilterCols(s.getFilter(), cS, cE, false));
   }
 
   // 同时找到最后一个有数据的行和列
@@ -741,6 +809,7 @@ export function createSheetsOps(
       colCount: colC,
       rowCount: rowC,
       freeze: { rows: 0, cols: 0 },
+      filter: null,
     };
   }
   const sheets = ref<SheetState[]>([mkSheet('Sheet1')]);
@@ -763,6 +832,8 @@ export function createSheetsOps(
     sh.rowCount = s.rowCount;
     // 持久化冻结窗格：从 reactive s.freeze 拷贝当前值（不可直接引用 reactive 对象）
     sh.freeze = { rows: s.freeze.rows, cols: s.freeze.cols };
+    // 持久化筛选状态（深拷贝，独立于运行时响应式对象）
+    sh.filter = cloneFilter(s.getFilter());
   }
 
   function loadSheet(i: number) {
@@ -794,6 +865,22 @@ export function createSheetsOps(
     // 恢复冻结窗格：在 setDims 之后赋值，确保 clamp 时 rowCount/colCount 已正确
     s.freeze.rows = Math.max(0, Math.min(sh.freeze.rows, s.rowCount));
     s.freeze.cols = Math.max(0, Math.min(sh.freeze.cols, s.colCount));
+    // 恢复筛选状态（缺失视为未启用；范围越界时裁剪）。silent=true 避免触发 emitModelData→saveSheet
+    // 在 activeSheetIndex 更新前回写、从而错误覆盖目标 sheet 的持久化状态（如 freeze）。
+    if (sh.filter) {
+      const fr = sh.filter.range;
+      s.setFilter({
+        range: {
+          startCol: Math.max(0, Math.min(fr.startCol, s.colCount - 1)),
+          endCol: Math.max(0, Math.min(fr.endCol, s.colCount - 1)),
+          startRow: Math.max(0, Math.min(fr.startRow, s.rowCount - 1)),
+          endRow: Math.max(0, Math.min(fr.endRow, s.rowCount - 1)),
+        },
+        columns: { ...sh.filter.columns },
+      }, true);
+    } else {
+      s.setFilter(null, true);
+    }
     s.syncStyles(sh.styles);
     s.syncBorders(sh.borders ?? [{}]);
     activeSheetIndex.value = i;
@@ -858,6 +945,7 @@ export function createSheetsOps(
       colWidths: [...src.colWidths], rowHeights: [...src.rowHeights],
       colCount: src.colCount, rowCount: src.rowCount,
       freeze: { ...src.freeze },
+      filter: cloneFilter(src.filter),
     };
     sheets.value.splice(i + 1, 0, cp);
     loadSheet(i + 1);
@@ -919,6 +1007,10 @@ export function createSheetsOps(
       // 输出冻结窗格：仅在非零时输出，保持旧数据兼容
       if (sh.freeze.rows !== 0 || sh.freeze.cols !== 0) {
         smd.freeze = { rows: sh.freeze.rows, cols: sh.freeze.cols };
+      }
+      // 输出筛选状态：仅在启用时输出，保持旧数据兼容
+      if (sh.filter) {
+        smd.filter = cloneFilter(sh.filter)!;
       }
       return smd;
     });

@@ -104,8 +104,55 @@ export interface SpreadsheetData {
 
 /** 冻结窗格状态：rows/cols 为冻结的行数/列数（0 表示该方向未冻结） */
 export interface FreezePane {
-  rows: number;
+  rows:  number;
   cols: number;
+}
+
+// ============ 数据筛选（AutoFilter）============
+/** 单列筛选类型 */
+export type FilterColumnType = 'values' | 'text' | 'number' | 'date';
+
+/** 条件筛选算子（文本 / 数字 / 日期通用，按 type 决定可用集合） */
+export type FilterOperator =
+  | 'equals'      // 等于
+  | 'notEquals'   // 不等于
+  | 'contains'    // 包含（文本）
+  | 'notContains' // 不包含（文本）
+  | 'startsWith'  // 开头是（文本）
+  | 'endsWith'    // 结尾是（文本）
+  | 'gt'          // 大于（数字/日期）
+  | 'gte'         // 大于等于（数字/日期）
+  | 'lt'          // 小于（数字/日期）
+  | 'lte'         // 小于等于（数字/日期）
+  | 'between'     // 介于（数字/日期，需 value + value2）
+  | 'blank'       // 空白
+  | 'notBlank';   // 非空白
+
+/** 单列筛选条件（条件筛选模式） */
+export interface FilterCondition {
+  operator: FilterOperator;
+  /** 比较值（文本/数字原始文本；日期为输入文本） */
+  value?: string;
+  /** 介于（between）的第二个值 */
+  value2?: string;
+}
+
+/** 单列筛选定义 */
+export interface FilterColumn {
+  /** 筛选类型：值列表 / 文本条件 / 数字条件 / 日期条件 */
+  type: FilterColumnType;
+  /** 值列表模式下选中的值（可能包含 FILTER_BLANK 哨兵表示空白）；为空表示不过滤 */
+  values?: string[];
+  /** 条件模式下生效 */
+  condition?: FilterCondition;
+}
+
+/** 工作表筛选状态：独立存储，不写入 cell style / data */
+export interface SheetFilter {
+  /** 筛选区域（含表头行）。startRow 通常为表头行，数据行为 startRow+1..endRow */
+  range: SelectionRange;
+  /** 按列索引（0-based）存储的列筛选；缺失的列表示不过滤 */
+  columns: Record<number, FilterColumn>;
 }
 
 export interface SheetModelData {
@@ -124,6 +171,8 @@ export interface SheetModelData {
   rowCount?: number;
   /** 冻结窗格状态；缺省视为未冻结 { rows: 0, cols: 0 } */
   freeze?: FreezePane;
+  /** 数据筛选状态；缺省视为未启用筛选 */
+  filter?: SheetFilter;
 }
 
 export interface SheetState {
@@ -147,6 +196,8 @@ export interface SheetState {
   rowCount: number;
   /** 冻结窗格状态（默认 { rows: 0, cols: 0 } 表示未冻结） */
   freeze: FreezePane;
+  /** 数据筛选状态；缺省为 null 表示未启用筛选 */
+  filter: SheetFilter | null;
 }
 
 /** 视口区域：冻结窗格将画布划分为四个独立滚动区域 */

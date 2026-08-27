@@ -11,6 +11,7 @@ import type { SheetsOpsState } from './sheets-ops';
 import type { ContextMenuItem, BorderSide, ThemeColors } from '../core/types';
 import { resolveSharedBorder } from '../core/border-resolve';
 import { computeTargetRange, validateMergeCompatibility } from '../core/autofill';
+import { isColumnFiltered, FILTER_BLANK } from '../core/filter-core';
 
 export interface InteractionsState {
   // 渲染器
@@ -50,6 +51,12 @@ export interface InteractionsState {
   onRowHdrCtx: (e: MouseEvent, row: number) => void;
   onColHdrCtx: (e: MouseEvent, col: number) => void;
   onCellCtx: (e: MouseEvent, c: number, r: number) => void;
+
+  // 筛选弹窗
+  filterPopup: Ref<{ col: number; x: number; y: number } | null>;
+  isFilterButtonHit: (x: number, y: number) => number;
+  openFilterPopup: (col: number) => void;
+  closeFilterPopup: () => void;
 
   // 行高/列宽浮动设置栏
   dimInputRef: Ref<HTMLInputElement | null>;
@@ -178,6 +185,7 @@ export function createInteractions(
     const HW = HEADER_WIDTH;
     const HH = HEADER_HEIGHT;
     const cs = so.themeColors.value;
+    const f = s.getFilter();
     const cP = s.colPositions.value;
     const rP = s.rowPositions.value;
     const cW = s.colWidths.value;
@@ -797,6 +805,7 @@ export function createInteractions(
       rCtx.textAlign = 'center';
       rCtx.textBaseline = 'middle';
       rCtx.fillText(colToLabel(col), x + cw / 2, HH / 2);
+      if (f) drawFilterButton(rCtx, x + cw - FILTER_BTN - 3, isColumnFiltered(f.columns[col]), cs);
     }
     // 冻结列标题（不滚动，覆盖在 body 之上，防止 body 标题透过）
     if (frozenColumnsWidth > 0) {
@@ -825,6 +834,7 @@ export function createInteractions(
         rCtx.textAlign = 'center';
         rCtx.textBaseline = 'middle';
         rCtx.fillText(colToLabel(col), x + cw / 2, HH / 2);
+        if (f) drawFilterButton(rCtx, x + cw - FILTER_BTN - 3, isColumnFiltered(f.columns[col]), cs);
       }
     }
     rCtx.strokeStyle = cs.headerSep;
@@ -1474,6 +1484,86 @@ export function createInteractions(
 
   // ============ 右键菜单 ============
   const ctxMenu = ref<{ x: number; y: number; items: ContextMenuItem[] } | null>(null);
+
+  // ============ 筛选弹窗 ============
+  /** 当前打开的筛选弹窗：关联的列与屏幕锚点；null 表示未打开 */
+  const filterPopup = ref<{ col: number; x: number; y: number } | null>(null);
+
+  /** 列头筛选按钮尺寸（正方形） */
+  const FILTER_BTN = 15;
+
+  /** 在列头右侧绘制筛选按钮（漏斗图标）。active=true 表示该列筛选已生效（高亮主题色）。 */
+  function drawFilterButton(ctx: CanvasRenderingContext2D, x: number, active: boolean, cs: ThemeColors) {
+    const cx = x + FILTER_BTN / 2;
+    const cy = 3 + FILTER_BTN / 2;
+    ctx.save();
+    ctx.beginPath();
+    // 漏斗：顶部宽口 → 收窄 → 底部小口（Excel 风格）
+    ctx.moveTo(cx - 4, cy - 2.5);
+    ctx.lineTo(cx + 4, cy - 2.5);
+    ctx.lineTo(cx + 1.6, cy + 0.8);
+    ctx.lineTo(cx + 1.6, cy + 3);
+    ctx.lineTo(cx - 1.6, cy + 3);
+    ctx.lineTo(cx - 1.6, cy + 0.8);
+    ctx.closePath();
+    if (active) {
+      ctx.fillStyle = cs.activeCellBorder;
+      ctx.fill();
+    } else {
+      ctx.strokeStyle = cs.headerText;
+      ctx.lineWidth = 1.1;
+      ctx.lineJoin = 'round';
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  /** 命中测试：返回被点击的筛选按钮所在列（未命中返回 -1）。
+   *  优先级最高：高于单元格选择、行/列头选择、resize 命中。 */
+  function isFilterButtonHit(x: number, y: number): number {
+    const f = s.getFilter();
+    if (!f) return -1;
+    if (y < 0 || y > HEADER_HEIGHT) return -1;
+    if (x < HEADER_WIDTH) return -1;
+    const { frozenColumnsWidth } = s.getFrozenMetrics();
+    const colFrozen = frozenColumnsWidth > 0 && x < HEADER_WIDTH + frozenColumnsWidth;
+    const logicalX = colFrozen ? (x - HEADER_WIDTH) : (x - HEADER_WIDTH + s.scrollX.value);
+    const col = s.hitCol(logicalX);
+    if (col < f.range.startCol || col > f.range.endCol) return -1;
+    const left = colFrozen
+      ? (HEADER_WIDTH + s.colPositions.value[col]!)
+      : (HEADER_WIDTH + s.colPositions.value[col]! - s.scrollX.value);
+    const cw = s.colWidths.value[col]!;
+    const btnLeft = left + cw - FILTER_BTN - 3;
+    const btnRight = left + cw - 3;
+    if (x >= btnLeft && x <= btnRight && y >= 3 && y <= HEADER_HEIGHT - 3) return col;
+    return -1;
+  }
+
+  /** 打开某列的筛选弹窗 */
+  function openFilterPopup(col: number) {
+    const f = s.getFilter();
+    if (!f) return;
+    const cvs = so.canvasRef.value;
+    if (!cvs) return;
+    const cr = cvs.getBoundingClientRect();
+    const colFrozen = col < s.freeze.cols;
+    const left = colFrozen
+      ? (HEADER_WIDTH + s.colPositions.value[col]!)
+      : (HEADER_WIDTH + s.colPositions.value[col]! - s.scrollX.value);
+    const top = colFrozen ? HEADER_HEIGHT : (HEADER_HEIGHT + s.getFrozenMetrics().frozenRowsHeight);
+    // 锚点 = 筛选按钮左上角（屏幕坐标，供 fixed 定位的弹窗使用）
+    filterPopup.value = {
+      col,
+      x: cr.left + left + s.colWidths.value[col]! - FILTER_BTN - 3,
+      y: cr.top + top + 2,
+    };
+  }
+
+  function closeFilterPopup() {
+    filterPopup.value = null;
+  }
+
   let cdcHandler: (() => void) | null = null;
   function rdl() {
     if (cdcHandler) {
@@ -1658,6 +1748,21 @@ export function createInteractions(
         scheduleRender();
         so.emitModelData();
       } },
+      { label: t(s.locale.value, 'filterByThisColumn'), action: () => {
+        const f = s.getFilter();
+        if (f && col >= f.range.startCol && col <= f.range.endCol) {
+          openFilterPopup(col);
+        } else {
+          const dr = s.getDataRange();
+          const startRow = dr ? dr.startRow : 0;
+          s.enableFilter({
+            startCol: col, endCol: col,
+            startRow,
+            endRow: dr ? dr.endRow : Math.max(0, s.rowCount - 1),
+          });
+          openFilterPopup(col);
+        }
+      } },
       { label: t(s.locale.value, 'sort'), disabled: sortDisabled, children: [
         { label: t(s.locale.value, 'sortAsc'), action: () => {
           if (so.prepareSortConfirmation('asc')) return;
@@ -1700,6 +1805,25 @@ export function createInteractions(
       { label: t(s.locale.value, 'delete'), action: () => {
         us.saveUndo();
         bm.clearSelected();
+        scheduleRender();
+        so.emitModelData();
+      } },
+      { label: t(s.locale.value, 'filterByValue'), action: () => {
+        const cv = s.getCellValue(c, r);
+        const vals = cv.trim() === '' ? [FILTER_BLANK] : [cv];
+        const f = s.getFilter();
+        if (f && c >= f.range.startCol && c <= f.range.endCol) {
+          s.setFilterColumn(c, { type: 'values', values: vals });
+        } else {
+          const dr = s.getDataRange();
+          const startRow = dr ? dr.startRow : 0;
+          s.enableFilter({
+            startCol: c, endCol: c,
+            startRow,
+            endRow: dr ? dr.endRow : Math.max(0, s.rowCount - 1),
+          });
+          s.setFilterColumn(c, { type: 'values', values: vals });
+        }
         scheduleRender();
         so.emitModelData();
       } },
@@ -2099,6 +2223,12 @@ export function createInteractions(
     e.preventDefault();
     ctxMenu.value = null;
     const p = getCanvasXY(e, so.canvasRef.value);
+    // 筛选按钮命中（最高优先级：高于 resize / 选择 / 行列头选择）
+    const hitFilter = isFilterButtonHit(p.x, p.y);
+    if (hitFilter >= 0) {
+      openFilterPopup(hitFilter);
+      return;
+    }
     if (p.y < HEADER_HEIGHT && p.x >= HEADER_WIDTH) {
       const gx = p.x - HEADER_WIDTH + s.scrollX.value;
       const c = screenXToCol(p.x);
@@ -2228,6 +2358,10 @@ export function createInteractions(
         return;
       }
       const p = getCanvasXY(e, cvs);
+      if (isFilterButtonHit(p.x, p.y) >= 0) {
+        cvs.style.cursor = 'pointer';
+        return;
+      }
       if (p.y < HEADER_HEIGHT && p.x >= HEADER_WIDTH) {
         const c = screenXToCol(p.x);
         const cRight = c >= 0 ? (s.cellToScreenRect(0, c).x + s.colWidths.value[c]!) : -1;
@@ -2803,6 +2937,12 @@ export function createInteractions(
           }
           // 恢复冻结窗格：loadSheet(0) 会再做一次 clamp
           sh.freeze = smd.freeze ? { rows: smd.freeze.rows, cols: smd.freeze.cols } : { rows: 0, cols: 0 };
+          // 恢复筛选状态（深拷贝，避免与外部数据共享引用）
+          if (smd.filter) {
+            sh.filter = { range: { ...smd.filter.range }, columns: { ...smd.filter.columns } };
+          } else {
+            sh.filter = null;
+          }
           return sh;
         });
         if (so.sheets.value.length > 0) so.loadSheet(0);
@@ -2869,6 +3009,12 @@ export function createInteractions(
         }
         // 恢复冻结窗格：loadSheet(0) 会再做一次 clamp
         sh.freeze = smd.freeze ? { rows: smd.freeze.rows, cols: smd.freeze.cols } : { rows: 0, cols: 0 };
+        // 恢复筛选状态（深拷贝，避免与外部数据共享引用）
+        if (smd.filter) {
+          sh.filter = { range: { ...smd.filter.range }, columns: { ...smd.filter.columns } };
+        } else {
+          sh.filter = null;
+        }
         return sh;
       });
       if (so.sheets.value.length > 0) so.loadSheet(0);
@@ -2917,6 +3063,10 @@ export function createInteractions(
 
     ctxMenu,
     ctxSubmenuLeft,
+    filterPopup,
+    isFilterButtonHit,
+    openFilterPopup,
+    closeFilterPopup,
     onCtxItemEnter,
     onTabCtxMenu,
     onTabBarCtx,

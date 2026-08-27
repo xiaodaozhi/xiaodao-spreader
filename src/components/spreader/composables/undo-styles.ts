@@ -143,6 +143,7 @@ export function createUndoStyles(
         colWidths: [...sh.colWidths], rowHeights: [...sh.rowHeights],
         colCount: sh.colCount, rowCount: sh.rowCount,
         freeze: { ...sh.freeze },
+        filter: sh.filter ? JSON.parse(JSON.stringify(sh.filter)) : null,
       })),
       styles: [...s.styles],
       activeSheetIndex: sheetsCtx.activeSheetIndex.value,

@@ -4,7 +4,8 @@ import { FormulaDeps, clearEvalCache, computeCellValue, parseFormulaRefs } from 
 import { formatNumber, isGeneralFormat, parseDateTimeInput, parseNumericText } from '../core/number-format';
 import { applyAutoFillPlan, validateMergeCompatibility } from '../core/autofill';
 import { colToLabel } from '../core/utils';
-import type { CellCoord, CellData, CellStyle, SelectionRange, BorderStyle, BorderSide, FreezePane, ViewportRegion } from '../core/types';
+import type { CellCoord, CellData, CellStyle, SelectionRange, BorderStyle, BorderSide, FreezePane, ViewportRegion, SheetFilter, FilterColumn } from '../core/types';
+import { isRowVisible as _isRowVisible, getColumnCandidates as _getColumnCandidates, type FilterCellAccessor, type FilterCandidates } from '../core/filter-core';
 import { resolveStyle as _resolveStyle } from '../core/style-pool';
 import type { BorderPool } from '../core/border-pool';
 import { getCellBorderSide as _getCellBorderSide } from '../core/border-pool';
@@ -74,6 +75,24 @@ export interface CoreState {
   setFreeze: (rows: number, cols: number) => void;
   clearFreeze: () => void;
   getFreeze: () => FreezePane;
+
+  // 数据筛选（AutoFilter）
+  filter: Ref<SheetFilter | null>;
+  getFilter: () => SheetFilter | null;
+  setFilter: (f: SheetFilter | null, silent?: boolean) => void;
+  enableFilter: (range: SelectionRange) => void;
+  clearFilter: () => void;
+  clearFilterColumn: (col: number) => void;
+  setFilterColumn: (col: number, colFilter: FilterColumn | null) => void;
+  /** 获取某列候选值列表（级联：仅统计其它列已筛选后的可见行） */
+  getColumnCandidates: (col: number) => FilterCandidates;
+  /** 探测数据实际占用范围（有值或样式的单元格包围盒）；无数据返回 null */
+  getDataRange: () => SelectionRange | null;
+  isRowHidden: (r: number) => boolean;
+  getFilteredOutRows: () => Set<number>;
+  getVisibleRowCount: () => number;
+  getVisibleRowAt: (index: number) => number;
+  getVisibleRowIndex: (row: number) => number;
   /** 基于真实行高/列宽计算冻结区域尺寸 */
   getFrozenMetrics: () => { frozenRowsHeight: number; frozenColumnsWidth: number };
   /** 返回四个 viewport 区域（未冻结时 corner/rows/columns 尺寸为 0） */
@@ -362,6 +381,9 @@ export function createCoreState(
   // 冻结窗格状态（默认未冻结）
   const freeze = reactive<FreezePane>({ rows: 0, cols: 0 });
 
+  // 数据筛选状态（默认 null = 未启用）
+  const filter = ref<SheetFilter | null>(null);
+
   // AutoFill 拖拽状态（shallowRef：整体替换，避免深层响应式开销）
   const autoFillState = shallowRef<AutoFillState>({
     active: false,
@@ -512,6 +534,8 @@ export function createCoreState(
   });
 
   function getRowHeight(r: number): number {
+    // 被筛选隐藏的行：视觉高度为 0（原始 rowHeight 不变，恢复筛选后高度复原）
+    if (filter.value && filteredOutRows.value.has(r)) return 0;
     const h = rowHeights.value[r];
     if (h !== undefined && h !== null && h > 0) return h;
     if (!rowsWithData.value.has(r)) return DEFAULT_ROW_HEIGHT;
@@ -570,6 +594,148 @@ export function createCoreState(
 
   function _isAutoRow(r: number): boolean {
     return rowHeights.value[r] === undefined;
+  }
+
+  // ============ 数据筛选（AutoFilter） ============
+  const filterAccessor: FilterCellAccessor = {
+    getValue: (c, r) => getCellValue(c, r),
+    getFormat: (c, r) => resolveStyleFn(cells[cellKeyFn(c, r)])?.numberFormat,
+  };
+
+  /** 被筛选隐藏的行集合（缓存，依赖 filter / cells 变化重算） */
+  const filteredOutRows = computed<Set<number>>(() => {
+    const set = new Set<number>();
+    const f = filter.value;
+    if (!f) return set;
+    const { range } = f;
+    for (let r = range.startRow + 1; r <= range.endRow; r++) {
+      if (!_isRowVisibleForFilter(r)) set.add(r);
+    }
+    return set;
+  });
+
+  function _isRowVisibleForFilter(row: number): boolean {
+    return _isRowVisible(filter.value, row, filterAccessor, locale.value);
+  }
+
+  function getFilteredOutRows(): Set<number> {
+    return filteredOutRows.value;
+  }
+
+  function isRowHidden(r: number): boolean {
+    return filter.value ? filteredOutRows.value.has(r) : false;
+  }
+
+  /** 可见行总数（排除被筛选隐藏的行） */
+  function getVisibleRowCount(): number {
+    if (!filter.value) return dims.rowCount;
+    return dims.rowCount - filteredOutRows.value.size;
+  }
+
+  /** 第 index 个可见行对应的逻辑行索引（index 从 0 开始，仅计可见行） */
+  function getVisibleRowAt(index: number): number {
+    let count = -1;
+    for (let r = 0; r < dims.rowCount; r++) {
+      if (!isRowHidden(r)) {
+        count++;
+        if (count === index) return r;
+      }
+    }
+    return -1;
+  }
+
+  /** 逻辑行 row 是第几个可见行（不可见返回 -1） */
+  function getVisibleRowIndex(row: number): number {
+    if (isRowHidden(row)) return -1;
+    let idx = 0;
+    for (let r = 0; r < row; r++) {
+      if (!isRowHidden(r)) idx++;
+    }
+    return idx;
+  }
+
+  function getFilter(): SheetFilter | null {
+    return filter.value;
+  }
+
+  function setFilter(f: SheetFilter | null, silent = false) {
+    filter.value = f;
+    if (silent) return; // 加载/恢复场景：跳过滚动 clamp、重绘与 emit（避免触发 saveSheet 回写覆盖其它持久化状态）
+    // 隐藏区域可能改变总高度，重新 clamp 滚动并重绘
+    clampScrollFn(scrollX.value, scrollY.value);
+    state.scheduleRender?.();
+    state.emitModelData?.();
+  }
+
+  /** 在选区/数据区域上启用筛选，自动确定筛选范围并确定表头行为首行 */
+  function enableFilter(range: SelectionRange) {
+    const f: SheetFilter = {
+      range: {
+        startCol: Math.min(range.startCol, range.endCol),
+        endCol: Math.max(range.startCol, range.endCol),
+        startRow: Math.min(range.startRow, range.endRow),
+        endRow: Math.max(range.startRow, range.endRow),
+      },
+      columns: {},
+    };
+    filter.value = f;
+    clampScrollFn(scrollX.value, scrollY.value);
+    state.scheduleRender?.();
+    state.emitModelData?.();
+  }
+
+  function clearFilter() {
+    if (!filter.value) return;
+    filter.value = null;
+    clampScrollFn(scrollX.value, scrollY.value);
+    state.scheduleRender?.();
+    state.emitModelData?.();
+  }
+
+  function clearFilterColumn(col: number) {
+    if (!filter.value) return;
+    const next = { ...filter.value, columns: { ...filter.value.columns } };
+    delete next.columns[col];
+    filter.value = next;
+    state.scheduleRender?.();
+    state.emitModelData?.();
+  }
+
+  function setFilterColumn(col: number, colFilter: FilterColumn | null) {
+    if (!filter.value) return;
+    const next = { ...filter.value, columns: { ...filter.value.columns } };
+    if (colFilter) next.columns[col] = colFilter;
+    else delete next.columns[col];
+    filter.value = next;
+    state.scheduleRender?.();
+    state.emitModelData?.();
+  }
+
+  /** 级联候选值：仅统计「其它已筛选列」过滤后的可见行 */
+  function getColumnCandidates(col: number): FilterCandidates {
+    const f = filter.value;
+    if (!f) return { values: [], hasBlank: false };
+    return _getColumnCandidates(f, col, filterAccessor, locale.value);
+  }
+
+  /** 探测数据实际占用范围（有值或样式的单元格包围盒）；无数据返回 null */
+  function getDataRange(): SelectionRange | null {
+    let minC = Infinity, minR = Infinity, maxC = -1, maxR = -1;
+    for (const key in cells) {
+      const i = key.indexOf(',');
+      if (i < 0) continue;
+      const c = parseInt(key.substring(0, i), 10);
+      const r = parseInt(key.substring(i + 1), 10);
+      const cell = cells[key];
+      if (cell && (cell.value !== '' || cell.styleId !== undefined)) {
+        if (c < minC) minC = c;
+        if (r < minR) minR = r;
+        if (c > maxC) maxC = c;
+        if (r > maxR) maxR = r;
+      }
+    }
+    if (maxC < 0) return null;
+    return { startCol: minC, startRow: minR, endCol: maxC, endRow: maxR };
   }
 
   const rowPositions = computed(() => {
@@ -1146,6 +1312,22 @@ export function createCoreState(
     clearFreeze,
     getFreeze,
     getFrozenMetrics,
+
+    // 数据筛选（AutoFilter）
+    filter,
+    getFilter,
+    setFilter,
+    enableFilter,
+    clearFilter,
+    clearFilterColumn,
+    setFilterColumn,
+    getColumnCandidates,
+    getDataRange,
+    isRowHidden,
+    getFilteredOutRows,
+    getVisibleRowCount,
+    getVisibleRowAt,
+    getVisibleRowIndex,
     getViewportRegions,
     cellToScreenRect,
     screenToCell,

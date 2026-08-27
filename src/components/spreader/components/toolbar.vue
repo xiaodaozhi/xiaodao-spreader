@@ -74,7 +74,7 @@ const UNFREEZE_ICON = '<svg viewBox="0 0 1024 1024" fill="currentColor"><path fi
 const TOOL_KEYS = [
   'undo', 'redo', 'paint', 'clear', 'sep1', 'font', 'fontSize', 'sep2',
   'bold', 'italic', 'underline', 'strike', 'sep3', 'textColor', 'fillColor', 'border',
-  'sep4', 'hAlign', 'vAlign', 'wrap', 'merge', 'sep6', 'numFmt', 'sep7', 'calc', 'sort', 'freeze', 'find',
+  'sep4', 'hAlign', 'vAlign', 'wrap', 'merge', 'sep6', 'numFmt', 'sep7', 'calc', 'filter', 'sort', 'freeze', 'find',
 ] as const;
 
 const rootEl = ref<HTMLElement | null>(null);
@@ -294,6 +294,8 @@ const props = defineProps<{
   sortMenuOpen: boolean;
   cachedSortOrder: SortOrder;
   canSort: boolean;
+  /** 当前 worksheet 是否已启用筛选 */
+  filterActive: boolean;
   selHAlign: string;
   selVAlign: string;
   selWrap: boolean;
@@ -313,7 +315,7 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  (e: 'undo' | 'redo' | 'paint-format' | 'clear-format' | 'font-size-blur' | 'font-size-toggle' | 'font-size-step-up' | 'font-size-step-down' | 'bold-toggle' | 'italic-toggle' | 'underline-toggle' | 'strikethrough-toggle' | 'apply-text-color' | 'apply-fill-color' | 'apply-border' | 'apply-sort' | 'wrap-toggle' | 'apply-merge' | 'calc-sum' | 'calc-avg' | 'calc-count' | 'find' | 'increase-decimals' | 'decrease-decimals'): void;
+  (e: 'undo' | 'redo' | 'paint-format' | 'clear-format' | 'font-size-blur' | 'font-size-toggle' | 'font-size-step-up' | 'font-size-step-down' | 'bold-toggle' | 'italic-toggle' | 'underline-toggle' | 'strikethrough-toggle' | 'apply-text-color' | 'apply-fill-color' | 'apply-border' | 'apply-sort' | 'wrap-toggle' | 'apply-merge' | 'calc-sum' | 'calc-avg' | 'calc-count' | 'find' | 'increase-decimals' | 'decrease-decimals' | 'toggle-filter'): void;
   (e: 'font-family-change' | 'font-size-change' | 'h-align-change' | 'v-align-change', v: string | number): void;
   (e: 'font-size-input' | 'text-color-change' | 'fill-color-change' | 'number-format-change' | 'freeze-change', v: string): void;
   (e: 'font-size-keydown', ev: KeyboardEvent): void;
@@ -1109,6 +1111,29 @@ const freezeOptions = computed<FontOption[]>(() => {
             @change="emit(`calc-${$event}`)"
           />
         </div>
+      </div>
+    </Teleport>
+
+    <!-- 筛选 -->
+    <Teleport
+      :disabled="teleportDisabled('filter')"
+      :to="overflowMenuTarget"
+    >
+      <div
+        class="tb-item"
+        data-key="filter"
+      >
+        <button
+          class="toolbar-btn"
+          :class="{ 'toolbar-btn--active': filterActive }"
+          :title="filterActive ? t(locale, 'clearFilter') : t(locale, 'filter')"
+          @click="emit('toggle-filter')"
+        >
+          <svg
+            viewBox="0 0 1024 1024"
+            fill="currentColor"
+          ><path d="M96 192c0-17.6 14.4-32 32-32h768c17.6 0 32 14.4 32 32 0 9.6-4.8 19.2-12.8 25.6L608 480v320c0 19.2-12.8 35.2-32 40-4.8 1.6-9.6 1.6-14.4 1.6-12.8 0-24-4.8-33.6-12.8l-128-108.8c-8-6.4-12.8-16-12.8-25.6V480L108.8 217.6C100.8 211.2 96 201.6 96 192z" /></svg>
+        </button>
       </div>
     </Teleport>
 

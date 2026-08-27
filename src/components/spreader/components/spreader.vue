@@ -7,6 +7,7 @@ import FindReplaceBar from './find-replace-bar.vue';
 import NumberFormatDialog from './pickers/numberFormatDialog.vue';
 import SortConfirmDialog from './pickers/sortConfirmDialog.vue';
 import InsertFunctionDialog from './pickers/insertFunctionDialog.vue';
+import FilterPopup from './filter-popup.vue';
 import type { SheetModelData, SheetState } from '../core/types';
 
 import { createCoreState, type CoreState } from '../composables/core-state';
@@ -70,6 +71,7 @@ const sheetsCtx: {
     colCount: 0,
     rowCount: 0,
     freeze: { rows: 0, cols: 0 },
+    filter: null,
   }),
 };
 
@@ -168,6 +170,23 @@ function onInsertFunction(text: string) {
   interactionsRaw.insertFunctionIntoCell(text);
 }
 
+// ============ 筛选开关（工具栏「筛选」按钮） ============
+function onToggleFilter() {
+  const f = coreState.getFilter();
+  if (f) {
+    coreState.clearFilter();
+  } else {
+    // 自动确定筛选区域：多格选区优先；单格或无选区回退到数据实际范围
+    const sel = coreState.selection;
+    const range = sel && (sel.startRow !== sel.endRow || sel.startCol !== sel.endCol)
+      ? sel
+      : (coreState.getDataRange()
+        ?? { startCol: 0, startRow: 0, endCol: Math.max(0, coreState.colCount - 1), endRow: Math.max(0, coreState.rowCount - 1) });
+    coreState.enableFilter(range);
+  }
+  interactions.scheduleRender();
+}
+
 // ============ 冻结窗格工具栏事件 ============
 function onFreezeChange(v: string) {
   const cur = coreState.freeze;
@@ -261,6 +280,7 @@ const setDimInputRef = (el: unknown) => {
       :sort-menu-open="sortMenuOpen"
       :cached-sort-order="cachedSortOrder"
       :can-sort="canSort"
+      :filter-active="coreState.getFilter() !== null"
       :h-align-options="undoStyles.hAlignOptions"
       :v-align-options="undoStyles.vAlignOptions"
       :sel-h-align="undoStyles.selHAlign"
@@ -307,6 +327,7 @@ const setDimInputRef = (el: unknown) => {
       @update:sort-menu-open="sheetsOps.onSortMenuToggle($event)"
       @sort-change="sheetsOps.onSortChange($event)"
       @apply-sort="sheetsOps.applyCachedSort"
+      @toggle-filter="onToggleFilter"
       @freeze-change="onFreezeChange($event)"
       @h-align-change="undoStyles.onHAlignChange($event)"
       @v-align-change="undoStyles.onVAlignChange($event)"
@@ -626,8 +647,7 @@ const setDimInputRef = (el: unknown) => {
           class="context-menu"
           :style="{ left: interactions.ctxMenu.x + 'px', top: interactions.ctxMenu.y + 'px' }"
           @click.stop
-        >
-          <template
+        >          <template
             v-for="(item, i) in interactions.ctxMenu.items"
             :key="i"
           >
@@ -671,6 +691,21 @@ const setDimInputRef = (el: unknown) => {
         </div>
       </Transition>
     </Teleport>
+
+    <!-- 筛选弹窗 -->
+    <FilterPopup
+      v-if="interactions.filterPopup"
+      :key="interactions.filterPopup.col"
+      :col="interactions.filterPopup.col"
+      :anchor="{ x: interactions.filterPopup.x, y: interactions.filterPopup.y }"
+      :locale="coreState.locale"
+      :get-filter="coreState.getFilter"
+      :set-filter="coreState.setFilter"
+      :set-filter-column="coreState.setFilterColumn"
+      :clear-filter-column="coreState.clearFilterColumn"
+      :get-column-candidates="coreState.getColumnCandidates"
+      :close="interactions.closeFilterPopup"
+    />
 
     <!-- 行高/列宽浮动设置栏 -->
     <Teleport to="body">
