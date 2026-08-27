@@ -132,6 +132,83 @@ function onTe() {
   tDrag.value = false;
 }
 
+// ============ 触屏长按右键菜单（与鼠标 @contextmenu 等价）============
+const TAB_LONG_MS = 450;
+const TAB_MOVE_TOL = 8;
+let tTabTimer: number | null = null;
+let tTabIdx = -1;
+let tTabX = 0, tTabY = 0;
+let tTabSuppressClick = false;
+let tBarTimer: number | null = null;
+let tBarX = 0, tBarY = 0;
+
+function onTabTouchStart(e: TouchEvent, i: number) {
+  const tch = e.touches[0];
+  if (!tch) return;
+  tTabX = tch.clientX;
+  tTabY = tch.clientY;
+  tTabIdx = i;
+  if (tTabTimer !== null) clearTimeout(tTabTimer);
+  const startEl = e.target as HTMLElement;
+  tTabTimer = window.setTimeout(() => {
+    tTabSuppressClick = true; // 吞掉松手后合成的 click（避免切换 sheet）
+    const ev = { clientX: tTabX, clientY: tTabY, target: startEl, preventDefault() {} } as unknown as MouseEvent;
+    emit('tab-contextmenu', { ev, i: tTabIdx });
+  }, TAB_LONG_MS);
+}
+function onTabTouchMove(e: TouchEvent) {
+  const tch = e.touches[0];
+  if (!tch || tTabTimer === null) return;
+  if (Math.abs(tch.clientX - tTabX) > TAB_MOVE_TOL || Math.abs(tch.clientY - tTabY) > TAB_MOVE_TOL) {
+    clearTimeout(tTabTimer);
+    tTabTimer = null;
+  }
+}
+function onTabTouchEnd() {
+  if (tTabTimer !== null) {
+    clearTimeout(tTabTimer);
+    tTabTimer = null;
+  }
+}
+// 长按触发的菜单已接管，松手后合成 click 不应切换到该 sheet
+function onTabClickEmit(i: number) {
+  if (tTabSuppressClick) {
+    tTabSuppressClick = false;
+    return;
+  }
+  emit('tab-click', i);
+}
+
+function onBarTouchStart(e: TouchEvent) {
+  const tch = e.touches[0];
+  if (!tch) return;
+  const el = e.target as HTMLElement;
+  // 命中具体 tab / 加号 / 列表按钮时交给各自逻辑，不弹空白区菜单
+  if (el.closest('.tab-item') || el.closest('.tab-bar__add-btn') || el.closest('.tab-bar__list-btn')) return;
+  tBarX = tch.clientX;
+  tBarY = tch.clientY;
+  if (tBarTimer !== null) clearTimeout(tBarTimer);
+  const startEl = el;
+  tBarTimer = window.setTimeout(() => {
+    const ev = { clientX: tBarX, clientY: tBarY, target: startEl, preventDefault() {} } as unknown as MouseEvent;
+    emit('tabbar-contextmenu', ev);
+  }, TAB_LONG_MS);
+}
+function onBarTouchMove(e: TouchEvent) {
+  const tch = e.touches[0];
+  if (!tch || tBarTimer === null) return;
+  if (Math.abs(tch.clientX - tBarX) > TAB_MOVE_TOL || Math.abs(tch.clientY - tBarY) > TAB_MOVE_TOL) {
+    clearTimeout(tBarTimer);
+    tBarTimer = null;
+  }
+}
+function onBarTouchEnd() {
+  if (tBarTimer !== null) {
+    clearTimeout(tBarTimer);
+    tBarTimer = null;
+  }
+}
+
 // 菜单打开/关闭时挂载/卸载非 passive wheel 监听
 watch(listMenuOpen, (v) => {
   nextTick(() => {
@@ -151,6 +228,8 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  if (tTabTimer !== null) clearTimeout(tTabTimer);
+  if (tBarTimer !== null) clearTimeout(tBarTimer);
   document.removeEventListener('pointerdown', onDocPointerdown);
   document.removeEventListener('keydown', onDocKeydown);
   window.removeEventListener('resize', closeListMenu);
@@ -162,6 +241,10 @@ onBeforeUnmount(() => {
   <div
     class="tab-bar"
     @contextmenu="emit('tabbar-contextmenu', $event)"
+    @touchstart="onBarTouchStart"
+    @touchmove="onBarTouchMove"
+    @touchend="onBarTouchEnd"
+    @touchcancel="onBarTouchEnd"
   >
     <button
       ref="listBtnRef"
@@ -184,9 +267,13 @@ onBeforeUnmount(() => {
         <div
           class="tab-item"
           :class="{ 'tab-item--active': i === activeSheetIndex }"
-          @click="emit('tab-click', i)"
+          @click="onTabClickEmit(i)"
           @dblclick.prevent="emit('tab-dblclick', i)"
           @contextmenu="emit('tab-contextmenu', { ev: $event, i: i })"
+          @touchstart="onTabTouchStart($event, i)"
+          @touchmove="onTabTouchMove"
+          @touchend="onTabTouchEnd"
+          @touchcancel="onTabTouchEnd"
         >
           <template v-if="renTab === i">
             <input
@@ -282,9 +369,9 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.tab-bar { display: flex; align-items: stretch; height: 30px; min-height: 30px; background: var(--sp-tab-bar-bg); border-top: 1px solid var(--sp-tab-bar-border); user-select: none; margin-top: 4px; }
+.tab-bar { display: flex; align-items: stretch; height: 30px; min-height: 30px; background: var(--sp-tab-bar-bg); border-top: 1px solid var(--sp-tab-bar-border); user-select: none; -webkit-touch-callout: none; margin-top: 4px; }
 .tab-list { display: flex; align-items: flex-start; flex: 1; overflow: hidden; gap: 1px; padding: 0 1px; }
-.tab-item { display: flex; align-items: center; height: 28px; min-width: 0; max-width: 120px; padding: 0 10px; cursor: pointer; border: 1px solid var(--sp-tab-inactive-border); background: var(--sp-tab-inactive-bg); color: var(--sp-tab-inactive-color); font-size: 14px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; white-space: nowrap; transition: background 0.1s; }
+.tab-item { display: flex; align-items: center; height: 28px; min-width: 0; max-width: 120px; padding: 0 10px; cursor: pointer; border: 1px solid var(--sp-tab-inactive-border); background: var(--sp-tab-inactive-bg); color: var(--sp-tab-inactive-color); font-size: 14px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; white-space: nowrap; transition: background 0.1s; -webkit-touch-callout: none; }
 .tab-item:hover { background: var(--sp-tab-hover-bg); }
 .tab-item--active { height: 28px; background: var(--sp-tab-active-bg); color: var(--sp-tab-active-color); border-color: var(--sp-tab-active-bg) var(--sp-tab-bar-border) var(--sp-tab-bar-border); border-top: 2px solid var(--sp-tab-active-border); }
 .tab-item--active:hover { background: var(--sp-tab-active-bg); }
