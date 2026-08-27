@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, reactive, computed, type Ref, type UnwrapRef } from 'vue';
-import { HEADER_HEIGHT, HEADER_WIDTH, SB_SIZE, t } from '../core/constants';
+import { SB_SIZE, t } from '../core/constants';
 import Toolbar from './toolbar.vue';
 import Tabbar from './tabbar.vue';
 import FindReplaceBar from './find-replace-bar.vue';
@@ -69,6 +69,7 @@ const sheetsCtx: {
     rowHeights: [],
     colCount: 0,
     rowCount: 0,
+    freeze: { rows: 0, cols: 0 },
   }),
 };
 
@@ -165,6 +166,25 @@ function setInsertFuncOpen(v: boolean) {
 }
 function onInsertFunction(text: string) {
   interactionsRaw.insertFunctionIntoCell(text);
+}
+
+// ============ 冻结窗格工具栏事件 ============
+function onFreezeChange(v: string) {
+  const cur = coreState.freeze;
+  if (v === 'panes') {
+    // 以选区/活动单元格的左上角作为冻结点（0-based：D5 -> { rows: 4, cols: 3 }）
+    const sel = coreState.selection;
+    const r = sel ? sel.startRow : coreState.activeCell.row;
+    const c = sel ? sel.startCol : coreState.activeCell.col;
+    coreState.setFreeze(r, c);
+  } else if (v === 'firstRow') {
+    coreState.setFreeze(1, cur.cols);
+  } else if (v === 'firstCol') {
+    coreState.setFreeze(cur.rows, 1);
+  } else if (v === 'unfreeze') {
+    coreState.clearFreeze();
+  }
+  interactions.scheduleRender();
 }
 
 // ============ 模板赋值辅助函数（用于 @update:xxx 事件）============
@@ -283,6 +303,7 @@ const setDimInputRef = (el: unknown) => {
       @update:sort-menu-open="sheetsOps.onSortMenuToggle($event)"
       @sort-change="sheetsOps.onSortChange($event)"
       @apply-sort="sheetsOps.applyCachedSort"
+      @freeze-change="onFreezeChange($event)"
       @h-align-change="undoStyles.onHAlignChange($event)"
       @v-align-change="undoStyles.onVAlignChange($event)"
       @wrap-toggle="undoStyles.onWrapToggle"
@@ -503,7 +524,7 @@ const setDimInputRef = (el: unknown) => {
       <div
         v-if="sheetsOps.maxScrollY > 0"
         class="v-scrollbar"
-        :style="{ top: HEADER_HEIGHT + 'px', height: `calc(100% - ${HEADER_HEIGHT + SB_SIZE}px)` }"
+        :style="{ top: interactions.vScrollbarTop + 'px', height: `calc(100% - ${interactions.vScrollbarTop + SB_SIZE}px)` }"
       >
         <button
           class="sb-btn sb-btn--up"
@@ -533,7 +554,7 @@ const setDimInputRef = (el: unknown) => {
       <div
         v-if="sheetsOps.maxScrollX > 0"
         class="h-scrollbar"
-        :style="{ left: HEADER_WIDTH + 'px', width: `calc(100% - ${HEADER_WIDTH + SB_SIZE}px)` }"
+        :style="{ left: interactions.hScrollbarLeft + 'px', width: `calc(100% - ${interactions.hScrollbarLeft + SB_SIZE}px)` }"
       >
         <button
           class="sb-btn sb-btn--left"

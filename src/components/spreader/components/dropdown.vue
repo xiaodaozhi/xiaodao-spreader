@@ -19,6 +19,8 @@ const props = withDefaults(defineProps<{
   searchable?: boolean;
   /** 搜索框占位文本 */
   searchPlaceholder?: string;
+  /** 触发器固定图标（SVG 字符串）：当 modelValue 未命中任何 option 时显示，优先级低于 current.icon */
+  triggerIcon?: string;
 }>(), {
   width: 'auto',
   menuWidth: undefined,
@@ -31,6 +33,7 @@ const props = withDefaults(defineProps<{
   fallbackLabel: '',
   searchable: false,
   searchPlaceholder: '',
+  triggerIcon: '',
 });
 
 const emit = defineEmits<{
@@ -232,9 +235,9 @@ onBeforeUnmount(() => {
     >
       <!-- eslint-disable vue/no-v-html -->
       <span
-        v-if="current?.icon"
+        v-if="current?.icon || triggerIcon"
         class="sp-dropdown__icon"
-        v-html="current.icon"
+        v-html="current?.icon || triggerIcon"
       />
       <!-- eslint-enable vue/no-v-html -->
       <span

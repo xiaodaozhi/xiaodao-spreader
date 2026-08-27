@@ -499,20 +499,6 @@ pnpm build:demo
 
 ---
 
-## 贡献指南
-
-欢迎贡献代码！请按以下步骤操作：
-
-1. Fork 仓库
-2. 创建功能分支（`git checkout -b feature/amazing-feature`）
-3. 提交更改（`git commit -m 'feat: add amazing feature'`）
-4. 推送到分支（`git push origin feature/amazing-feature`）
-5. 提交 Pull Request
-
-提交前请确保类型检查通过（`pnpm type-check`）且构建成功（`pnpm build`）。
-
----
-
 ## 开源协议
 
 本项目基于 MIT 协议 — 详见 [LICENSE](LICENSE) 文件。

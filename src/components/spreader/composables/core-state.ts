@@ -2,7 +2,7 @@ import { ref, reactive, computed, watchEffect, type ComputedRef, type Ref } from
 import { HEADER_HEIGHT, HEADER_WIDTH, SB_SIZE, DEFAULT_COL_WIDTH, DEFAULT_ROW_HEIGHT, MAX_ROW_HEIGHT, DEFAULT_FONT_FAMILY, DEFAULT_FONT_SIZE } from '../core/constants';
 import { FormulaDeps, clearEvalCache, computeCellValue, parseFormulaRefs } from '../core/formula';
 import { formatNumber, isGeneralFormat, parseDateTimeInput, parseNumericText } from '../core/number-format';
-import type { CellCoord, CellData, CellStyle, SelectionRange, BorderStyle, BorderSide } from '../core/types';
+import type { CellCoord, CellData, CellStyle, SelectionRange, BorderStyle, BorderSide, FreezePane, ViewportRegion } from '../core/types';
 import { resolveStyle as _resolveStyle } from '../core/style-pool';
 import type { BorderPool } from '../core/border-pool';
 import { getCellBorderSide as _getCellBorderSide } from '../core/border-pool';
@@ -57,6 +57,24 @@ export interface CoreState {
   rowHeights: Ref<(number | undefined)[]>;
   scrollX: Ref<number>;
   scrollY: Ref<number>;
+
+  // 冻结窗格
+  freeze: FreezePane;
+  setFreeze: (rows: number, cols: number) => void;
+  clearFreeze: () => void;
+  getFreeze: () => FreezePane;
+  /** 基于真实行高/列宽计算冻结区域尺寸 */
+  getFrozenMetrics: () => { frozenRowsHeight: number; frozenColumnsWidth: number };
+  /** 返回四个 viewport 区域（未冻结时 corner/rows/columns 尺寸为 0） */
+  getViewportRegions: () => ViewportRegion[];
+  /** 逻辑单元格 -> Canvas 屏幕矩形 */
+  cellToScreenRect: (row: number, col: number) => { x: number; y: number; width: number; height: number };
+  /** Canvas 屏幕坐标 -> 逻辑单元格 { col, row } | null */
+  screenToCell: (x: number, y: number) => { col: number; row: number } | null;
+  /** 判断单元格是否落在冻结区域 */
+  isCellFrozen: (row: number, col: number) => boolean;
+  /** 将单元格滚入 Body 可视区；冻结区域内不滚动 */
+  scrollCellIntoView: (row: number, col: number) => void;
 
   // 字体度量
   BASE_CELL_VPAD: number;
@@ -324,6 +342,8 @@ export function createCoreState(
   const rowHeights = ref<(number | undefined)[]>(new Array(dims.rowCount).fill(undefined));
   const scrollX = ref(0);
   const scrollY = ref(0);
+  // 冻结窗格状态（默认未冻结）
+  const freeze = reactive<FreezePane>({ rows: 0, cols: 0 });
 
   // ============ 字体度量 ============
   const fontMetricsCache = new Map<string, { ascent: number; descent: number }>();
@@ -800,20 +820,8 @@ export function createCoreState(
   }
 
   function ensureVisible(c: number, r: number) {
-    const gw = Math.max(0, viewSizeProxy.w - HEADER_WIDTH - SB_SIZE);
-    const gh = Math.max(0, viewSizeProxy.h - HEADER_HEIGHT - SB_SIZE);
-    const cx = colPositions.value[c]!;
-    const cy = rowPositions.value[r]!;
-    const m = findMergeFn(c, r);
-    const cw = m ? colPositions.value[m.range.endCol + 1]! - colPositions.value[c]! : colWidths.value[c]!;
-    const ch = m ? rowPositions.value[m.range.endRow + 1]! - rowPositions.value[r]! : getRowHeightFn(r);
-    let sx = scrollX.value;
-    let sy = scrollY.value;
-    if (cx < sx) sx = cx;
-    else if (cx + cw > sx + gw) sx = cx + cw - gw;
-    if (cy < sy) sy = cy;
-    else if (cy + ch > sy + gh) sy = cy + ch - gh;
-    clampScrollFn(sx, sy);
+    // 委托给 scrollCellIntoView（冻结感知版本）；未冻结时行为与历史一致
+    scrollCellIntoView(r, c);
   }
 
   // ============ 二分命中 ============
@@ -839,6 +847,131 @@ export function createCoreState(
       else hi = m - 1;
     }
     return lo;
+  }
+
+  // ============ 冻结窗格 ============
+  function setFreeze(rows: number, cols: number) {
+    const clampedRows = Math.max(0, Math.min(Math.floor(rows), dims.rowCount));
+    const clampedCols = Math.max(0, Math.min(Math.floor(cols), dims.colCount));
+    freeze.rows = clampedRows;
+    freeze.cols = clampedCols;
+    state.scheduleRender?.();
+    state.emitModelData?.();
+  }
+
+  function clearFreeze() {
+    freeze.rows = 0;
+    freeze.cols = 0;
+    state.scheduleRender?.();
+    state.emitModelData?.();
+  }
+
+  function getFreeze() {
+    return { rows: freeze.rows, cols: freeze.cols };
+  }
+
+  function getFrozenMetrics() {
+    let frozenColumnsWidth = 0;
+    let frozenRowsHeight = 0;
+    if (freeze.cols > 0) {
+      const cw = colWidths.value;
+      const n = Math.min(freeze.cols, cw.length);
+      for (let c = 0; c < n; c++) frozenColumnsWidth += cw[c]!;
+    }
+    if (freeze.rows > 0) {
+      for (let r = 0; r < freeze.rows; r++) frozenRowsHeight += getRowHeightFn(r);
+    }
+    return { frozenRowsHeight, frozenColumnsWidth };
+  }
+
+  function getViewportRegions() {
+    const { frozenColumnsWidth, frozenRowsHeight } = getFrozenMetrics();
+    const bodyLeft = HEADER_WIDTH + frozenColumnsWidth;
+    const bodyTop = HEADER_HEIGHT + frozenRowsHeight;
+    const bodyWidth = Math.max(0, viewSizeProxy.w - HEADER_WIDTH - SB_SIZE - frozenColumnsWidth);
+    const bodyHeight = Math.max(0, viewSizeProxy.h - HEADER_HEIGHT - SB_SIZE - frozenRowsHeight);
+    const regions: ViewportRegion[] = [];
+    if (frozenRowsHeight > 0 && frozenColumnsWidth > 0) {
+      regions.push({
+        kind: 'corner', x: HEADER_WIDTH, y: HEADER_HEIGHT,
+        width: frozenColumnsWidth, height: frozenRowsHeight, scrollLeft: 0, scrollTop: 0,
+      });
+    }
+    if (frozenRowsHeight > 0) {
+      regions.push({
+        kind: 'rows', x: bodyLeft, y: HEADER_HEIGHT,
+        width: bodyWidth, height: frozenRowsHeight, scrollLeft: scrollX.value, scrollTop: 0,
+      });
+    }
+    if (frozenColumnsWidth > 0) {
+      regions.push({
+        kind: 'columns', x: HEADER_WIDTH, y: bodyTop,
+        width: frozenColumnsWidth, height: bodyHeight, scrollLeft: 0, scrollTop: scrollY.value,
+      });
+    }
+    regions.push({
+      kind: 'body', x: bodyLeft, y: bodyTop,
+      width: bodyWidth, height: bodyHeight, scrollLeft: scrollX.value, scrollTop: scrollY.value,
+    });
+    return regions;
+  }
+
+  function cellToScreenRect(row: number, col: number) {
+    const cP = colPositions.value;
+    const rP = rowPositions.value;
+    const cW = colWidths.value;
+    const logicalX = cP[col] ?? 0;
+    const logicalY = rP[row] ?? 0;
+    const m = findMergeFn(col, row);
+    const cw = m ? (cP[m.range.endCol + 1] ?? logicalX) - logicalX : (cW[col] ?? 0);
+    const rh = m ? (rP[m.range.endRow + 1] ?? logicalY) - logicalY : getRowHeightFn(row);
+    const colFrozen = col < freeze.cols;
+    const rowFrozen = row < freeze.rows;
+    // 冻结方向不参与滚动偏移；body 方向使用 body-relative scrollX/scrollY
+    const screenX = colFrozen ? (HEADER_WIDTH + logicalX) : (HEADER_WIDTH + logicalX - scrollX.value);
+    const screenY = rowFrozen ? (HEADER_HEIGHT + logicalY) : (HEADER_HEIGHT + logicalY - scrollY.value);
+    return { x: screenX, y: screenY, width: cw, height: rh };
+  }
+
+  function screenToCell(x: number, y: number) {
+    const { frozenColumnsWidth, frozenRowsHeight } = getFrozenMetrics();
+    if (x < HEADER_WIDTH || y < HEADER_HEIGHT) return null;
+    const colFrozen = frozenColumnsWidth > 0 && x < HEADER_WIDTH + frozenColumnsWidth;
+    const rowFrozen = frozenRowsHeight > 0 && y < HEADER_HEIGHT + frozenRowsHeight;
+    const logicalX = colFrozen ? (x - HEADER_WIDTH) : (x - HEADER_WIDTH + scrollX.value);
+    const logicalY = rowFrozen ? (y - HEADER_HEIGHT) : (y - HEADER_HEIGHT + scrollY.value);
+    const col = hitCol(logicalX);
+    const row = hitRow(logicalY);
+    if (col < 0 || row < 0) return null;
+    return { col, row };
+  }
+
+  function isCellFrozen(row: number, col: number) {
+    return row < freeze.rows || col < freeze.cols;
+  }
+
+  function scrollCellIntoView(row: number, col: number) {
+    if (isCellFrozen(row, col)) return;
+    const { frozenColumnsWidth, frozenRowsHeight } = getFrozenMetrics();
+    const gw = Math.max(0, viewSizeProxy.w - HEADER_WIDTH - SB_SIZE - frozenColumnsWidth);
+    const gh = Math.max(0, viewSizeProxy.h - HEADER_HEIGHT - SB_SIZE - frozenRowsHeight);
+    const cP = colPositions.value;
+    const rP = rowPositions.value;
+    // body-relative 逻辑坐标：扣掉冻结区域尺寸
+    const cx = (cP[col] ?? 0) - frozenColumnsWidth;
+    const cy = (rP[row] ?? 0) - frozenRowsHeight;
+    const m = findMergeFn(col, row);
+    const cw = m ? (cP[m.range.endCol + 1] ?? 0) - (cP[col] ?? 0) : (colWidths.value[col] ?? 0);
+    const ch = m ? (rP[m.range.endRow + 1] ?? 0) - (rP[row] ?? 0) : getRowHeightFn(row);
+    let sx = scrollX.value;
+    let sy = scrollY.value;
+    if (cx < sx) sx = cx;
+    else if (cx + cw > sx + gw) sx = cx + cw - gw;
+    if (cy < sy) sy = cy;
+    else if (cy + ch > sy + gh) sy = cy + ch - gh;
+    sx = Math.max(0, sx);
+    sy = Math.max(0, sy);
+    clampScrollFn(sx, sy);
   }
 
   function ensureCapacity(minCol: number, minRow: number) {
@@ -918,6 +1051,18 @@ export function createCoreState(
     rowHeights,
     scrollX,
     scrollY,
+
+    // 冻结窗格
+    freeze,
+    setFreeze,
+    clearFreeze,
+    getFreeze,
+    getFrozenMetrics,
+    getViewportRegions,
+    cellToScreenRect,
+    screenToCell,
+    isCellFrozen,
+    scrollCellIntoView,
 
     BASE_CELL_VPAD,
     fontMetricsCache,

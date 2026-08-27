@@ -125,6 +125,9 @@ export function createSheetsOps(
 
     // 写入新的 merges 并迁移 anchor cell 数据（此时新坐标对应的 cells 已经就位）
     applyAdjustedMerges(rebuiltMerges);
+    // 冻结窗格 clamp：删除行后确保 freeze.rows 不超出新的 rowCount（直接修改避免重复 emit）
+    s.freeze.rows = Math.max(0, Math.min(s.freeze.rows, s.rowCount));
+    s.freeze.cols = Math.max(0, Math.min(s.freeze.cols, s.colCount));
   }
 
   function insertRows(rS: number, rE: number) {
@@ -173,6 +176,9 @@ export function createSheetsOps(
     s.rowHeights.value = newRH;
 
     applyAdjustedMerges(rebuiltMerges);
+    // 冻结窗格 clamp：插入行后 rowCount 已增长，freeze.rows 语义不变（保持前 N 行），仅需防御性 clamp
+    s.freeze.rows = Math.max(0, Math.min(s.freeze.rows, s.rowCount));
+    s.freeze.cols = Math.max(0, Math.min(s.freeze.cols, s.colCount));
   }
 
   function insertCols(cS: number, cE: number) {
@@ -221,6 +227,9 @@ export function createSheetsOps(
     s.colWidths.value = newCW;
 
     applyAdjustedMerges(rebuiltMerges);
+    // 冻结窗格 clamp：插入列后 colCount 已增长，freeze.cols 语义不变（保持前 N 列），仅需防御性 clamp
+    s.freeze.rows = Math.max(0, Math.min(s.freeze.rows, s.rowCount));
+    s.freeze.cols = Math.max(0, Math.min(s.freeze.cols, s.colCount));
   }
 
   function deleteCols(cS: number, cE: number) {
@@ -261,6 +270,9 @@ export function createSheetsOps(
     s.colWidths.value = newCW;
 
     applyAdjustedMerges(rebuiltMerges);
+    // 冻结窗格 clamp：删除列后确保 freeze.cols 不超出新的 colCount（直接修改避免重复 emit）
+    s.freeze.rows = Math.max(0, Math.min(s.freeze.rows, s.rowCount));
+    s.freeze.cols = Math.max(0, Math.min(s.freeze.cols, s.colCount));
   }
 
   // 同时找到最后一个有数据的行和列
@@ -727,6 +739,7 @@ export function createSheetsOps(
       rowHeights: rh,
       colCount: colC,
       rowCount: rowC,
+      freeze: { rows: 0, cols: 0 },
     };
   }
   const sheets = ref<SheetState[]>([mkSheet('Sheet1')]);
@@ -747,6 +760,8 @@ export function createSheetsOps(
     sh.borders = [...s.borders];
     sh.colCount = s.colCount;
     sh.rowCount = s.rowCount;
+    // 持久化冻结窗格：从 reactive s.freeze 拷贝当前值（不可直接引用 reactive 对象）
+    sh.freeze = { rows: s.freeze.rows, cols: s.freeze.cols };
   }
 
   function loadSheet(i: number) {
@@ -758,6 +773,15 @@ export function createSheetsOps(
     if (sh.merges) Object.assign(s.merges, sh.merges);
     s.selection.value = sh.selection ? { ...sh.selection } : null;
     s.activeCell.value = { ...sh.activeCell };
+    // 若活跃单元格是合并锚点且选区仍为 1×1，自动扩展到合并范围
+    // （避免初始加载时 A1 为合并格但选区仍为单格的问题）
+    const ac = s.activeCell.value;
+    const sel = s.selection.value;
+    const anchorMerge = s.findMerge(ac.col, ac.row);
+    if (anchorMerge && anchorMerge.anchor === s.cellKey(ac.col, ac.row)
+        && (!sel || (sel.startCol === ac.col && sel.startRow === ac.row && sel.endCol === ac.col && sel.endRow === ac.row))) {
+      s.selectCell(ac.col, ac.row);
+    }
     s.scrollX.value = sh.scrollX;
     s.scrollY.value = sh.scrollY;
     s.colWidths.value = [...sh.colWidths];
@@ -766,6 +790,9 @@ export function createSheetsOps(
     const targetCol = Math.max(1, sh.colCount ?? s.colCount);
     const targetRow = Math.max(1, sh.rowCount ?? s.rowCount);
     s.setDims?.(targetCol, targetRow);
+    // 恢复冻结窗格：在 setDims 之后赋值，确保 clamp 时 rowCount/colCount 已正确
+    s.freeze.rows = Math.max(0, Math.min(sh.freeze.rows, s.rowCount));
+    s.freeze.cols = Math.max(0, Math.min(sh.freeze.cols, s.colCount));
     s.syncStyles(sh.styles);
     s.syncBorders(sh.borders ?? [{}]);
     activeSheetIndex.value = i;
@@ -829,6 +856,7 @@ export function createSheetsOps(
       scrollX: src.scrollX, scrollY: src.scrollY,
       colWidths: [...src.colWidths], rowHeights: [...src.rowHeights],
       colCount: src.colCount, rowCount: src.rowCount,
+      freeze: { ...src.freeze },
     };
     sheets.value.splice(i + 1, 0, cp);
     loadSheet(i + 1);
@@ -887,6 +915,10 @@ export function createSheetsOps(
       // 输出逻辑有效范围：仅当与默认值不同时输出，保持旧数据兼容
       if (sh.colCount !== 26) smd.colCount = sh.colCount;
       if (sh.rowCount !== 200) smd.rowCount = sh.rowCount;
+      // 输出冻结窗格：仅在非零时输出，保持旧数据兼容
+      if (sh.freeze.rows !== 0 || sh.freeze.cols !== 0) {
+        smd.freeze = { rows: sh.freeze.rows, cols: sh.freeze.cols };
+      }
       return smd;
     });
     const js = JSON.stringify(out);
@@ -941,6 +973,10 @@ export function createSheetsOps(
   const HEADER_HEIGHT = 28;
   const SB_SIZE = 11;
 
+  // 冻结窗格下 maxScroll 公式不变：scrollX/scrollY 是 body-relative 偏移，
+  // body 可视宽 = viewSize - HEADER - SB - frozenW，max body 偏移 = totalWidth - frozenW - body可视宽
+  //              = totalWidth - frozenW - (viewSize - HEADER - SB - frozenW) = totalWidth - viewSize + HEADER + SB
+  // frozenW 在推导中抵消，与未冻结时一致；clampScroll 同理，故此处无需减去冻结尺寸。
   const maxScrollX = computed(() => Math.max(0, s.totalWidth.value - Math.max(0, viewSize.w - HEADER_WIDTH - SB_SIZE)));
   const maxScrollY = computed(() => Math.max(0, s.totalHeight.value - Math.max(0, viewSize.h - HEADER_HEIGHT - SB_SIZE)));
 

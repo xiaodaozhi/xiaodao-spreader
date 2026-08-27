@@ -207,6 +207,13 @@ export const i18n: Record<string, Record<string, string>> = {
     findNeedSelection: '请先选择范围',
     findReplacedAll: '已替换 {n} 处',
     findClose: '关闭',
+    freezePane: '冻结窗格',
+    freezePanes: '冻结窗格',
+    freezeFirstRow: '冻结首行',
+    freezeFirstCol: '冻结首列',
+    unfreezePanes: '取消冻结',
+    freezeToRow: '冻结至此行',
+    freezeToCol: '冻结至此列',
   },
   'en-US': {
     insert: 'Insert',
@@ -395,6 +402,13 @@ export const i18n: Record<string, Record<string, string>> = {
     findNeedSelection: 'Select a range first',
     findReplacedAll: 'Replaced {n} occurrence(s)',
     findClose: 'Close',
+    freezePane: 'Freeze Panes',
+    freezePanes: 'Freeze Panes',
+    freezeFirstRow: 'Freeze First Row',
+    freezeFirstCol: 'Freeze First Column',
+    unfreezePanes: 'Unfreeze Panes',
+    freezeToRow: 'Freeze to Row',
+    freezeToCol: 'Freeze to Column',
   },
 };
 

@@ -102,6 +102,12 @@ export interface SpreadsheetData {
   [cellRef: string]: { value: string; styleId?: number; style?: CellStyle };
 }
 
+/** 冻结窗格状态：rows/cols 为冻结的行数/列数（0 表示该方向未冻结） */
+export interface FreezePane {
+  rows: number;
+  cols: number;
+}
+
 export interface SheetModelData {
   name: string;
   /** 表格级样式池：styles[0] 始终为默认空样式 {} */
@@ -116,6 +122,8 @@ export interface SheetModelData {
   colCount?: number;
   /** 工作表逻辑有效行数（0-based exclusive）。缺失时回退到默认 200 */
   rowCount?: number;
+  /** 冻结窗格状态；缺省视为未冻结 { rows: 0, cols: 0 } */
+  freeze?: FreezePane;
 }
 
 export interface SheetState {
@@ -137,6 +145,19 @@ export interface SheetState {
   colCount: number;
   /** 工作表逻辑有效行数（0-based exclusive）。随操作动态增长 */
   rowCount: number;
+  /** 冻结窗格状态（默认 { rows: 0, cols: 0 } 表示未冻结） */
+  freeze: FreezePane;
+}
+
+/** 视口区域：冻结窗格将画布划分为四个独立滚动区域 */
+export interface ViewportRegion {
+  kind: 'corner' | 'rows' | 'columns' | 'body';
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  scrollLeft: number;
+  scrollTop: number;
 }
 
 export interface UndoSnapshot {

@@ -59,12 +59,16 @@ const SORT_ARROW_PATHS: Record<SortOrder, string> = {
   desc: 'M832 224v512M672 576l160 160 160-160',
 };
 
+// 冻结窗格图标：田字格 + 左上角实心，表示冻结的 corner 区域
+// 外框 + 横/竖分界线（描边）+ 左上角实心块（fill）
+const FREEZE_ICON = '<svg viewBox="0 0 1024 1024" fill="currentColor"><path fill="none" stroke="currentColor" stroke-width="64" stroke-linejoin="round" stroke-linecap="round" d="M160 160 H864 V864 H160 Z" /><path fill="none" stroke="currentColor" stroke-width="64" stroke-linecap="round" d="M160 448 H864" /><path fill="none" stroke="currentColor" stroke-width="64" stroke-linecap="round" d="M448 160 V864" /><path d="M192 192 H416 V416 H192 Z" /></svg>';
+
 // ============ 工具栏溢出 → 「更多」菜单 ============
 // 工具项顺序与 data-key 一一对应
 const TOOL_KEYS = [
   'undo', 'redo', 'paint', 'clear', 'sep1', 'font', 'fontSize', 'sep2',
   'bold', 'italic', 'underline', 'strike', 'sep3', 'textColor', 'fillColor', 'border',
-  'sep4', 'hAlign', 'vAlign', 'wrap', 'merge', 'sep6', 'numFmt', 'sep7', 'calc', 'sort', 'find',
+  'sep4', 'hAlign', 'vAlign', 'wrap', 'merge', 'sep6', 'numFmt', 'sep7', 'calc', 'sort', 'freeze', 'find',
 ] as const;
 
 const rootEl = ref<HTMLElement | null>(null);
@@ -309,12 +313,21 @@ const emit = defineEmits<{
   (e: 'border-change', v: BorderType): void;
   (e: 'sort-change', v: SortOrder): void;
   (e: 'merge-change', v: MergeType): void;
+  (e: 'freeze-change', v: string): void;
 }>();
 
 // 数字格式：选区格式不一致时触发器显示「混合」
 const nfFallbackLabel = computed(() =>
   props.selNumberFormat === NF_MIXED ? t(props.locale, 'nfMixed') : '',
 );
+
+// 冻结窗格选项
+const freezeOptions = computed<FontOption[]>(() => [
+  { label: t(props.locale, 'freezePanes'), value: 'panes' },
+  { label: t(props.locale, 'freezeFirstRow'), value: 'firstRow' },
+  { label: t(props.locale, 'freezeFirstCol'), value: 'firstCol' },
+  { label: t(props.locale, 'unfreezePanes'), value: 'unfreeze' },
+]);
 </script>
 
 <template>
@@ -1143,6 +1156,30 @@ const nfFallbackLabel = computed(() =>
       </div>
     </Teleport>
 
+    <!-- 冻结窗格 -->
+    <Teleport
+      :disabled="teleportDisabled('freeze')"
+      :to="overflowMenuTarget"
+    >
+      <div
+        class="tb-item"
+        data-key="freeze"
+      >
+        <SpDropdown
+          class="toolbar-freeze"
+          :model-value="''"
+          :options="freezeOptions"
+          :width="isOverflow('freeze') ? '100%' : 44"
+          :menu-width="isOverflow('freeze') ? 120 : undefined"
+          :visible-count="4"
+          align="right"
+          :title="t(locale, 'freezePane')"
+          :trigger-icon="FREEZE_ICON"
+          @change="emit('freeze-change', String($event))"
+        />
+      </div>
+    </Teleport>
+
     <!-- 查找和替换 -->
     <Teleport
       :disabled="teleportDisabled('find')"
@@ -1223,6 +1260,7 @@ const nfFallbackLabel = computed(() =>
 .toolbar-font { flex: 0 0 auto; }
 .toolbar-number-format { flex: 0 0 auto; }
 .toolbar-align { flex: 0 0 auto; }
+.toolbar-freeze { flex: 0 0 auto; }
 .toolbar-font-size { display: inline-flex; align-items: center; gap: 0; height: 26px; position: relative; }
 .toolbar-number-format-group { display: inline-flex; align-items: center; gap: 0; height: 26px; position: relative; }
 .toolbar-font-size__input { width: 36px; height: 26px; border: 1px solid transparent; border-right: none; border-radius: 3px 0 0 3px; background: transparent; color: var(--sp-toolbar-btn-color); font-size: 12px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; text-align: left; padding: 0 5px; outline: none; box-sizing: border-box; appearance: none; -moz-appearance: textfield; }
@@ -1267,6 +1305,7 @@ const nfFallbackLabel = computed(() =>
 .overflow-menu .toolbar-font { width: 100%; }
 .overflow-menu .toolbar-number-format { flex: 1 1 auto; width: auto !important; min-width: 0; }
 .overflow-menu .toolbar-align { width: 100%; }
+.overflow-menu .toolbar-freeze { width: 100%; }
 .overflow-menu .toolbar-btn:not(.toolbar-btn--step):not(.toolbar-split__arrow):not(.toolbar-number-format__btn) { width: 100%; justify-content: flex-start; padding-left: 6px; }
 .overflow-menu .toolbar-number-format__btn { flex: 0 0 auto; width: 30px; }
 .overflow-menu .toolbar-color { width: 100%; }
@@ -1288,6 +1327,7 @@ const nfFallbackLabel = computed(() =>
 .overflow-menu .toolbar-font { width: 100%; }
 .overflow-menu .toolbar-number-format { flex: 1 1 auto; width: auto !important; min-width: 0; }
 .overflow-menu .toolbar-align { width: 100%; }
+.overflow-menu .toolbar-freeze { width: 100%; }
 .overflow-menu .toolbar-btn:not(.toolbar-btn--step):not(.toolbar-split__arrow):not(.toolbar-number-format__btn) { width: 100%; justify-content: flex-start; padding-left: 6px; }
 .overflow-menu .toolbar-number-format__btn { flex: 0 0 auto; width: 30px; }
 .overflow-menu .toolbar-color { width: 100%; }

@@ -142,6 +142,7 @@ export function createUndoStyles(
         scrollX: sh.scrollX, scrollY: sh.scrollY,
         colWidths: [...sh.colWidths], rowHeights: [...sh.rowHeights],
         colCount: sh.colCount, rowCount: sh.rowCount,
+        freeze: { ...sh.freeze },
       })),
       styles: [...s.styles],
       activeSheetIndex: sheetsCtx.activeSheetIndex.value,
@@ -149,12 +150,18 @@ export function createUndoStyles(
   }
 
   function restoreSnap(snap: UndoSnap) {
-    sheetsCtx.sheets.value = snap.sheets.map((x) => ({
-      ...x,
-      cells: cloneCells(x.cells),
-      styles: [...x.styles],
-      borders: x.borders ? [...x.borders] : [{}],
-    }));
+    const liveSheets = sheetsCtx.sheets.value;
+    sheetsCtx.sheets.value = snap.sheets.map((x, i) => {
+      // preserve current freeze state — freeze is view state, not cell data; must not be reverted by undo
+      const currentFreeze = liveSheets[i]?.freeze ?? { rows: 0, cols: 0 };
+      return {
+        ...x,
+        cells: cloneCells(x.cells),
+        styles: [...x.styles],
+        borders: x.borders ? [...x.borders] : [{}],
+        freeze: { rows: currentFreeze.rows, cols: currentFreeze.cols },
+      };
+    });
     sheetsCtx.loadSheet(Math.max(0, Math.min(snap.activeSheetIndex, sheetsCtx.sheets.value.length - 1)));
     s.formulaDeps.rebuild(s.cells, s.colCount, s.rowCount);
   }

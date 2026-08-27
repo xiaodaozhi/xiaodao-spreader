@@ -65,6 +65,8 @@ export interface InteractionsState {
   // 滚动条
   hScrollbarW: ComputedRef<number>;
   vScrollbarH: ComputedRef<number>;
+  hScrollbarLeft: ComputedRef<number>;
+  vScrollbarTop: ComputedRef<number>;
   hTrackW: ComputedRef<number>;
   vTrackH: ComputedRef<number>;
   hThumbW: ComputedRef<number>;
@@ -130,6 +132,22 @@ export function createInteractions(
   // 反向注入到 core-state
   s.scheduleRender = scheduleRender;
 
+  // 屏幕坐标 → 列/行（冻结感知：落在冻结列/行区时不减 scrollX/scrollY）
+  function screenXToCol(x: number): number {
+    const { frozenColumnsWidth } = s.getFrozenMetrics();
+    const logicalX = (frozenColumnsWidth > 0 && x < HEADER_WIDTH + frozenColumnsWidth)
+      ? (x - HEADER_WIDTH)
+      : (x - HEADER_WIDTH + s.scrollX.value);
+    return s.hitCol(logicalX);
+  }
+  function screenYToRow(y: number): number {
+    const { frozenRowsHeight } = s.getFrozenMetrics();
+    const logicalY = (frozenRowsHeight > 0 && y < HEADER_HEIGHT + frozenRowsHeight)
+      ? (y - HEADER_HEIGHT)
+      : (y - HEADER_HEIGHT + s.scrollY.value);
+    return s.hitRow(logicalY);
+  }
+
   const BORDER_COLOR = '#444';
 
   function render() {
@@ -159,20 +177,32 @@ export function createInteractions(
     const rP = s.rowPositions.value;
     const cW = s.colWidths.value;
 
-    const sC = Math.max(0, s.hitCol(sx));
-    let eC2 = sC;
-    for (let c = sC; c < s.colCount; c++) {
+    // ---- 冻结区域尺寸 & body 视口 ----
+    const { frozenRowsHeight, frozenColumnsWidth } = s.getFrozenMetrics();
+    const bodyLeft = HW + frozenColumnsWidth;
+    const bodyTop = HH + frozenRowsHeight;
+    const bodyWidth = Math.max(0, W - HW - SB_SIZE - frozenColumnsWidth);
+    const bodyHeight = Math.max(0, H - HH - SB_SIZE - frozenRowsHeight);
+    const frozenEC = Math.max(0, s.freeze.cols - 1);
+    const frozenER = Math.max(0, s.freeze.rows - 1);
+
+    // body 可见区间（逻辑位置 = 冻结尺寸 + body 相对滚动）
+    const bodySC = Math.max(s.freeze.cols, s.hitCol(frozenColumnsWidth + sx));
+    let bodyEC = bodySC;
+    for (let c = bodySC; c < s.colCount; c++) {
       if (HW + cP[c]! - sx >= W) break;
-      eC2 = c;
+      bodyEC = c;
     }
-    const eC = eC2;
-    const sR = Math.max(0, s.hitRow(sy));
-    let eR2 = sR;
-    for (let r = sR; r < s.rowCount; r++) {
+    const bodySR = Math.max(s.freeze.rows, s.hitRow(frozenRowsHeight + sy));
+    let bodyER = bodySR;
+    for (let r = bodySR; r < s.rowCount; r++) {
       if (HH + rP[r]! - sy >= H) break;
-      eR2 = r;
+      bodyER = r;
     }
-    const eR = eR2;
+    // 并集区间（含冻结区域），供 drawCells/drawBorders 迭代后按区域裁剪
+    let sC = bodySC, eC = bodyEC, sR = bodySR, eR = bodyER;
+    if (frozenColumnsWidth > 0) { sC = 0; eC = Math.max(eC, frozenEC); }
+    if (frozenRowsHeight > 0) { sR = 0; eR = Math.max(eR, frozenER); }
 
     // 合并单元格的内容只在锚点处绘制；若锚点被滚出可视区域而合并区域仍与可视区相交，
     // 需要把循环起点回退到锚点位置，否则该合并区域会整体消失（Bug 修复）
@@ -197,29 +227,19 @@ export function createInteractions(
     rCtx.fillRect(0, 0, W, H);
     rCtx.fillStyle = cs.gridBg;
     rCtx.fillRect(HW, HH, W - HW, H - HH);
-
-    rCtx.save();
-    rCtx.beginPath();
-    rCtx.rect(HW, HH, W - HW, H - HH);
-    rCtx.clip();
     const sel = s.selection.value;
     const ed = s.editingCell.value;
 
-    // 第一步：绘制背景色、选中状态、文本内容
-    for (let row = iterR; row <= eR; row++) {
-      for (let col = iterC; col <= eC; col++) {
+    // 第一步：绘制背景色、选中状态、文本内容（抽取为局部函数 drawCells，坐标改用 cellToScreenRect 以兼容冻结）
+    const drawCells = (rCtx: CanvasRenderingContext2D, sC2: number, eC2: number, sR2: number, eR2: number, rHs: number[]): void => {
+    for (let row = sR2; row <= eR2; row++) {
+      for (let col = sC2; col <= eC2; col++) {
         const mergeInfo = s.findMerge(col, row);
         if (mergeInfo && !(col === mergeInfo.range.startCol && row === mergeInfo.range.startRow)) {
           continue;
         }
-        const x = HW + cP[col]! - sx;
-        const y = HH + rP[row]! - sy;
-        let cw = cW[col]!;
-        let rh = rH[row]!;
-        if (mergeInfo) {
-          cw = cP[mergeInfo.range.endCol + 1]! - cP[col]!;
-          rh = rP[mergeInfo.range.endRow + 1]! - rP[row]!;
-        }
+        const rect2 = s.cellToScreenRect(row, col);
+        const x = rect2.x, y = rect2.y, cw = rect2.width, rh = rect2.height;
         if (x + cw < HW || y + rh < HH || x > W || y > H) continue;
 
         // 查找高亮：整体填充（在背景色之后、选区/文本之前绘制）
@@ -240,7 +260,7 @@ export function createInteractions(
           // row/col 选择模式下按单个 cell 大小填色（Excel 风格「穿透合并单元格」）：
           // 即便 anchor 当前 cw/rh 是合并后的大小，也只填当前 cell(col,row) 对应的 cW[col]/rH[row]。
           if (s.selectionMode.value === 'row' || s.selectionMode.value === 'col') {
-            rCtx.fillRect(x, y, cW[col]!, rH[row]!);
+            rCtx.fillRect(x, y, cW[col]!, rHs[row]!);
           } else {
             rCtx.fillRect(x, y, cw, rh);
           }
@@ -352,6 +372,7 @@ export function createInteractions(
         }
       }
     }
+    };
 
     // 第二步 + 第三步：绘制边框 + 角方块（基于 resolveSharedBorder 统一冲突解析）
     // 辅助：获取某位置的边框侧（考虑 merge，从 anchor 读取）
@@ -362,21 +383,16 @@ export function createInteractions(
       }
       return s.getCellBorderSide(s.cells[s.cellKey(col, row)], side);
     };
+    const drawBorders = (rCtx: CanvasRenderingContext2D, sC2: number, eC2: number, sR2: number, eR2: number, _rHs: number[]): void => {
     rCtx.fillStyle = BORDER_COLOR;
-    for (let row = iterR; row <= eR; row++) {
-      for (let col = iterC; col <= eC; col++) {
+    for (let row = sR2; row <= eR2; row++) {
+      for (let col = sC2; col <= eC2; col++) {
         const mergeInfo = s.findMerge(col, row);
         // 跳过 merge 内部 cell（非 anchor）
         if (mergeInfo && !(col === mergeInfo.range.startCol && row === mergeInfo.range.startRow)) continue;
 
-        const x = HW + cP[col]! - sx;
-        const y = HH + rP[row]! - sy;
-        let cw = cW[col]!;
-        let rh = rH[row]!;
-        if (mergeInfo) {
-          cw = cP[mergeInfo.range.endCol + 1]! - cP[col]!;
-          rh = rP[mergeInfo.range.endRow + 1]! - rP[row]!;
-        }
+        const rect2 = s.cellToScreenRect(row, col);
+        const x = rect2.x, y = rect2.y, cw = rect2.width, rh = rect2.height;
         if (x + cw < HW || y + rh < HH || x > W || y > H) continue;
 
         const cell = s.cells[s.cellKey(col, row)];
@@ -397,7 +413,7 @@ export function createInteractions(
             const neighborBottom = getBorderSideAt(cc, sR - 1, 'bottom');
             const resolved = resolveSharedBorder(neighborBottom, ownBorder.top, 'cell', 'merge');
             if (resolved && resolved.width && resolved.width > 0) {
-              const sxSeg = HW + cP[cc]! - sx;
+              const sxSeg = cc < s.freeze.cols ? (HW + cP[cc]!) : (HW + cP[cc]! - sx);
               rCtx.fillStyle = resolved.color || BORDER_COLOR;
               rCtx.fillRect(sxSeg, y, cW[cc]!, resolved.width);
             }
@@ -409,7 +425,7 @@ export function createInteractions(
             const neighborTop = getBorderSideAt(cc, eRm + 1, 'top');
             const resolved = resolveSharedBorder(ownBorder.bottom, neighborTop, 'merge', 'cell');
             if (resolved && resolved.width && resolved.width > 0) {
-              const sxSeg = HW + cP[cc]! - sx;
+              const sxSeg = cc < s.freeze.cols ? (HW + cP[cc]!) : (HW + cP[cc]! - sx);
               rCtx.fillStyle = resolved.color || BORDER_COLOR;
               rCtx.fillRect(sxSeg, y + rh - resolved.width, cW[cc]!, resolved.width);
             }
@@ -421,7 +437,7 @@ export function createInteractions(
             const neighborRight = getBorderSideAt(sC - 1, rr, 'right');
             const resolved = resolveSharedBorder(neighborRight, ownBorder.left, 'cell', 'merge');
             if (resolved && resolved.width && resolved.width > 0) {
-              const sySeg = HH + rP[rr]! - sy;
+              const sySeg = rr < s.freeze.rows ? (HH + rP[rr]!) : (HH + rP[rr]! - sy);
               const rhSeg = rP[rr + 1]! - rP[rr]!;
               rCtx.fillStyle = resolved.color || BORDER_COLOR;
               rCtx.fillRect(x, sySeg, resolved.width, rhSeg);
@@ -434,7 +450,7 @@ export function createInteractions(
             const neighborLeft = getBorderSideAt(eCm + 1, rr, 'left');
             const resolved = resolveSharedBorder(ownBorder.right, neighborLeft, 'merge', 'cell');
             if (resolved && resolved.width && resolved.width > 0) {
-              const sySeg = HH + rP[rr]! - sy;
+              const sySeg = rr < s.freeze.rows ? (HH + rP[rr]!) : (HH + rP[rr]! - sy);
               const rhSeg = rP[rr + 1]! - rP[rr]!;
               rCtx.fillStyle = resolved.color || BORDER_COLOR;
               rCtx.fillRect(x + cw - resolved.width, sySeg, resolved.width, rhSeg);
@@ -554,12 +570,62 @@ export function createInteractions(
         }
       }
     }
+    };
+
+    // PASS 1：body 区域裁剪
+    rCtx.save();
+    rCtx.beginPath();
+    rCtx.rect(bodyLeft, bodyTop, bodyWidth, bodyHeight);
+    rCtx.clip();
+    drawCells(rCtx, iterC, eC, iterR, eR, rH);
+    drawBorders(rCtx, iterC, eC, iterR, eR, rH);
     rCtx.restore();
+
+    // PASS 2：冻结区域（corner / rows / columns）
+    if (frozenColumnsWidth > 0 || frozenRowsHeight > 0) {
+      rCtx.save();
+      rCtx.beginPath();
+      if (frozenColumnsWidth > 0 && frozenRowsHeight > 0) {
+        rCtx.rect(HW, HH, frozenColumnsWidth, frozenRowsHeight);
+      }
+      if (frozenRowsHeight > 0) {
+        rCtx.rect(bodyLeft, HH, bodyWidth, frozenRowsHeight);
+      }
+      if (frozenColumnsWidth > 0) {
+        rCtx.rect(HW, bodyTop, frozenColumnsWidth, bodyHeight);
+      }
+      rCtx.clip();
+      // 冻结区域整体清底：fillRect 受 clip 约束，只覆盖冻结区域
+      // 必须在 drawCells 之前执行，否则空白 cell（无显式 bgColor）会透出 Body 滚动后的内容
+      rCtx.fillStyle = cs.gridBg;
+      rCtx.fillRect(0, 0, W, H);
+      drawCells(rCtx, iterC, eC, iterR, eR, rH);
+      drawBorders(rCtx, iterC, eC, iterR, eR, rH);
+      rCtx.restore();
+    }
+
+    // 冻结分隔线（直接绘制，不属于 border pool）
+    if (frozenColumnsWidth > 0) {
+      rCtx.strokeStyle = cs.headerSep;
+      rCtx.lineWidth = 1;
+      rCtx.beginPath();
+      rCtx.moveTo(bodyLeft + 0.5, HH);
+      rCtx.lineTo(bodyLeft + 0.5, H);
+      rCtx.stroke();
+    }
+    if (frozenRowsHeight > 0) {
+      rCtx.strokeStyle = cs.headerSep;
+      rCtx.lineWidth = 1;
+      rCtx.beginPath();
+      rCtx.moveTo(HW, bodyTop + 0.5);
+      rCtx.lineTo(W, bodyTop + 0.5);
+      rCtx.stroke();
+    }
 
     // 列标题
     rCtx.fillStyle = cs.headerBg;
     rCtx.fillRect(HW, 0, W - HW, HH);
-    for (let col = sC; col <= eC; col++) {
+    for (let col = bodySC; col <= bodyEC; col++) {
       const x = HW + cP[col]! - sx, cw = cW[col]!;
       if (x + cw < HW || x > W) continue;
       if (sel && col >= sel.startCol && col <= sel.endCol) {
@@ -583,6 +649,35 @@ export function createInteractions(
       rCtx.textBaseline = 'middle';
       rCtx.fillText(colToLabel(col), x + cw / 2, HH / 2);
     }
+    // 冻结列标题（不滚动，覆盖在 body 之上，防止 body 标题透过）
+    if (frozenColumnsWidth > 0) {
+      rCtx.fillStyle = cs.headerBg;
+      rCtx.fillRect(HW, 0, frozenColumnsWidth, HH);
+      for (let col = 0; col <= frozenEC; col++) {
+        const x = HW + cP[col]!, cw = cW[col]!;
+        if (x + cw < HW || x > W) continue;
+        if (sel && col >= sel.startCol && col <= sel.endCol) {
+          rCtx.fillStyle = cs.selectionBg;
+          rCtx.fillRect(x, 0, cw, HH);
+        }
+        rCtx.strokeStyle = cs.headerBorder;
+        rCtx.lineWidth = 0.5;
+        rCtx.strokeRect(x + 0.25, 0.25, cw - 0.5, HH - 0.5);
+        if (sel && col >= sel.startCol && col <= sel.endCol) {
+          rCtx.strokeStyle = cs.activeCellBorder;
+          rCtx.lineWidth = 2;
+          rCtx.beginPath();
+          rCtx.moveTo(x, HH - 1);
+          rCtx.lineTo(x + cw, HH - 1);
+          rCtx.stroke();
+        }
+        rCtx.fillStyle = cs.headerText;
+        rCtx.font = '11px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+        rCtx.textAlign = 'center';
+        rCtx.textBaseline = 'middle';
+        rCtx.fillText(colToLabel(col), x + cw / 2, HH / 2);
+      }
+    }
     rCtx.strokeStyle = cs.headerSep;
     rCtx.lineWidth = 1;
     rCtx.beginPath();
@@ -593,7 +688,7 @@ export function createInteractions(
     // 行标题
     rCtx.fillStyle = cs.headerBg;
     rCtx.fillRect(0, HH, HW, H - HH);
-    for (let row = sR; row <= eR; row++) {
+    for (let row = bodySR; row <= bodyER; row++) {
       const y = HH + rP[row]! - sy, rh = rH[row]!;
       if (y + rh < HH || y > H) continue;
       if (sel && row >= sel.startRow && row <= sel.endRow) {
@@ -616,6 +711,35 @@ export function createInteractions(
       rCtx.textAlign = 'center';
       rCtx.textBaseline = 'middle';
       rCtx.fillText(String(row + 1), HW / 2, y + rh / 2 + 0.5);
+    }
+    // 冻结行标题（不滚动，覆盖在 body 之上）
+    if (frozenRowsHeight > 0) {
+      rCtx.fillStyle = cs.headerBg;
+      rCtx.fillRect(0, HH, HW, frozenRowsHeight);
+      for (let row = 0; row <= frozenER; row++) {
+        const y = HH + rP[row]!, rh = rH[row]!;
+        if (y + rh < HH || y > H) continue;
+        if (sel && row >= sel.startRow && row <= sel.endRow) {
+          rCtx.fillStyle = cs.selectionBg;
+          rCtx.fillRect(0, y, HW, rh);
+        }
+        rCtx.strokeStyle = cs.headerBorder;
+        rCtx.lineWidth = 0.5;
+        rCtx.strokeRect(0.25, y + 0.25, HW - 0.5, rh - 0.5);
+        if (sel && row >= sel.startRow && row <= sel.endRow) {
+          rCtx.strokeStyle = cs.activeCellBorder;
+          rCtx.lineWidth = 2;
+          rCtx.beginPath();
+          rCtx.moveTo(HW - 1, y);
+          rCtx.lineTo(HW - 1, y + rh);
+          rCtx.stroke();
+        }
+        rCtx.fillStyle = cs.headerText;
+        rCtx.font = '11px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+        rCtx.textAlign = 'center';
+        rCtx.textBaseline = 'middle';
+        rCtx.fillText(String(row + 1), HW / 2, y + rh / 2 + 0.5);
+      }
     }
     rCtx.strokeStyle = cs.headerSep;
     rCtx.lineWidth = 1;
@@ -1139,6 +1263,10 @@ export function createInteractions(
       } },
       { label: `${t(s.locale.value, 'rowHeight')}...`, action: () => openDimPanel('row', mx, my) },
       { label: t(s.locale.value, 'autoRowHeight'), action: () => so.resetRowHeight() },
+      { label: t(s.locale.value, 'freezeToRow'), action: () => {
+        s.setFreeze(row + 1, s.freeze.cols);
+        scheduleRender();
+      } },
     ]);
   }
   function onColHdrCtx(e: MouseEvent, col: number) {
@@ -1191,6 +1319,10 @@ export function createInteractions(
       ] },
       { label: `${t(s.locale.value, 'colWidth')}...`, action: () => openDimPanel('col', mx, my) },
       { label: t(s.locale.value, 'defaultColWidth'), action: () => so.resetColWidth() },
+      { label: t(s.locale.value, 'freezeToCol'), action: () => {
+        s.setFreeze(s.freeze.rows, col + 1);
+        scheduleRender();
+      } },
     ]);
   }
   function onCellCtx(e: MouseEvent, c: number, r: number) {
@@ -1380,11 +1512,12 @@ export function createInteractions(
       padBottom = pv;
       padTop = Math.max(0, rhVal - totalTextH - padBottom);
     }
+    const rect = s.cellToScreenRect(r, c);
     return {
-      left: `${HEADER_WIDTH + s.colPositions.value[c]! - s.scrollX.value}px`,
-      top: `${HEADER_HEIGHT + s.rowPositions.value[r]! - s.scrollY.value}px`,
-      width: `${cwVal}px`,
-      height: `${rhVal}px`,
+      left: `${rect.x}px`,
+      top: `${rect.y}px`,
+      width: `${rect.width}px`,
+      height: `${rect.height}px`,
       fontFamily: ffa,
       fontSize: `${fsz}px`,
       lineHeight: 1 as const,
@@ -1413,13 +1546,16 @@ export function createInteractions(
   function gridVH() {
     return Math.max(0, so.viewSize.h - HEADER_HEIGHT - SB_SIZE);
   }
-  const hScrollbarW = computed(() => gridVW());
-  const vScrollbarH = computed(() => gridVH());
+  const hScrollbarW = computed(() => Math.max(0, gridVW() - s.getFrozenMetrics().frozenColumnsWidth));
+  const vScrollbarH = computed(() => Math.max(0, gridVH() - s.getFrozenMetrics().frozenRowsHeight));
+  // 滚动条容器偏移：水平条左端、垂直条顶端需避开冻结区域
+  const hScrollbarLeft = computed(() => HEADER_WIDTH + s.getFrozenMetrics().frozenColumnsWidth);
+  const vScrollbarTop = computed(() => HEADER_HEIGHT + s.getFrozenMetrics().frozenRowsHeight);
   const hTrackW = computed(() => Math.max(0, hScrollbarW.value - 11 * 2));
   const vTrackH = computed(() => Math.max(0, vScrollbarH.value - 11 * 2));
   const hThumbW = computed(() => {
     if (so.maxScrollX.value <= 0) return hTrackW.value;
-    return Math.max(24, (gridVW() / s.totalWidth.value) * hTrackW.value);
+    return Math.max(24, (hScrollbarW.value / s.totalWidth.value) * hTrackW.value);
   });
   const hThumbL = computed(() => {
     if (so.maxScrollX.value <= 0) return 0;
@@ -1427,7 +1563,7 @@ export function createInteractions(
   });
   const vThumbH = computed(() => {
     if (so.maxScrollY.value <= 0) return vTrackH.value;
-    return Math.max(24, (gridVH() / s.totalHeight.value) * vTrackH.value);
+    return Math.max(24, (vScrollbarH.value / s.totalHeight.value) * vTrackH.value);
   });
   const vThumbT = computed(() => {
     if (so.maxScrollY.value <= 0) return 0;
@@ -1511,8 +1647,9 @@ export function createInteractions(
     const p = getCanvasXY(e, so.canvasRef.value);
     if (p.y < HEADER_HEIGHT && p.x >= HEADER_WIDTH) {
       const gx = p.x - HEADER_WIDTH + s.scrollX.value;
-      const c = s.hitCol(gx);
-      if (c >= 0 && Math.abs(p.x - (HEADER_WIDTH + s.colPositions.value[c + 1]! - s.scrollX.value)) <= 4) {
+      const c = screenXToCol(p.x);
+      const cRight = c >= 0 ? (s.cellToScreenRect(0, c).x + s.colWidths.value[c]!) : -1;
+      if (c >= 0 && Math.abs(p.x - cRight) <= 4) {
         us.saveUndo();
         isResizingC = true;
         rszTC = c;
@@ -1524,8 +1661,9 @@ export function createInteractions(
     }
     if (p.x < HEADER_WIDTH && p.y >= HEADER_HEIGHT) {
       const gy = p.y - HEADER_HEIGHT + s.scrollY.value;
-      const r = s.hitRow(gy);
-      if (r >= 0 && Math.abs(p.y - (HEADER_HEIGHT + s.rowPositions.value[r + 1]! - s.scrollY.value)) <= 4) {
+      const r = screenYToRow(p.y);
+      const rBottom = r >= 0 ? (s.cellToScreenRect(r, 0).y + s.getRowHeight(r)) : -1;
+      if (r >= 0 && Math.abs(p.y - rBottom) <= 4) {
         us.saveUndo();
         isResizingR = true;
         rszTR = r;
@@ -1543,7 +1681,7 @@ export function createInteractions(
         if (s.editingCell.value || focusOnFb || fbDirty) acceptFormulaBarEdit();
       }
       if (p.y < HEADER_HEIGHT && p.x >= HEADER_WIDTH) {
-        const c = s.hitCol(p.x - HEADER_WIDTH + s.scrollX.value);
+        const c = screenXToCol(p.x);
         if (c >= 0) {
           s.selectRange(c, 0, c, s.rowCount - 1, 'col');
           isDragging = true;
@@ -1551,7 +1689,7 @@ export function createInteractions(
           drgSR = 0;
         }
       } else if (p.x < HEADER_WIDTH && p.y >= HEADER_HEIGHT) {
-        const r = s.hitRow(p.y - HEADER_HEIGHT + s.scrollY.value);
+        const r = screenYToRow(p.y);
         if (r >= 0) {
           s.selectRange(0, r, s.colCount - 1, r, 'row');
           isDragging = true;
@@ -1564,8 +1702,9 @@ export function createInteractions(
       scheduleRender();
       return;
     }
-    const c = s.hitCol(p.x - HEADER_WIDTH + s.scrollX.value), r = s.hitRow(p.y - HEADER_HEIGHT + s.scrollY.value);
-    if (c < 0 || r < 0) return;
+    const hit = s.screenToCell(p.x, p.y);
+    if (!hit) return;
+    const c = hit.col, r = hit.row;
     // 点击单元格：只有编辑中/公式栏 focus/改过 才先 accept，纯选区切换跳过（防止误清空）
     {
       const fbRef = so.formulaBarRef.value;
@@ -1615,15 +1754,17 @@ export function createInteractions(
       }
       const p = getCanvasXY(e, cvs);
       if (p.y < HEADER_HEIGHT && p.x >= HEADER_WIDTH) {
-        const c = s.hitCol(p.x - HEADER_WIDTH + s.scrollX.value);
-        if (c >= 0 && Math.abs(p.x - (HEADER_WIDTH + s.colPositions.value[c + 1]! - s.scrollX.value)) <= 4) {
+        const c = screenXToCol(p.x);
+        const cRight = c >= 0 ? (s.cellToScreenRect(0, c).x + s.colWidths.value[c]!) : -1;
+        if (c >= 0 && Math.abs(p.x - cRight) <= 4) {
           cvs.style.cursor = 'col-resize';
           return;
         }
       }
       if (p.x < HEADER_WIDTH && p.y >= HEADER_HEIGHT) {
-        const r = s.hitRow(p.y - HEADER_HEIGHT + s.scrollY.value);
-        if (r >= 0 && Math.abs(p.y - (HEADER_HEIGHT + s.rowPositions.value[r + 1]! - s.scrollY.value)) <= 4) {
+        const r = screenYToRow(p.y);
+        const rBottom = r >= 0 ? (s.cellToScreenRect(r, 0).y + s.getRowHeight(r)) : -1;
+        if (r >= 0 && Math.abs(p.y - rBottom) <= 4) {
           cvs.style.cursor = 'row-resize';
           return;
         }
@@ -1635,17 +1776,18 @@ export function createInteractions(
     if (drgSC < 0 || drgSR < 0) return;
     if (p.x < HEADER_WIDTH || p.y < HEADER_HEIGHT) {
       if (p.y < HEADER_HEIGHT && p.x >= HEADER_WIDTH) {
-        const c = s.hitCol(p.x - HEADER_WIDTH + s.scrollX.value);
+        const c = screenXToCol(p.x);
         if (c >= 0) s.selectRange(Math.min(drgSC, c), 0, Math.max(drgSC, c), s.rowCount - 1, 'col');
       } else if (p.x < HEADER_WIDTH && p.y >= HEADER_HEIGHT) {
-        const r = s.hitRow(p.y - HEADER_HEIGHT + s.scrollY.value);
+        const r = screenYToRow(p.y);
         if (r >= 0) s.selectRange(0, Math.min(drgSR, r), s.colCount - 1, Math.max(drgSR, r), 'row');
       }
       scheduleRender();
       return;
     }
-    const c = s.hitCol(p.x - HEADER_WIDTH + s.scrollX.value), r = s.hitRow(p.y - HEADER_HEIGHT + s.scrollY.value);
-    if (c < 0 || r < 0) return;
+    const hit = s.screenToCell(p.x, p.y);
+    if (!hit) return;
+    const c = hit.col, r = hit.row;
     if (drgSR === 0 && drgSC >= 0 && s.selection.value && s.selection.value.startRow === 0 && s.selection.value.endRow === s.rowCount - 1) {
       s.selectRange(Math.min(drgSC, c), 0, Math.max(drgSC, c), s.rowCount - 1, 'col');
     } else if (drgSC === 0 && drgSR >= 0 && s.selection.value && s.selection.value.startCol === 0 && s.selection.value.endCol === s.colCount - 1) {
@@ -1681,25 +1823,26 @@ export function createInteractions(
       return;
     }
     if (p.y < HEADER_HEIGHT && p.x >= HEADER_WIDTH) {
-      const c = s.hitCol(p.x - HEADER_WIDTH + s.scrollX.value);
+      const c = screenXToCol(p.x);
       if (c >= 0) onColHdrCtx(e, c);
       return;
     }
     if (p.x < HEADER_WIDTH && p.y >= HEADER_HEIGHT) {
-      const r = s.hitRow(p.y - HEADER_HEIGHT + s.scrollY.value);
+      const r = screenYToRow(p.y);
       if (r >= 0) onRowHdrCtx(e, r);
       return;
     }
     if (p.x >= HEADER_WIDTH && p.y >= HEADER_HEIGHT) {
-      const c = s.hitCol(p.x - HEADER_WIDTH + s.scrollX.value), r = s.hitRow(p.y - HEADER_HEIGHT + s.scrollY.value);
-      if (c >= 0 && r >= 0) onCellCtx(e, c, r);
+      const hit = s.screenToCell(p.x, p.y);
+      if (hit) onCellCtx(e, hit.col, hit.row);
     }
   }
   function onDblClick(e: MouseEvent) {
     const p = getCanvasXY(e, so.canvasRef.value);
     if (p.x < HEADER_WIDTH || p.y < HEADER_HEIGHT) return;
-    const c = s.hitCol(p.x - HEADER_WIDTH + s.scrollX.value), r = s.hitRow(p.y - HEADER_HEIGHT + s.scrollY.value);
-    if (c < 0 || r < 0) return;
+    const hit = s.screenToCell(p.x, p.y);
+    if (!hit) return;
+    const c = hit.col, r = hit.row;
     // 双击进入单元格编辑：只有编辑中/公式栏 focus/改过 才先 accept，纯切换跳过
     {
       const fbRef = so.formulaBarRef.value;
@@ -1752,8 +1895,8 @@ export function createInteractions(
       tSY = y;
       tSSX = s.scrollX.value;
       tSSY = s.scrollY.value;
-      tSC = s.hitCol(x - HEADER_WIDTH + s.scrollX.value);
-      tSR = s.hitRow(y - HEADER_HEIGHT + s.scrollY.value);
+      tSC = screenXToCol(x);
+      tSR = screenYToRow(y);
     } else if (x >= 0 && y >= 0 && (x < HEADER_WIDTH || y < HEADER_HEIGHT)) {
       // 列表头 / 行表头 / 左上角全选按钮：同样支持平移滚动与点按选择
       e.preventDefault();
@@ -1765,11 +1908,11 @@ export function createInteractions(
       tSSY = s.scrollY.value;
       if (y < HEADER_HEIGHT && x >= HEADER_WIDTH) {
         tZone = 'col';
-        tSC = s.hitCol(x - HEADER_WIDTH + s.scrollX.value);
+        tSC = screenXToCol(x);
         tSR = -1;
       } else if (x < HEADER_WIDTH && y >= HEADER_HEIGHT) {
         tZone = 'row';
-        tSR = s.hitRow(y - HEADER_HEIGHT + s.scrollY.value);
+        tSR = screenYToRow(y);
         tSC = -1;
       } else {
         tZone = 'all';
@@ -2128,6 +2271,8 @@ export function createInteractions(
               sh.merges![k] = { ...mr };
             }
           }
+          // 恢复冻结窗格：loadSheet(0) 会再做一次 clamp
+          sh.freeze = smd.freeze ? { rows: smd.freeze.rows, cols: smd.freeze.cols } : { rows: 0, cols: 0 };
           return sh;
         });
         if (so.sheets.value.length > 0) so.loadSheet(0);
@@ -2192,11 +2337,21 @@ export function createInteractions(
             sh.merges![k] = { ...mr };
           }
         }
+        // 恢复冻结窗格：loadSheet(0) 会再做一次 clamp
+        sh.freeze = smd.freeze ? { rows: smd.freeze.rows, cols: smd.freeze.cols } : { rows: 0, cols: 0 };
         return sh;
       });
       if (so.sheets.value.length > 0) so.loadSheet(0);
       if (savedSel) s.selection.value = savedSel;
       s.activeCell.value = savedActive;
+      // 若活跃单元格是合并锚点且选区仍为 1×1，自动扩展到合并范围
+      const acW = s.activeCell.value;
+      const selW = s.selection.value;
+      const mergeW = s.findMerge(acW.col, acW.row);
+      if (mergeW && mergeW.anchor === s.cellKey(acW.col, acW.row)
+          && (!selW || (selW.startCol === acW.col && selW.startRow === acW.row && selW.endCol === acW.col && selW.endRow === acW.row))) {
+        s.selectCell(acW.col, acW.row);
+      }
       scheduleRender();
     }, { deep: true });
 
@@ -2252,6 +2407,8 @@ export function createInteractions(
 
     hScrollbarW,
     vScrollbarH,
+    hScrollbarLeft,
+    vScrollbarTop,
     hTrackW,
     vTrackH,
     hThumbW,
