@@ -1679,34 +1679,21 @@ export function createInteractions(
     }, 0);
   }
   const ctxSubmenuLeft = ref(false);
-  function onCtxItemEnter(e: MouseEvent, item: ContextMenuItem) {
-    if (item.disabled) {
-      ctxSubmenuLeft.value = false;
-      return;
-    }
-    if (!item.children) {
-      ctxSubmenuLeft.value = false;
-      return;
-    }
-    const el = e.currentTarget as HTMLElement;
-    const sub = el.querySelector('.context-submenu') as HTMLElement | null;
-    if (!sub) {
-      ctxSubmenuLeft.value = false;
-      return;
-    }
-    // 用父项右缘 + 子菜单固有宽度判定是否溢出（不依赖子菜单当前左右位置），避免先右后左的闪烁
-    const elRect = el.getBoundingClientRect();
-    const subWidth = sub.getBoundingClientRect().width;
-    ctxSubmenuLeft.value = elRect.right + subWidth > window.innerWidth;
+  function onCtxItemEnter(_e: MouseEvent, _item: ContextMenuItem) {
+    // 子菜单弹出方向已在 showCtx 时由 predictCtxSubmenuDir() 按真实几何一次性确定并锁定，
+    // 此处不再重算。否则 hover/触屏点中父项时方向被纠正，必然产生一帧陈旧值 → 闪动。
   }
-  // 菜单渲染后，按真实子菜单宽度预判弹出方向（与 onCtxItemEnter 同一判据）。
-  // 作用：showCtx 首帧即给出正确方向，消除「硬编码 150 预判」与「onCtxItemEnter 实测」不一致
-  // 造成的先左后右 / 先右后左闪动（单元格靠中间时尤为明显）。
+  // 菜单渲染后，按真实几何一次性确定子菜单弹出方向（左/右），并锁定到 ctxSubmenuLeft。
+  // 关键：方向只在此处算一次，onCtxItemEnter 不再改动，因此子菜单首帧绘制即正确，无任何纠正帧，
+  // 彻底消除「先右后左 / 先左后右」闪动。所有子菜单共享同一右缘（菜单右缘），故取最大子菜单宽度判定即可。
   function predictCtxSubmenuDir() {
     const menuEl = document.querySelector('.context-menu') as HTMLElement | null;
-    if (!menuEl) return;
+    if (!menuEl) {
+      ctxSubmenuLeft.value = false;
+      return;
+    }
+    const menuRight = menuEl.getBoundingClientRect().right;
     let maxSubW = 0;
-    let refRight = 0;
     menuEl.querySelectorAll('.context-menu__item').forEach((it) => {
       const sub = it.querySelector(':scope > .context-submenu') as HTMLElement | null;
       if (!sub) return;
@@ -1714,16 +1701,14 @@ export function createInteractions(
       sub.style.display = 'block';
       const w = sub.getBoundingClientRect().width;
       sub.style.display = prev;
-      if (w > maxSubW) {
-        maxSubW = w;
-        refRight = (it as HTMLElement).getBoundingClientRect().right;
-      }
+      if (w > maxSubW) maxSubW = w;
     });
+    // 取所有子菜单中的最大宽度与菜单右缘判定，宁左勿右（左弹不会裁切，右弹溢出才裁切）
     if (maxSubW === 0) {
-      ctxSubmenuLeft.value = false;
+      ctxSubmenuLeft.value = window.innerWidth - menuRight < 200;
       return;
     }
-    ctxSubmenuLeft.value = refRight + maxSubW > window.innerWidth;
+    ctxSubmenuLeft.value = menuRight + maxSubW > window.innerWidth;
   }
 
   function onTabCtxMenu(e: MouseEvent, i: number) {
