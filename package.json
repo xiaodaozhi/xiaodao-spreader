@@ -9,7 +9,10 @@
     "vue",
     "canvas",
     "spreader",
-    "sheet"
+    "sheet",
+    "table",
+    "spreadsheet",
+    "excel"
   ],
   "files": [
     "dist"
