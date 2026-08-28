@@ -594,14 +594,16 @@ function tokenize(s: string): Tok[] {
       toks.push({ type: 'num', val: num, start });
       continue;
     }
-    if (/[A-Za-z_]/.test(ch)) {
+    if (/[A-Za-z_$]/.test(ch)) {
       const start = i;
       let name = '';
-      while (i < s.length && /[A-Za-z0-9_]/.test(s[i]!)) {
+      // 允许单元格引用包含 $ 前缀（绝对引用 $B$2 / 混合引用 $A1 / B$2）
+      while (i < s.length && /[A-Za-z0-9_$]/.test(s[i]!)) {
         name += s[i];
         i++;
       }
-      if (s[i] === '(') {
+      // 函数名不能以 $ 开头、也不能含 $；只有 ref 允许 $
+      if (s[i] === '(' && !name.includes('$')) {
         toks.push({ type: 'func', val: name, start });
       } else {
         toks.push({ type: 'ref', val: name, start });
@@ -871,6 +873,33 @@ export function computeCellValue(
   if (!raw.startsWith('=')) return raw;
   const result = evalFormula(cellKey(col, row), cells, colCount, rowCount);
   return result === null ? '#ERROR' : String(result);
+}
+
+/** 独立求值一段公式表达式（不含前导 '='），返回 FormulaValue。
+ *  与 evalFormula 不同，本函数不绑定具体单元格身份，适合条件格式等「以任意基准单元格求值」的场景。 */
+export function evalFormulaText(
+  formula: string,
+  cells: Record<string, CellData>,
+  colCount: number,
+  rowCount: number,
+): FormulaValue {
+  return evalExpr(formula, cells, colCount, rowCount, 0);
+}
+
+/** 求一段「条件表达式」的布尔值（条件格式等场景）：
+ *  - 剥离可能的前导 '='（Excel 习惯输入 "=A1>100"）
+ *  - 含顶层比较运算符（< <= > >= = <>）按比较结果返回
+ *  - 否则按标量真值（数字非 0、非空字符串为真）
+ *  与 evalExpr 不同，本函数能正确处理 "A1>100" 这类比较表达式。 */
+export function evalFormulaCondition(
+  formula: string,
+  cells: Record<string, CellData>,
+  colCount: number,
+  rowCount: number,
+): boolean {
+  const e = formula.trim().replace(/^=/, '');
+  if (!e) return false;
+  return evalCondition(e, cells, colCount, rowCount, 0);
 }
 
 /** 将公式中所有单元格引用偏移 dCol, dRow（支持 $ 绝对引用） */

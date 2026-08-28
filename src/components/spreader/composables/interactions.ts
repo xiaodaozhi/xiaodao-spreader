@@ -298,6 +298,12 @@ export function createInteractions(
             rCtx.fillStyle = bgColor;
             rCtx.fillRect(x, y, cw, rh);
           }
+          // 条件格式：临时合成 Render Style（Base + CF），不写回 cell.style
+          const cf = s.resolveConditionalFormat(col, row);
+          if (cf?.backgroundColor) {
+            rCtx.fillStyle = cf.backgroundColor;
+            rCtx.fillRect(x, y, cw, rh);
+          }
           if (hl) {
             rCtx.fillStyle = hl === 'active' ? cs.findActiveBg : cs.findMatchBg;
             rCtx.fillRect(x, y, cw, rh);
@@ -334,11 +340,11 @@ export function createInteractions(
             if (v) {
               const fsz = s.cellFontSize(col, row);
               const ffa = typeof st?.fontFamily === 'string' && st.fontFamily ? st.fontFamily : DEFAULT_FONT_FAMILY;
-              const fw = st?.fontWeight === 'bold' ? 'bold' : 'normal';
-              const fstyle = st?.fontStyle === 'italic' ? 'italic' : 'normal';
-              const hasU = st?.underline === 'underline';
-              const hasS = st?.strikethrough === 'line-through';
-              const txtColor = typeof st?.color === 'string' ? st.color : '';
+              const fw = st?.fontWeight === 'bold' || cf?.fontWeight === 'bold' ? 'bold' : 'normal';
+              const fstyle = st?.fontStyle === 'italic' || cf?.fontStyle === 'italic' ? 'italic' : 'normal';
+              const hasU = st?.underline === 'underline' || cf?.underline === 'underline';
+              const hasS = st?.strikethrough === 'line-through' || cf?.strikethrough === 'line-through';
+              const txtColor = cf?.color || (typeof st?.color === 'string' ? st.color : '');
               // 默认水平对齐：仅显示时生效（不落 style）— 数值类格式/常规数字 右对齐，其他左对齐
               const hAlign = typeof st?.textAlign === 'string' ? st.textAlign : (shouldAlignRightByDefault(rawV, nf) ? 'right' : 'left');
               const vAlign = typeof st?.verticalAlign === 'string' ? st.verticalAlign : 'top';
@@ -526,11 +532,12 @@ export function createInteractions(
       if (!v) return;
       const fsz = s.cellFontSize(col, row);
       const ffa = typeof st?.fontFamily === 'string' && st.fontFamily ? st.fontFamily : DEFAULT_FONT_FAMILY;
-      const fw = st?.fontWeight === 'bold' ? 'bold' : 'normal';
-      const fstyle = st?.fontStyle === 'italic' ? 'italic' : 'normal';
-      const hasU = st?.underline === 'underline';
-      const hasS = st?.strikethrough === 'line-through';
-      const txtColor = typeof st?.color === 'string' ? st.color : '';
+      const cfMt = s.resolveConditionalFormat(col, row);
+      const fw = st?.fontWeight === 'bold' || cfMt?.fontWeight === 'bold' ? 'bold' : 'normal';
+      const fstyle = st?.fontStyle === 'italic' || cfMt?.fontStyle === 'italic' ? 'italic' : 'normal';
+      const hasU = st?.underline === 'underline' || cfMt?.underline === 'underline';
+      const hasS = st?.strikethrough === 'line-through' || cfMt?.strikethrough === 'line-through';
+      const txtColor = cfMt?.color || (typeof st?.color === 'string' ? st.color : '');
       const hAlign = typeof st?.textAlign === 'string' ? st.textAlign : (shouldAlignRightByDefault(rawV, nf) ? 'right' : 'left');
       const vAlign = typeof st?.verticalAlign === 'string' ? st.verticalAlign : 'top';
       ctx.fillStyle = txtColor || cs.cellText;
@@ -767,7 +774,9 @@ export function createInteractions(
         const ix = Math.max(ax, vx);
         const iy = Math.max(ay, vy);
         if (segRight <= ix || segBottom <= iy) continue;
-        const bg = s.resolveStyle(s.cells[s.cellKey(aC, aR)])?.backgroundColor;
+        const baseBg = s.resolveStyle(s.cells[s.cellKey(aC, aR)])?.backgroundColor;
+        const cfBg = s.resolveConditionalFormat(aC, aR)?.backgroundColor;
+        const bg = cfBg || baseBg;
         if (bg) {
           ctx.fillStyle = bg;
           ctx.fillRect(ix, iy, segRight - ix, segBottom - iy);

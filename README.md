@@ -32,6 +32,7 @@ A high-performance, canvas-based spreadsheet component for Vue 3: bringing an Ex
 - **Sorting & Sort Warning**: Sort any column by its **displayed content** (numbers / dates / text); sorting moves data only, never cell styles; ranges containing merged cells or formulas are auto-disabled; when adjacent data sits outside the selection, an Excel-style **Sort Warning** dialog lets you choose "Expand the selection" or "Sort the current selection only"
 - **Auto Filter (AutoFilter)**: Excel-style auto filter on a normal range. Enable via the toolbar **Data → Filter** or `Ctrl+Shift+L`; select a data cell (or a single-row multi-column range) and the filter is created by intelligently probing the contiguous data region **downward** from that header row. Each column header shows a filter drop-down arrow; opening it reveals the filter panel (values / text / number / date / search / blanks / multi-column AND). Clearing one column's criteria clears only that column; removing the AutoFilter clears everything. Only columns inside the Filter Range get an arrow; selecting a single merged cell with no active filter disables the filter button — *see [Auto Filter (AutoFilter)](#auto-filter-autofilter)*
 - **Find & Replace**: Open via the toolbar find button or `Ctrl/Cmd+F` (also `Ctrl/Cmd+H`); three scopes: current sheet / entire workbook / current selection; match case and match entire cell; highlights all matches and locates the active one with wrap-around navigation; single and replace-all both integrate with undo/redo, mutating only the raw `value` (always kept a string), never format / border / merge
+- **Conditional Formatting**: Excel-style conditional formatting rules stored per-sheet. The toolbar "Conditional Formatting" dropdown offers preset rules (greater than / less than / between / text contains / duplicate / unique / blank / not blank) and a "New Rule" dialog with cell value and formula-based conditions. Rules render as temporary style overlays on top of the base cell style — no mutation of the underlying cell `value` or `styleId`. Rule priority (smaller number = higher), `stopIfTrue` semantics, and automatic cache invalidation on cell value change. Inserting / deleting rows or columns adjusts rule ranges and formula references via the same `shiftFormulaRefs` engine used by auto-fill. Includes a "Manage Rules" dialog for editing, reordering, and deleting rules; the "Clear Rules" sub-dialog lets you clear all rules or rules from selected ranges. Render-time style synthesis correctly composes CF background, font color, bold, italic, underline, and strikethrough with the base cell style. *see [Conditional Formatting](#conditional-formatting)*
 - **Auto Fill (Fill Handle)**: Excel-style fill handle at the bottom-right corner of the active selection. Drag it up/down/left/right to fill cells: single values copy, number/date/text-number sequences auto-continue (e.g. `1,2 → 3,4,5`), formula references adjust per relative/absolute/mixed rules (e.g. `=A1*2` → `=A2*2`), and source `styleId` is reused via the style pool. Live preview during drag, edge auto-scroll, dynamic sheet expansion, freeze-pane compatibility, and a single undo step per operation: *see [Auto Fill](#auto-fill)*
 
 ### Interaction
@@ -243,6 +244,7 @@ src/
             ├── sort-core.ts         # Sort pure algorithms (zero Vue deps, unit-testable)
             ├── autofill.ts          # Auto-fill pure engine (pattern inference, fill handle logic, zero Vue deps)
             ├── number-format.ts     # Number format engine (Excel-style display formatting)
+            ├── conditional-formatting.ts # Conditional formatting engine (condition eval, rule cache, formula ref shift)
             ├── theme.ts             # Theme CSS variable construction
             └── utils.ts             # Pure utilities (col label, hit test, resolve size)
 ```
@@ -365,6 +367,55 @@ An Excel-style number formatting engine (`spreader/core/number-format.ts`) that 
 - **Display**: `formatNumber(value, format, locale)` parses the code (cached), applies thousands separators / decimals / percent scaling / date-serial conversion, and returns the display string. Invalid date/duration serials render as `###`.
 - **Alignment**: numeric formats default to right-aligned; Text and General-with-non-numeric keep left alignment: matching Excel semantics.
 - **i18n**: currency symbol (`¥` / `$`), month and weekday names follow the `locale` prop.
+
+---
+
+## Conditional Formatting
+
+Excel-style conditional formatting stored per-sheet in `SheetState.conditionalFormats` (array of `ConditionalFormattingRule`). The engine lives in `spreader/core/conditional-formatting.ts` — pure-logic, zero Vue/Canvas deps, with unit tests in `test/conditional-formatting.test.ts`.
+
+### Rule Structure
+
+Each rule has a stable `id`, a `condition`, a `format` override, one or more `ranges`, a numeric `priority` (smaller = higher precedence), `stopIfTrue`, and `enabled` flag. The `format` carries only visual properties (`backgroundColor`, `color`, `fontWeight`, `fontStyle`, `underline`, `strikethrough`) — it never writes back to `cell.styleId`.
+
+### Supported Condition Types
+
+Preset rules exposed via the toolbar dropdown and the "New Rule" dialog:
+
+| Type | Key | Description |
+|------|-----|-------------|
+| Cell value | `cellIs` | compare against threshold(s): greater than, less than, between, equal to |
+| Text | `textContains` / `textNotContains` / `beginsWith` / `endsWith` | string match with optional case sensitivity |
+| Blank | `blank` / `notBlank` | cell value is empty or whitespace-only |
+| Duplicate | `duplicate` | value appears more than once within rule scope |
+| Unique | `unique` | value appears exactly once within rule scope |
+| Formula | `formula` | custom formula evaluated relative to the rule anchor (e.g. `=A1>100`); supports absolute references (`$B$2`) which stay fixed during range expansion |
+
+Color scale, data bar, icon set, top/bottom N, and above/below average are type stubs (`colorScale`, `dataBar`, `iconSet`, `topBottom`, `aboveBelowAverage`) in the type system for forward compatibility; preset UI and rendering for these are planned.
+
+### Priority & Stop-If-True
+
+Rules fire in ascending priority order (lowest number first). The first rule whose condition matches the cell contributes its format properties; subsequent rules add only properties not yet set. If a matched rule has `stopIfTrue: true`, the scan halts immediately for that cell.
+
+### Cache & Invalidation
+
+Duplicate / unique / top-bottom / above-below rules need a value-frequency statistic over the rule range. `CfValueCache` keyed by range+rule type computes these on first access and caches them. Any `setCellValue` in `composables/core-state.ts` invalidates the affected rule caches before the next render pass.
+
+### Insert / Delete Propagation
+
+`shiftFormulaRefsSafe` in the CF engine reuses the same `shiftFormulaRefs` function from the formula engine — so `$B$2` (absolute) stays locked while `A1` (relative) shifts. Rule ranges also expand/shrink accordingly; ranges completely removed from the sheet are auto-deleted.
+
+### Render-time Style Synthesis
+
+`resolveConditionalFormatting` is called per viewport cell inside `drawCells`. It walks all enabled rules whose ranges contain the cell, applies priority-merging, and produces a temporary `cfStyle`. `applyCfFormat` merges this onto the base resolved style, composing `backgroundColor`, `color`, `fontWeight`, `fontStyle`, `underline`, and `strikethrough` — including correct handling of merged cells (CF applies to the anchor cell and propagates to the entire merge region).
+
+### UI Components
+
+| File | Role |
+|------|------|
+| `conditional-format-menu.vue` | Toolbar dropdown: preset rules (highlight cells, blank, duplicate, unique), New Rule, Manage Rules, Clear Rules submenu. Teleport-based submenus with hover-intent (150ms debounce) for cross-gap hover transitions |
+| `conditional-format-rule-editor.vue` | "New Rule" dialog: condition type selector (reuses `SpDropdown`), threshold inputs, format panel (background color picker, text color picker, bold, italic, underline, strikethrough — all reuse toolbar picker/button styles), application range auto-filled from current selection |
+| `conditional-format-manager.vue` | "Manage Rules" dialog: list all rules for the active sheet, drag-to-reorder priority toggle, edit/delete per rule, clear all / clear selection |
 
 ---
 
@@ -584,7 +635,7 @@ x-spreader is touch-first: every mouse interaction has a symmetric touch path, v
 - [x] More formulas: `COUNT`, `IF`, `VLOOKUP`, `CONCATENATE`
 - [x] Cell background color picker
 - [x] Number format (currency, percentage, date, number of decimals): *see [Number Format](#number-format)*
-- [ ] Conditional formatting rules
+- [x] Conditional Formatting: preset rules (highlight cells / duplicate / unique / blank / not blank), formula-based conditions, formula ref adjustment on insert/delete, manage & clear rules dialogs. *see [Conditional Formatting](#conditional-formatting)*
 - [x] Auto-fill drag handle: *see [Auto Fill](#auto-fill)*
 - [x] Find & Replace: *see [Find & Replace](#find--replace)*
 

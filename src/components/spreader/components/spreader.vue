@@ -8,7 +8,11 @@ import NumberFormatDialog from './pickers/numberFormatDialog.vue';
 import SortConfirmDialog from './pickers/sortConfirmDialog.vue';
 import InsertFunctionDialog from './pickers/insertFunctionDialog.vue';
 import FilterPopup from './filter-popup.vue';
-import type { SheetModelData, SheetState } from '../core/types';
+import ConditionalFormatMenu from './conditional-format-menu.vue';
+import ConditionalFormatManager from './conditional-format-manager.vue';
+import ConditionalFormatRuleEditor from './conditional-format-rule-editor.vue';
+import type { SheetModelData, SheetState, ConditionalFormattingRule, ConditionalFormattingCondition } from '../core/types';
+import { colToLabel } from '../core/utils';
 
 import { createCoreState, type CoreState } from '../composables/core-state';
 import { createUndoStyles, bindMenuRefs, type UndoStylesState } from '../composables/undo-styles';
@@ -72,6 +76,7 @@ const sheetsCtx: {
     rowCount: 0,
     freeze: { rows: 0, cols: 0 },
     filter: null,
+    conditionalFormats: [],
   }),
 };
 
@@ -204,6 +209,14 @@ function filterHeaderLabel(col: number): string {
 }
 
 // ============ 冻结窗格工具栏事件 ============
+// 冻结点是否位于 A1（选区左上角或活动单元格为 (0,0) 时无上方/左侧可冻结）
+const freezePanesDisabled = computed(() => {
+  const sel = coreState.selection;
+  const r = sel ? sel.startRow : coreState.activeCell.row;
+  const c = sel ? sel.startCol : coreState.activeCell.col;
+  return r === 0 && c === 0;
+});
+
 function onFreezeChange(v: string) {
   const cur = coreState.freeze;
   if (v === 'panes') {
@@ -220,6 +233,113 @@ function onFreezeChange(v: string) {
     coreState.clearFreeze();
   }
   interactions.scheduleRender();
+}
+
+// ============ 条件格式（Conditional Formatting）============
+const toolbarRef = ref<InstanceType<typeof Toolbar> | null>(null);
+const cfManagerOpen = ref(false);
+const cfEditorOpen = ref(false);
+const cfEditorRule = ref<ConditionalFormattingRule | null>(null);
+const cfEditorMode = ref<'create' | 'edit'>('create');
+
+// 新建规则的默认「应用于」范围：优先选区，否则活动单元格
+const cfDefaultRangeText = computed(() => {
+  const sel = coreState.selection;
+  if (sel) {
+    const a = colToLabel(sel.startCol) + (sel.startRow + 1);
+    const b = colToLabel(sel.endCol) + (sel.endRow + 1);
+    if (sel.startCol === sel.endCol && sel.startRow === sel.endRow) return a;
+    return `${a}:${b}`;
+  }
+  const ac = coreState.activeCell;
+  return colToLabel(ac.col) + (ac.row + 1);
+});
+
+function onCfPreset(type: string) {
+  let condition: ConditionalFormattingCondition;
+  const cellOps = ['equal', 'notEqual', 'greaterThan', 'greaterThanOrEqual', 'lessThan', 'lessThanOrEqual', 'between', 'notBetween'];
+  if (cellOps.includes(type)) {
+    condition = { type: 'cellIs', operator: type as any, value: '' };
+  } else if (type === 'textContains') {
+    condition = { type: 'textContains', value: '' };
+  } else if (type === 'textNotContains') {
+    condition = { type: 'textNotContains', value: '' };
+  } else if (type === 'blank') {
+    condition = { type: 'blank' };
+  } else if (type === 'notBlank') {
+    condition = { type: 'notBlank' };
+  } else if (type === 'duplicate') {
+    condition = { type: 'duplicate' };
+  } else if (type === 'unique') {
+    condition = { type: 'unique' };
+  } else {
+    condition = { type: 'cellIs', operator: 'greaterThan', value: '' };
+  }
+  cfEditorRule.value = {
+    id: '',
+    condition,
+    format: { backgroundColor: '#DEEBF7', color: '#17375E' },
+    ranges: [],
+    priority: 0,
+    stopIfTrue: false,
+    enabled: true,
+  };
+  cfEditorMode.value = 'create';
+  toolbarRef.value?.closeOverflow();
+  cfEditorOpen.value = true;
+}
+
+function onCfNew() {
+  cfEditorRule.value = {
+    id: '',
+    condition: { type: 'cellIs', operator: 'greaterThan', value: '' },
+    format: { backgroundColor: '#DEEBF7', color: '#17375E' },
+    ranges: [],
+    priority: 0,
+    stopIfTrue: false,
+    enabled: true,
+  };
+  cfEditorMode.value = 'create';
+  toolbarRef.value?.closeOverflow();
+  cfEditorOpen.value = true;
+}
+
+function onCfManage() {
+  toolbarRef.value?.closeOverflow();
+  cfManagerOpen.value = true;
+}
+
+function onCfClear(scope: 'selection' | 'sheet') {
+  coreState.clearConditionalFormats(scope);
+  interactions.scheduleRender();
+}
+
+function onCfSave(rule: ConditionalFormattingRule) {
+  if (rule.id) {
+    coreState.updateConditionalFormatRule(rule.id, rule);
+  } else {
+    coreState.addConditionalFormatRule(rule);
+  }
+  cfEditorOpen.value = false;
+}
+
+function onCfEdit(rule: ConditionalFormattingRule) {
+  cfEditorRule.value = rule;
+  cfEditorMode.value = 'edit';
+  toolbarRef.value?.closeOverflow();
+  cfEditorOpen.value = true;
+}
+
+function onCfDelete(id: string) {
+  coreState.removeConditionalFormatRule(id);
+}
+
+function onCfMove(id: string, dir: 'up' | 'down') {
+  coreState.moveConditionalFormatRule(id, dir);
+}
+
+function onCfToggle(id: string, enabled: boolean) {
+  coreState.updateConditionalFormatRule(id, { enabled });
 }
 
 // ============ 模板赋值辅助函数（用于 @update:xxx 事件）============
@@ -270,6 +390,7 @@ const setDimInputRef = (el: unknown) => {
   >
     <!-- 工具栏 -->
     <Toolbar
+      ref="toolbarRef"
       :locale="coreState.locale"
       :can-undo="undoStyles.canUndo"
       :can-redo="undoStyles.canRedo"
@@ -307,6 +428,7 @@ const setDimInputRef = (el: unknown) => {
       :calc-menu-open="bordersMerge.calcMenuOpen"
       :is-single-cell="isSingleCell"
       :has-freeze="coreState.freeze.rows > 0 || coreState.freeze.cols > 0"
+      :freeze-panes-disabled="freezePanesDisabled"
       :sel-number-format="undoStyles.selNumberFormatDisplay"
       :nf-options="undoStyles.nfOptions"
       :can-increase-decimals="undoStyles.canIncreaseDecimals"
@@ -357,6 +479,10 @@ const setDimInputRef = (el: unknown) => {
       @calc-avg="bordersMerge.onCalcAvg"
       @calc-count="bordersMerge.onCalcCount"
       @find="findReplaceRaw.openFind()"
+      @cf-preset="onCfPreset($event)"
+      @cf-new-rule="onCfNew"
+      @cf-manage="onCfManage"
+      @cf-clear="onCfClear($event)"
     />
 
     <!-- 查找和替换栏 -->
@@ -725,6 +851,46 @@ const setDimInputRef = (el: unknown) => {
       :close="interactions.closeFilterPopup"
     />
 
+    <!-- 条件格式管理器 -->
+    <Teleport to="body">
+      <div
+        v-if="cfManagerOpen"
+        class="cf-modal-mask"
+        @click.self="cfManagerOpen = false"
+      >
+        <ConditionalFormatManager
+          :locale="coreState.locale"
+          :rules="coreState.conditionalFormats"
+          :theme-vars="sheetsOps.toolbarThemeVars"
+          @new="onCfNew"
+          @edit="onCfEdit"
+          @delete="onCfDelete"
+          @move="onCfMove"
+          @toggle="onCfToggle"
+          @close="cfManagerOpen = false"
+        />
+      </div>
+    </Teleport>
+
+    <!-- 条件格式规则编辑器 -->
+    <Teleport to="body">
+      <div
+        v-if="cfEditorOpen"
+        class="cf-modal-mask"
+        @click.self="cfEditorOpen = false"
+      >
+        <ConditionalFormatRuleEditor
+          :locale="coreState.locale"
+          :mode="cfEditorMode"
+          :rule="cfEditorRule"
+          :default-range-text="cfDefaultRangeText"
+          :theme-vars="sheetsOps.toolbarThemeVars"
+          @save="onCfSave"
+          @cancel="cfEditorOpen = false"
+        />
+      </div>
+    </Teleport>
+
     <!-- 行高/列宽浮动设置栏 -->
     <Teleport to="body">
       <Transition name="menu-pop">
@@ -858,4 +1024,15 @@ const setDimInputRef = (el: unknown) => {
 .dim-panel__btn:hover { background: #f0f0f0; }
 .dim-panel__btn--primary { border-color: #0078d7; background: #0078d7; color: #fff; }
 .dim-panel__btn--primary:hover { background: #0069c0; }
+
+/* 条件格式对话框遮罩（Teleport 到 body，scoped 无法穿透） */
+.cf-modal-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10003;
+}
 </style>

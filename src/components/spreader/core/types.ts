@@ -155,6 +155,107 @@ export interface SheetFilter {
   columns: Record<number, FilterColumn>;
 }
 
+// ============ 条件格式（Conditional Formatting）============
+/** 条件类型：第一阶段完整实现前 8 种；后几种为第二阶段预留（数据模型保留，暂不完整实现 UI/Renderer） */
+export type CFConditionType =
+  | 'cellIs'            // 单元格值比较（等于/不等于/大于/大于等于/小于/小于等于/介于/不介于）
+  | 'textContains'      // 文本包含
+  | 'textNotContains'   // 文本不包含
+  | 'blank'             // 空白
+  | 'notBlank'          // 非空白
+  | 'duplicate'         // 重复值
+  | 'unique'            // 唯一值
+  | 'formula'           // 公式（结果为真时命中）
+  | 'colorScale'        // 色阶（第二阶段，预留）
+  | 'dataBar'           // 数据条（第二阶段，预留）
+  | 'iconSet'           // 图标集（第二阶段，预留）
+  | 'topBottom'         // 前/后 N 项（第二阶段，预留）
+  | 'aboveBelowAverage'; // 高于/低于平均值（第二阶段，预留）
+
+/** 单元格值比较算子 */
+export type CellIsOperator =
+  | 'equal'
+  | 'notEqual'
+  | 'greaterThan'
+  | 'greaterThanOrEqual'
+  | 'lessThan'
+  | 'lessThanOrEqual'
+  | 'between'
+  | 'notBetween';
+
+export interface CFCellIsCondition {
+  type: 'cellIs';
+  operator: CellIsOperator;
+  /** 比较值（文本/数字原始文本）。between / notBetween 需要 value2 */
+  value: string;
+  /** between / notBetween 的第二个值 */
+  value2?: string;
+}
+
+export interface CFTextCondition {
+  type: 'textContains' | 'textNotContains';
+  value: string;
+}
+
+export interface CFBlankCondition {
+  type: 'blank' | 'notBlank';
+}
+
+export interface CFDuplicateCondition {
+  type: 'duplicate' | 'unique';
+}
+
+export interface CFFormulaCondition {
+  type: 'formula';
+  /** 公式（不含前导 '='）；相对/绝对引用以规则范围左上角为基准 */
+  formula: string;
+}
+
+/** 第二阶段可视类型占位（暂不完整实现 UI/Renderer，仅保留数据模型） */
+export interface CFColorScaleCondition { type: 'colorScale'; }
+export interface CFDataBarCondition { type: 'dataBar'; }
+export interface CFIconSetCondition { type:  'iconSet'; }
+export interface CFTopBottomCondition { type: 'topBottom'; top: boolean; percent: boolean; n: number; }
+export interface CFAboveBelowAverageCondition { type: 'aboveBelowAverage'; above: boolean; }
+
+export type ConditionalFormattingCondition =
+  | CFCellIsCondition
+  | CFTextCondition
+  | CFBlankCondition
+  | CFDuplicateCondition
+  | CFFormulaCondition
+  | CFColorScaleCondition
+  | CFDataBarCondition
+  | CFIconSetCondition
+  | CFTopBottomCondition
+  | CFAboveBelowAverageCondition;
+
+/** 条件格式要设置的格式（仅格式属性，不持久化选中状态）。渲染时与基础样式临时合成，不写回 cell.style */
+export interface ConditionalFormattingFormat {
+  backgroundColor?: string;
+  color?: string;
+  fontWeight?: 'bold' | '';
+  fontStyle?: 'italic' | '';
+  underline?: 'underline' | '';
+  strikethrough?: 'line-through' | '';
+}
+
+/** 单条条件格式规则：属于 Sheet，而非 Cell */
+export interface ConditionalFormattingRule {
+  /** 稳定唯一 ID（禁止数组 index） */
+  id: string;
+  condition: ConditionalFormattingCondition;
+  format: ConditionalFormattingFormat;
+  /** 应用范围（支持多区域） */
+  ranges: SelectionRange[];
+  /** 优先级：越小越高（Excel 风格） */
+  priority: number;
+  /** 命中后停止后续规则 */
+  stopIfTrue: boolean;
+  /** 是否启用 */
+  enabled: boolean;
+}
+
 export interface SheetModelData {
   name: string;
   /** 表格级样式池：styles[0] 始终为默认空样式 {} */
@@ -173,6 +274,8 @@ export interface SheetModelData {
   freeze?: FreezePane;
   /** 数据筛选状态；缺省视为未启用筛选 */
   filter?: SheetFilter;
+  /** 条件格式规则集合；缺省视为无规则 */
+  conditionalFormats?: ConditionalFormattingRule[];
 }
 
 export interface SheetState {
@@ -198,6 +301,8 @@ export interface SheetState {
   freeze: FreezePane;
   /** 数据筛选状态；缺省为 null 表示未启用筛选 */
   filter: SheetFilter | null;
+  /** 条件格式规则集合；缺省为空数组 */
+  conditionalFormats: ConditionalFormattingRule[];
 }
 
 /** 视口区域：冻结窗格将画布划分为四个独立滚动区域 */

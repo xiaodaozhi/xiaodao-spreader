@@ -42,31 +42,36 @@ function onClickOutside(e: PointerEvent) {
 }
 
 function openMenu() {
+  const el = props.triggerEl ?? rootRef.value;
+  if (!el) return;
   open.value = true;
-  if (props.modelOpen !== undefined) {
-    emit('update:modelOpen', true);
+  if (props.modelOpen !== undefined) emit('update:modelOpen', true);
+  const r = el.getBoundingClientRect();
+  let right: number | undefined = window.innerWidth - r.right;
+  const estMenuW = 160;
+  let posLeft: number | undefined;
+  if (r.left - estMenuW < 4) {
+    right = undefined;
+    posLeft = Math.max(4, r.left);
   }
+  pos.value = right !== undefined
+    ? { right, top: r.bottom + 4 }
+    : { left: posLeft!, top: r.bottom + 4 };
   nextTick(() => {
-    const el = props.triggerEl ?? rootRef.value;
-    if (el) {
-      const r = el.getBoundingClientRect();
-      const menuH = MERGE_OPTIONS.length * 30 + 12;
-      const estMenuW = 160;
-      let right: number | undefined = window.innerWidth - r.right;
-      let top = r.bottom + 4;
-      let posLeft: number | undefined;
-      if (r.left - estMenuW < 4) {
-        right = undefined;
-        posLeft = Math.max(4, r.left);
-      }
-      if (top + menuH > window.innerHeight - 4) {
-        top = r.top - menuH - 4;
-      }
-      if (top < 4) {
-        top = 4;
-      }
-      pos.value = right !== undefined ? { right, top } : { left: posLeft!, top };
-    }
+    const el2 = props.triggerEl ?? rootRef.value;
+    if (!el2) return;
+    const r2 = el2.getBoundingClientRect();
+    const menuEl = menuRef.value;
+    if (!menuEl) return;
+    const h = menuEl.offsetHeight;
+    const spaceBelow = window.innerHeight - r2.bottom - 8;
+    const spaceAbove = r2.top - 8;
+    const up = spaceBelow < h && spaceAbove > 0;
+    let top = up ? r2.top - h - 4 : r2.bottom + 4;
+    top = Math.max(4, Math.min(window.innerHeight - h - 4, top));
+    pos.value = right !== undefined
+      ? { right: window.innerWidth - r2.right, top }
+      : { left: posLeft!, top };
     document.addEventListener('pointerdown', onClickOutside);
   });
 }

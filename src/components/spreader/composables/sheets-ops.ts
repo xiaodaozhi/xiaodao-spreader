@@ -68,6 +68,94 @@ function adjustFilterCols(f: SheetFilter | null, cS: number, cE: number, inserte
   return { range, columns };
 }
 
+/** 删除带（axis='row' 删行 / 'col' 删列）后收缩单个 Range；整段落在删除带内则返回 null */
+function adjustRangeForDelete(r: SelectionRange, axis: 'row' | 'col', idx: number, count: number): SelectionRange | null {
+  if (axis === 'row') {
+    const s = r.startRow, e = r.endRow;
+    let ns: number, ne: number;
+    if (e < idx) { ns = s; ne = e; }
+    else if (s > idx + count - 1) { ns = s - count; ne = e - count; }
+    else {
+      ns = s < idx ? s : idx;
+      ne = e > idx + count - 1 ? e - count : idx - 1;
+      if (ne < ns) return null;
+    }
+    return { ...r, startRow: ns, endRow: ne };
+  } else {
+    const s = r.startCol, e = r.endCol;
+    let ns: number, ne: number;
+    if (e < idx) { ns = s; ne = e; }
+    else if (s > idx + count - 1) { ns = s - count; ne = e - count; }
+    else {
+      ns = s < idx ? s : idx;
+      ne = e > idx + count - 1 ? e - count : idx - 1;
+      if (ne < ns) return null;
+    }
+    return { ...r, startCol: ns, endCol: ne };
+  }
+}
+
+/** 插入带（axis='row' 插行 / 'col' 插列）后放大单个 Range */
+function adjustRangeForInsert(r: SelectionRange, axis: 'row' | 'col', idx: number, count: number): SelectionRange {
+  if (axis === 'row') {
+    const s = r.startRow, e = r.endRow;
+    if (s >= idx) return { ...r, startRow: s + count, endRow: e + count };
+    if (e < idx) return r;
+    return { ...r, endRow: e + count };
+  } else {
+    const s = r.startCol, e = r.endCol;
+    if (s >= idx) return { ...r, startCol: s + count, endCol: e + count };
+    if (e < idx) return r;
+    return { ...r, endCol: e + count };
+  }
+}
+
+/** 删除行：收缩所有条件格式规则的 Range（越过删除带整体平移，重叠则裁剪，整段命中则移除规则） */
+function adjustCFRangesForDeleteRows(s: CoreState, rS: number, rE: number) {
+  const dr = rE - rS + 1;
+  for (let i = s.conditionalFormats.length - 1; i >= 0; i--) {
+    const rule = s.conditionalFormats[i]!;
+    const next = rule.ranges
+      .map((rg) => adjustRangeForDelete(rg, 'row', rS, dr))
+      .filter((rg): rg is SelectionRange => rg !== null);
+    if (next.length === 0) s.conditionalFormats.splice(i, 1);
+    else rule.ranges = next;
+  }
+  s.invalidateConditionalFormatCache?.();
+}
+
+/** 插入行：放大所有条件格式规则的 Range */
+function adjustCFRangesForInsertRows(s: CoreState, rS: number, rE: number) {
+  const n = rE - rS + 1;
+  for (const rule of s.conditionalFormats) {
+    rule.ranges = rule.ranges.map((rg) => adjustRangeForInsert(rg, 'row', rS, n));
+  }
+  s.invalidateConditionalFormatCache?.();
+}
+
+/** 删除列：收缩所有条件格式规则的 Range（整段命中则移除规则） */
+function adjustCFRangesForDeleteCols(s: CoreState, cS: number, cE: number) {
+  const dc = cE - cS + 1;
+  for (let i = s.conditionalFormats.length - 1; i >= 0; i--) {
+    const rule = s.conditionalFormats[i]!;
+    const next = rule.ranges
+      .map((rg) => adjustRangeForDelete(rg, 'col', cS, dc))
+      .filter((rg): rg is SelectionRange => rg !== null);
+    if (next.length === 0) s.conditionalFormats.splice(i, 1);
+    else rule.ranges = next;
+  }
+  s.invalidateConditionalFormatCache?.();
+}
+
+/** 插入列：放大所有条件格式规则的 Range */
+function adjustCFRangesForInsertCols(s: CoreState, cS: number, cE: number): void {
+  const n = cE - cS + 1;
+  for (const rule of s.conditionalFormats) {
+    rule.ranges = rule.ranges.map((rg) => adjustRangeForInsert(rg, 'col', cS, n));
+  }
+  s.invalidateConditionalFormatCache?.();
+}
+
 export interface SheetsOpsState {
   // 行列增删
   deleteRows: (rS: number, rE: number) => void;
@@ -191,6 +279,8 @@ export function createSheetsOps(
     s.freeze.cols = Math.max(0, Math.min(s.freeze.cols, s.colCount));
     // 筛选范围跟随删除行收缩
     s.setFilter(adjustFilterRows(s.getFilter(), rS, rE, false));
+    // 条件格式范围跟随删除行收缩
+    adjustCFRangesForDeleteRows(s, rS, rE);
   }
 
   function insertRows(rS: number, rE: number) {
@@ -244,6 +334,8 @@ export function createSheetsOps(
     s.freeze.cols = Math.max(0, Math.min(s.freeze.cols, s.colCount));
     // 筛选范围跟随插入行扩展（新行按条件自动判定可见性）
     s.setFilter(adjustFilterRows(s.getFilter(), rS, rE, true));
+    // 条件格式范围跟随插入行扩展
+    adjustCFRangesForInsertRows(s, rS, rE);
   }
 
   function insertCols(cS: number, cE: number) {
@@ -297,6 +389,8 @@ export function createSheetsOps(
     s.freeze.cols = Math.max(0, Math.min(s.freeze.cols, s.colCount));
     // 筛选范围与列筛选定义跟随插入列平移
     s.setFilter(adjustFilterCols(s.getFilter(), cS, cE, true));
+    // 条件格式范围跟随插入列扩展
+    adjustCFRangesForInsertCols(s, cS, cE);
   }
 
   function deleteCols(cS: number, cE: number) {
@@ -342,6 +436,8 @@ export function createSheetsOps(
     s.freeze.cols = Math.max(0, Math.min(s.freeze.cols, s.colCount));
     // 筛选范围收缩、被删列的筛选定义丢弃
     s.setFilter(adjustFilterCols(s.getFilter(), cS, cE, false));
+    // 条件格式范围跟随删除列收缩
+    adjustCFRangesForDeleteCols(s, cS, cE);
   }
 
   // 同时找到最后一个有数据的行和列
@@ -810,6 +906,7 @@ export function createSheetsOps(
       rowCount: rowC,
       freeze: { rows: 0, cols: 0 },
       filter: null,
+      conditionalFormats: [],
     };
   }
   const sheets = ref<SheetState[]>([mkSheet('Sheet1')]);
@@ -834,6 +931,8 @@ export function createSheetsOps(
     sh.freeze = { rows: s.freeze.rows, cols: s.freeze.cols };
     // 持久化筛选状态（深拷贝，独立于运行时响应式对象）
     sh.filter = cloneFilter(s.getFilter());
+    // 持久化条件格式规则
+    sh.conditionalFormats = [...s.conditionalFormats];
   }
 
   function loadSheet(i: number) {
@@ -883,6 +982,10 @@ export function createSheetsOps(
     }
     s.syncStyles(sh.styles);
     s.syncBorders(sh.borders ?? [{}]);
+    // 恢复条件格式规则（深拷贝，独立于运行时响应式对象）
+    const cf = sh.conditionalFormats ? sh.conditionalFormats.map((r) => ({ ...r, ranges: r.ranges.map((rg) => ({ ...rg })) })) : [];
+    s.conditionalFormats.splice(0, s.conditionalFormats.length, ...cf);
+    s.invalidateConditionalFormatCache?.();
     activeSheetIndex.value = i;
   }
 
@@ -946,6 +1049,7 @@ export function createSheetsOps(
       colCount: src.colCount, rowCount: src.rowCount,
       freeze: { ...src.freeze },
       filter: cloneFilter(src.filter),
+      conditionalFormats: src.conditionalFormats ? src.conditionalFormats.map((r) => ({ ...r })) : [],
     };
     sheets.value.splice(i + 1, 0, cp);
     loadSheet(i + 1);
@@ -1011,6 +1115,10 @@ export function createSheetsOps(
       // 输出筛选状态：仅在启用时输出，保持旧数据兼容
       if (sh.filter) {
         smd.filter = cloneFilter(sh.filter)!;
+      }
+      // 输出条件格式规则：仅在存在时输出，保持旧数据兼容
+      if (sh.conditionalFormats && sh.conditionalFormats.length) {
+        smd.conditionalFormats = sh.conditionalFormats.map((r)  => ({ ...r }));
       }
       return smd;
     });

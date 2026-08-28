@@ -509,7 +509,7 @@ The `ThemeColors` interface includes:
 
 ### 13.2 Rendering Layer
 - **Frozen Panes**: *now implemented, see [Section 21](#21-freeze-panes)*
-- **Conditional Formatting**: Add style rule matching in render loop
+- **Conditional Formatting**: *now implemented, see [Section 25](#25-conditional-formatting)*
 - **Auto-Fill**: *now implemented, see [Section 22](#22-auto-fill)*
 
 ### 13.3 Interaction Layer
@@ -1145,3 +1145,55 @@ x-spreader is touch-first: every mouse interaction has a symmetric touch path, v
 - **Tab bar**: long-press a tab button or the empty tab-bar area (450ms) emits `tab-contextmenu` / `tabbar-contextmenu`; `tabbar.vue` builds a real `MouseEvent` via `makeCtxMouseEv(x, y, target)` (with `preventDefault` + `stopPropagation`) so the shared `onTabCtxMenu` handler works unchanged.
 - **Popups close on outside tap**: the context menu (`showCtx`) and the row-height / column-width editor panel (`openDimPanel`) register a `touchstart` (capture) outside-close listener, because `onTouchStart`'s `preventDefault` suppresses the synthetic `click`/`mousedown` desktop listeners depend on. A `tCtxMenuOpened` flag prevents a long-press-opened menu from collapsing the selection on `onTouchEnd`. All other pickers (calc / color / border / merge / sort, `dropdown.vue`, toolbar overflow, filter-popup) already use `pointerdown` and close correctly on touch.
 
+
+## 25. Conditional Formatting
+
+Excel-style conditional formatting stored per-sheet. Engine in `spreader/core/conditional-formatting.ts`, pure-logic, zero Vue/Canvas deps. Unit tests in `test/conditional-formatting.test.ts`.
+
+### 25.1 Data Model
+
+Rules live on the sheet state:
+
+Rule object fields: id, condition, format, ranges, priority, stopIfTrue, enabled.
+
+Condition type union covers seven variants: cellIs (value threshold comparison), textContains/textNotContains/beginsWith/endsWith (string match), blank/notBlank (empty cell), duplicate/unique (value frequency), formula (custom formula), plus stubs for colorScale/dataBar/iconSet/topBottom/aboveBelowAverage.
+
+### 25.2 Condition Evaluation
+
+evaluateCondition(rule, col, row, ctx) is the top-level entry. Cell-value and text conditions resolve via ctx.getCell. Duplicate/unique/topBottom/aboveBelow use CfValueCache (section 25.3). Formula conditions evaluate relative to the rule anchor using evalCondition exported from the formula engine which handles top-level comparison operators that the regular evaluator would skip. Absolute references stay fixed, relative references shift with the range.
+
+### 25.3 Frequency Cache
+
+CfValueCache keys by ruleId plus rangeKey and caches a value-to-count map. Invalidation: any setCellValue in core-state.ts iterates enabled CF rules whose ranges contain the changed cell and calls cache.invalidate(ruleId) before the next render pass.
+
+### 25.4 Formula Reference Shift
+
+shiftFormulaRefsSafe reuses shiftFormulaRefs from the formula engine, so dollar sign absolute refs stay locked. Rule ranges also expand or shrink on insert/delete rows/columns. Rules whose range becomes completely empty are auto-deleted.
+
+### 25.5 Render-time Style Synthesis
+
+resolveConditionalFormatting is called per viewport cell inside drawCells (spreader.vue). It walks enabled rules whose ranges contain the cell, evaluates each in ascending priority order, merges matched rule format properties into an accumulator, halts on stopIfTrue. Merge direction: higher-priority rule wins for conflict, lower-priority fills unset properties.
+
+applyCfFormat merges the temp cfStyle onto the base resolved style. CF can override backgroundColor, color, fontWeight, fontStyle, underline, strikethrough. Border, number format, number alignment are intentionally excluded.
+
+Merged cells: CF evaluates once at the anchor cell (top-left of merge region) and applies to the entire merge, matching Excel semantics.
+
+### 25.6 UI Components
+
+conditional-format-menu.vue: Toolbar dropdown with preset rule groups (highlight cells, blank/not-blank, duplicate/unique), New Rule, Manage Rules, and Clear Rules submenu. Submenus use Teleport plus hover-intent (150ms debounce on mouseleave, cancelled on mouseenter into sub-panel) so cross-gap hover transitions do not kill the submenu.
+
+conditional-format-rule-editor.vue: New Rule or Edit Rule dialog. Condition type selector reuses SpDropdown. Format panel reuses toolbar color pickers for background and text, with bold, italic, underline, strikethrough toggle buttons. Application range auto-fills from current selection when the menu opens.
+
+conditional-format-manager.vue: Lists all rules for the active sheet. Drag handles change priority. Individual edit and delete buttons. Bulk clear-all and clear-selection actions.
+
+### 25.7 Persistence and Undo
+
+Rules persist through v-model serialization as part of SheetState.conditionalFormats and are restored on deserialize. Rule mutations follow the existing core-state snapshot pattern so any change produces one undo step.
+
+### 25.8 Integration Points
+
+core-state.ts setCellValue invalidates CfValueCache entries for rules whose ranges contain the changed cell. core-state.ts insertRows/insertCols/deleteRows/deleteCols calls shiftFormulaRefsSafe and adjusts rule ranges, deleting rules with empty ranges. sheets-ops.ts pasteFromClipboard adjusts rule ranges via the same propagation logic. spreader.vue drawCells calls resolveConditionalFormatting and applyCfFormat per viewport cell.
+
+### 25.9 Future Extensions
+
+The type system already reserves union members for color scale, data bar, icon set, top-bottom N, and above-below average. Unit tests in test/conditional-formatting.test.ts cover rule persistence, priority merge semantics, absolute-reference shift, duplicate/unique statistics, and formula-condition evaluation. Additional coverage for each new condition type is added alongside its implementation.

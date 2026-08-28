@@ -4,7 +4,8 @@ import { FormulaDeps, clearEvalCache, computeCellValue, parseFormulaRefs } from 
 import { formatNumber, isGeneralFormat, parseDateTimeInput, parseNumericText } from '../core/number-format';
 import { applyAutoFillPlan, validateMergeCompatibility } from '../core/autofill';
 import { colToLabel } from '../core/utils';
-import type { CellCoord, CellData, CellStyle, SelectionRange, BorderStyle, BorderSide, FreezePane, ViewportRegion, SheetFilter, FilterColumn } from '../core/types';
+import type { CellCoord, CellData, CellStyle, SelectionRange, BorderStyle, BorderSide, FreezePane, ViewportRegion, SheetFilter, FilterColumn, ConditionalFormattingRule, ConditionalFormattingFormat } from '../core/types';
+import { resolveConditionalFormatting, CfValueCache, genRuleId, type CFContext } from '../core/conditional-formatting';
 import { isRowVisible as _isRowVisible, getColumnCandidates as _getColumnCandidates, isColumnFiltered, type FilterCellAccessor, type FilterCandidates } from '../core/filter-core';
 import { resolveStyle as _resolveStyle } from '../core/style-pool';
 import type { BorderPool } from '../core/border-pool';
@@ -205,6 +206,15 @@ export interface CoreState {
   scheduleRender?: () => void;
   emitModelData?: () => void;
   viewSize?: { w: number; h: number };
+  // 条件格式（Conditional Formatting）
+  conditionalFormats: ConditionalFormattingRule[];
+  resolveConditionalFormat: (col: number, row: number) => ConditionalFormattingFormat | null;
+  addConditionalFormatRule: (rule: ConditionalFormattingRule) => void;
+  updateConditionalFormatRule: (id: string, patch: Partial<ConditionalFormattingRule>) => void;
+  removeConditionalFormatRule: (id: string) => void;
+  moveConditionalFormatRule: (id: string, dir: 'up' | 'down') => void;
+  clearConditionalFormats: (scope: 'selection' | 'sheet') => void;
+  invalidateConditionalFormatCache: () => void;
   clampScroll?: (sx: number | null, sy: number | null) => void;
   /** 查找高亮钩子：返回某单元格当前的高亮类型（由 find-replace 模块注入） */
   findHighlight?: (col: number, row: number) => 'active' | 'match' | null;
@@ -269,6 +279,11 @@ export function createCoreState(
   // 边框运行时去重索引：stableKey → borderId，不参与持久化
   let borderIndex = new Map<string, number>();
   borderIndex.set('{}', 0);
+
+  // 条件格式规则（属于当前工作表，随 saveSheet 持久化到 SheetState）
+  const conditionalFormats = reactive<ConditionalFormattingRule[]>([]);
+  // 重复/唯一值统计缓存（不序列化、不持久化）
+  const cfCache = new CfValueCache();
 
   /** 生成稳定的样式 key（属性排序后 JSON.stringify） */
   function stableStyleKey(style: CellStyle): string {
@@ -1028,6 +1043,8 @@ export function createCoreState(
     if (c >= 0 && r >= 0) ensureCapacity(c, r);
     const k = cellKey(c, r);
     clearEvalCache();
+    // 值变化可能影响 duplicate/unique 统计与公式条件：条件格式缓存一并失效
+    cfCache.invalidate();
     if (v === '' || v == null) {
       formulaDeps.clear(k);
       const styleId = cells[k]?.styleId;
@@ -1086,6 +1103,109 @@ export function createCoreState(
         formulaDeps.markDirty(k);
       }
     }
+    cfCache.invalidate();
+  }
+
+  // ============ 条件格式（Conditional Formatting）============
+  /** 构建条件格式求值上下文 */
+  function buildCFContext(): CFContext {
+    return {
+      cells,
+      colCount: dims.colCount,
+      rowCount: dims.rowCount,
+      locale: locale.value,
+      getCellValue: (c: number, r: number) => getCellValue(c, r),
+    };
+  }
+
+  /** 临时合成某单元格的条件格式（Base + CF），不写回 cell.style */
+  function resolveConditionalFormat(col: number, row: number): ConditionalFormattingFormat | null {
+    if (conditionalFormats.length === 0) return null;
+    return resolveConditionalFormatting(col, row, conditionalFormats, buildCFContext(), cfCache);
+  }
+
+  /** 新增规则（保存前快照到 Undo） */
+  function addConditionalFormatRule(rule: ConditionalFormattingRule) {
+    state.saveUndo?.();
+    const next: ConditionalFormattingRule = {
+      id: rule.id || genRuleId(),
+      condition: rule.condition,
+      format: rule.format,
+      ranges: rule.ranges,
+      priority: rule.priority,
+      stopIfTrue: rule.stopIfTrue,
+      enabled: rule.enabled !== false,
+    };
+    conditionalFormats.push(next);
+    cfCache.invalidate();
+    state.scheduleRender?.();
+    state.emitModelData?.();
+  }
+
+  /** 更新既有规则（保存前快照到 Undo） */
+  function updateConditionalFormatRule(id: string, patch: Partial<ConditionalFormattingRule>) {
+    state.saveUndo?.();
+    const idx = conditionalFormats.findIndex((r) => r.id === id);
+    if (idx < 0) return;
+    conditionalFormats[idx] = { ...conditionalFormats[idx]!, ...patch, id };
+    cfCache.invalidate();
+    state.scheduleRender?.();
+    state.emitModelData?.();
+  }
+
+  /** 删除规则（保存前快照到 Undo） */
+  function removeConditionalFormatRule(id: string) {
+    state.saveUndo?.();
+    const idx = conditionalFormats.findIndex((r) => r.id === id);
+    if (idx < 0) return;
+    conditionalFormats.splice(idx, 1);
+    cfCache.invalidate();
+    state.scheduleRender?.();
+    state.emitModelData?.();
+  }
+
+  /** 调整优先级顺序：dir 'up' 表示提升（priority 减小），'down' 表示降低 */
+  function moveConditionalFormatRule(id: string, dir: 'up' | 'down') {
+    state.saveUndo?.();
+    const sorted = [...conditionalFormats].sort((a, b) => a.priority - b.priority);
+    const idx = sorted.findIndex((r) => r.id === id);
+    if (idx < 0) return;
+    const swapWith = dir === 'up' ? idx - 1 : idx + 1;
+    if (swapWith < 0 || swapWith >= sorted.length) return;
+    const a = sorted[idx]!;
+    const b = sorted[swapWith]!;
+    const tmp = a.priority;
+    a.priority = b.priority;
+    b.priority = tmp;
+    cfCache.invalidate();
+    state.scheduleRender?.();
+    state.emitModelData?.();
+  }
+
+  function invalidateConditionalFormatCache() {
+    cfCache.invalidate();
+  }
+
+  /** 清除规则：scope 'selection' 仅移除命中当前选区的规则范围，'sheet' 清空当前工作表全部规则 */
+  function clearConditionalFormats(scope: 'selection' | 'sheet') {
+    state.saveUndo?.();
+    if (scope === 'sheet') {
+      conditionalFormats.splice(0, conditionalFormats.length);
+    } else {
+      const sel = state.selection.value;
+      if (!sel) return;
+      for (let i = conditionalFormats.length - 1; i >= 0; i--) {
+        const rule = conditionalFormats[i]!;
+        rule.ranges = rule.ranges.filter(
+          (rg) => !(rg.startCol <= sel.endCol && rg.endCol >= sel.startCol &&
+                    rg.startRow <= sel.endRow && rg.endRow >= sel.startRow),
+        );
+        if (rule.ranges.length === 0) conditionalFormats.splice(i, 1);
+      }
+    }
+    cfCache.invalidate();
+    state.scheduleRender?.();
+    state.emitModelData?.();
   }
 
   // ============ 编辑状态 ============
@@ -1551,6 +1671,16 @@ export function createCoreState(
     // AutoFill / Fill Handle
     autoFillState,
     applyAutoFill,
+
+    // 条件格式（Conditional Formatting）
+    conditionalFormats,
+    resolveConditionalFormat,
+    addConditionalFormatRule,
+    updateConditionalFormatRule,
+    removeConditionalFormatRule,
+    moveConditionalFormatRule,
+    clearConditionalFormats,
+    invalidateConditionalFormatCache,
   };
 
   // 设置内部函数对 state 的反向引用

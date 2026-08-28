@@ -508,7 +508,7 @@ Canvas CSS 坐标（逻辑像素）
 
 ### 13.2 渲染层
 - **冻结窗格**：*已实现，见 [第 21 节](#21-冻结窗格)*
-- **条件格式**：渲染循环中加入样式规则匹配
+- **条件格式**: *已实现，见 [第 25 节](#25-条件格式)*
 - **自动填充**：*已实现，见 [第 22 节](#22-自动填充)*
 
 ### 13.3 交互层
@@ -1145,3 +1145,55 @@ x-spreader 以触屏为第一交互：每个鼠标操作都有对称的触屏路
 - **底部 tab 栏**：长按 tab 按钮或 tab 栏空白区（450ms）`emit('tab-contextmenu' / 'tabbar-contextmenu')`；`tabbar.vue` 用 `makeCtxMouseEv(x, y, target)` 构造带 `preventDefault` + `stopPropagation` 的真实 `MouseEvent`，共享 `onTabCtxMenu` handler 原样工作。
 - **点外部关闭浮层**：右键菜单（`showCtx`）与行高 / 列宽编辑面板（`openDimPanel`）注册 `touchstart`（capture）点外部关闭监听，因为 `onTouchStart` 的 `preventDefault` 抑制了桌面监听依赖的合成 `click`/`mousedown`。`tCtxMenuOpened` 标志防止长按弹出的菜单在 `onTouchEnd` 把选区缩成单选。其余 picker（计算 / 颜色 / 边框 / 合并 / 排序、`dropdown.vue`、toolbar 溢出、filter-popup）均用 `pointerdown`，触屏原生关闭。
 
+
+## 25. 条件格式
+
+类 Excel 条件格式，按工作表存储。引擎位于 spreader/core/conditional-formatting.ts，纯逻辑实现，零 Vue/Canvas 依赖。单元测试见 test/conditional-formatting.test.ts。
+
+### 25.1 数据模型
+
+规则挂在工作表状态 SheetState.conditionalFormats（ConditionalFormattingRule 数组，缺省为空）。
+
+每条规则包含：稳定 id、condition（条件，判别联合类型）、format（格式覆盖）、ranges（应用范围，支持多区域）、priority（数值越小优先级越高，Excel 语义）、stopIfTrue（命中后停止后续规则）、enabled（启用开关）。
+
+condition 类型覆盖七个变体：cellIs（单元格值阈值比较）、textContains/textNotContains/beginsWith/endsWith（文本匹配）、blank/notBlank（空白单元格）、duplicate/unique（值频率）、formula（自定义公式），以及 colorScale/dataBar/iconSet/topBottom/aboveBelowAverage 预留桩。
+
+### 25.2 条件求值
+
+顶层入口 evaluateCondition(rule, col, row, ctx)。cellIs / text* / blank* 通过 ctx.getCell 取单元格原始值直接比较。duplicate / unique / topBottom / aboveBelow 走 CfValueCache（25.3）。formula 条件用公式引擎导出的 evalCondition 求值——正则求值器不会处理顶层比较运算符（会跳过大于号），所以 CF 引擎有专门分支。公式相对于规则锚点解释，绝对引用保持固定，相对引用随范围平移。
+
+### 25.3 频率缓存
+
+CfValueCache 以 ruleId 加 rangeKey 为 key，缓存值到计数的映射表。首次访问对范围内所有值扫描；后续命中返回缓存。失效机制：core-state.ts 中任何 setCellValue 都会迭代范围包含变更单元格的启用规则，在下次渲染前调用 cache.invalidate(ruleId)。
+
+### 25.4 公式引用平移
+
+shiftFormulaRefsSafe 复用公式引擎的 shiftFormulaRefs，因此 dollar sign 绝对引用锁定不动，相对引用正确平移。插入/删除行列时规则范围也同步扩张/收缩；范围完全被清空的规则自动删除。
+
+### 25.5 渲染时样式合成
+
+resolveConditionalFormatting 在 spreader.vue 的 drawCells 内按视口单元格逐个调用。遍历范围包含该单元格的启用规则，按优先级升序求值，命中则将 format 属性合并到累加器，stopIfTrue 命中则提前终止。合并方向：高优先级规则对冲突属性获胜，低优先级规则填充未设置的属性。
+
+applyCfFormat 将临时 cfStyle 合成到基础解析样式上。CF 可覆盖 backgroundColor、color、fontWeight、fontStyle、underline、strikethrough，border、numberFormat、数字对齐故意不在 CF format 类型中——对齐 Excel 语义。
+
+合并单元格：CF 只对锚点求值一次，结果传播到整个合并区域，匹配 Excel 行为。
+
+### 25.6 UI 组件
+
+conditional-format-menu.vue：工具栏下拉，含高亮单元格预设、空白/非空白、重复/唯一、新建规则、管理规则、清除规则子菜单。子菜单采用 Teleport 加 hover-intent（mouseleave 延迟 150ms，mouseenter 到子面板时取消），跨间隙悬停不会关闭子菜单。
+
+conditional-format-rule-editor.vue：新建/编辑规则对话框。条件类型下拉复用 SpDropdown。格式面板复用工具栏的背景色/文字颜色选择器和粗体/斜体/下划线/删除线切换按钮。打开菜单时应用范围自动填入当前选区。
+
+conditional-format-manager.vue：列出当前工作表全部规则。拖拽手柄修改 priority。每条规则支持编辑/删除。提供全部清除和按选区清除的批量操作。
+
+### 25.7 持久化与撤销
+
+规则通过 v-model 序列化持久化到 SheetState.conditionalFormats，反序列化时恢复。规则增删改排序清除遵循 core-state 现有快照模式，单次变更产生一个撤销步骤。
+
+### 25.8 集成点
+
+core-state.ts setCellValue 在写入值后失效 CfValueCache 中范围包含变更单元格的规则条目。core-state.ts insertRows/insertCols/deleteRows/deleteCols 调用 shiftFormulaRefsSafe 并调整规则范围，删除清空的规则。sheets-ops.ts pasteFromClipboard 通过同一套传播逻辑调整规则范围。spreader.vue drawCells 按视口单元格调用 resolveConditionalFormatting 和 applyCfFormat。
+
+### 25.9 未来扩展
+
+类型系统已预留 colorScale、dataBar、iconSet、topBottom N、aboveBelowAverage 联合成员。test/conditional-formatting.test.ts 当前覆盖规则持久化、优先级合并语义、绝对引用平移、重复/唯一值统计、公式条件求值。每种新条件类型实现时同步补充单测。

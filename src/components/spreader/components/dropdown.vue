@@ -21,6 +21,8 @@ const props = withDefaults(defineProps<{
   searchPlaceholder?: string;
   /** 触发器固定图标（SVG 字符串）：当 modelValue 未命中任何 option 时显示，优先级低于 current.icon */
   triggerIcon?: string;
+  /** 触发器左侧图标旁的固定文本标签（溢出菜单中显示） */
+  triggerLabel?: string;
 }>(), {
   width: 'auto',
   menuWidth: undefined,
@@ -34,6 +36,7 @@ const props = withDefaults(defineProps<{
   searchable: false,
   searchPlaceholder: '',
   triggerIcon: '',
+  triggerLabel: '',
 });
 
 const emit = defineEmits<{
@@ -77,30 +80,25 @@ function scrollBy(d: number) {
 }
 
 function openMenu() {
+  const el = props.triggerEl ?? rootRef.value;
+  if (!el) return;
+  const r = el.getBoundingClientRect();
+  triggerWidth.value = r.width;
   open.value = true;
   if (props.searchable) query.value = '';
   if (props.modelOpen !== undefined) {
     emit('update:modelOpen', true);
   }
-  const el = props.triggerEl ?? rootRef.value;
-  if (!el) return;
-  const r = el.getBoundingClientRect();
-  triggerWidth.value = r.width;
-  const menuH = vc.value * 22 + (scrollable.value ? 2 * 15 : 0) + 8 + (props.searchable ? 34 : 0);
-  const spaceBelow = window.innerHeight - r.bottom - 4;
-  const up = spaceBelow < menuH && r.top - 4 > menuH;
+  // 先给一个临时位置向下弹，下一帧测量实际高度再决定方向
+  const tmpTop = r.bottom + 4;
   if (props.align === 'right') {
     pos.value = {
       right: window.innerWidth - r.right,
-      top: up ? r.top - menuH - 4 : r.bottom + 4,
-      up,
+      top: tmpTop,
+      up: false,
     };
   } else {
-    pos.value = {
-      left: r.left,
-      top: up ? r.top - menuH - 4 : r.bottom + 4,
-      up,
-    };
+    pos.value = { left: r.left, top: tmpTop, up: false };
   }
   const idx = baseOptions.value.findIndex((o) => String(o.value) === String(props.modelValue));
   viewStart.value = idx >= 0
@@ -109,6 +107,30 @@ function openMenu() {
   if (props.searchable) {
     nextTick(() => searchInputRef.value?.focus());
   }
+  // 测量实际菜单高度，修正方向
+  nextTick(() => {
+    const el2 = props.triggerEl ?? rootRef.value;
+    if (!el2) return;
+    const r2 = el2.getBoundingClientRect();
+    const menuEl = menuRef.value;
+    if (!menuEl) return;
+    const h = menuEl.offsetHeight;
+    const spaceBelow = window.innerHeight - r2.bottom - 8;
+    const spaceAbove = r2.top - 8;
+    // 下方能放就向下；下方放不下但上方够就向上；两边都不够→优先向上（尽量避开视口底部）
+    const up = spaceBelow < h && spaceAbove > 0;
+    let top = up ? r2.top - h - 4 : r2.bottom + 4;
+    top = Math.max(8, Math.min(window.innerHeight - h - 8, top)); // 兜底贴边界
+    if (props.align === 'right') {
+      pos.value = {
+        right: window.innerWidth - r2.right,
+        top,
+        up,
+      };
+    } else {
+      pos.value = { left: r2.left, top, up };
+    }
+  });
 }
 
 function close() {
@@ -128,6 +150,7 @@ function toggle() {
 }
 
 function select(o: FontOption) {
+  if (o.disabled) return;
   emit('update:modelValue', o.value);
   emit('change', o.value);
   close();
@@ -241,9 +264,8 @@ onBeforeUnmount(() => {
       />
       <!-- eslint-enable vue/no-v-html -->
       <span
-        v-else
         class="sp-dropdown__value"
-      >{{ current?.label ?? fallbackLabel }}</span>
+      >{{ (current?.icon || triggerIcon) ? (current?.label ?? triggerLabel) : (current?.label ?? fallbackLabel) }}</span>
       <svg
         class="sp-dropdown__caret"
         viewBox="0 0 1024 1024"
@@ -297,7 +319,8 @@ onBeforeUnmount(() => {
               :key="String(o.value)"
               type="button"
               class="sp-dropdown__item"
-              :class="{ 'sp-dropdown__item--active': String(o.value) === String(modelValue) }"
+              :class="{ 'sp-dropdown__item--active': !o.disabled && String(o.value) === String(modelValue), 'sp-dropdown__item--disabled': o.disabled }"
+              :disabled="o.disabled"
               @click="select(o)"
             >
               <!-- eslint-disable vue/no-v-html -->
@@ -459,5 +482,7 @@ onBeforeUnmount(() => {
   border-radius: 3px;
 }
 .sp-dropdown__item:hover { background: #eef3f9; }
+.sp-dropdown__item--disabled { color: #c9c9c9; cursor: default; }
+.sp-dropdown__item--disabled:hover { background: transparent; }
 .sp-dropdown__item--active { background: #e5f1fb; color: #0078d7; }
 </style>

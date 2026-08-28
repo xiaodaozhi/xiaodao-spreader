@@ -8,6 +8,7 @@ import ColorPicker from './pickers/colorPicker.vue';
 import BorderPicker, { type BorderType } from './pickers/borderPicker.vue';
 import SortPicker from './pickers/sortPicker.vue';
 import MergePicker from './pickers/mergePicker.vue';
+import ConditionalFormatMenu from './conditional-format-menu.vue';
 import CalcPicker from './pickers/calcPicker.vue';
 import type { SortOrder } from '../core/sort-core';
 
@@ -46,6 +47,16 @@ function segRole(bt: BorderType, name: string): 'solid' | 'dashed' | 'thick' {
   if (SOLID_SEGS[bt].includes(name)) return 'solid';
   return 'dashed';
 }
+const BORDER_LABEL_KEY: Record<BorderType, string> = {
+  none: 'borderNone',
+  bottom: 'borderBottom',
+  top: 'borderTop',
+  left: 'borderLeft',
+  right: 'borderRight',
+  all: 'borderAll',
+  outer: 'borderOuter',
+  thickOuter: 'borderThickOuter',
+};
 
 // 排序按钮图标：左侧三条渐宽横线 + 右侧方向箭头（与 sortPicker.vue 保持一致）
 interface SortBar { name: string; x1: number; y1: number; x2: number; y2: number }
@@ -74,7 +85,7 @@ const UNFREEZE_ICON = '<svg viewBox="0 0 1024 1024" fill="currentColor"><path fi
 const TOOL_KEYS = [
   'undo', 'redo', 'paint', 'clear', 'sep1', 'font', 'fontSize', 'sep2',
   'bold', 'italic', 'underline', 'strike', 'sep3', 'textColor', 'fillColor', 'border',
-  'sep4', 'hAlign', 'vAlign', 'wrap', 'merge', 'sep6', 'numFmt', 'sep7', 'calc', 'sort', 'filter', 'freeze', 'find',
+  'sep4', 'hAlign', 'vAlign', 'wrap', 'merge', 'sep6', 'numFmt', 'sep7', 'calc', 'sort', 'filter', 'freeze', 'cf', 'find',
 ] as const;
 
 const rootEl = ref<HTMLElement | null>(null);
@@ -91,6 +102,9 @@ const overflowKeys = ref<Set<string>>(new Set());
 const overflowOpen = ref(false);
 const skipCloseAnim = ref(false);
 const overflowKeyVersion = ref(0);
+const overflowCanUp = ref(false);
+const overflowCanDown = ref(false);
+const toolbarReady = ref(false);
 
 const GAP = 2;     // .toolbar 的列间距
 const PAD = 6;     // .toolbar 左右内边距
@@ -187,6 +201,7 @@ function recompute() {
     overflowKeyVersion.value++;
     if (next.size === 0) overflowOpen.value = false;
   }
+  toolbarReady.value = true;
 }
 
 let ro: ResizeObserver | null = null;
@@ -219,8 +234,11 @@ function onWindowResize() {
 function onDocPointerdown(e: PointerEvent) {
   if (!overflowOpen.value) return;
   const target = e.target as Node;
-  if (overflowMenuEl.value?.contains(target)) return;
+  if ((target as HTMLElement).closest?.('.overflow-menu-wrap')) return;
   if (moreBtnEl.value?.contains(target)) return;
+  // CF 弹层（condition format Teleport 到 body 的菜单）、ColorPicker 弹层、SpDropdown 弹层都可能在 body 上，
+  // 只要点在弹层内部就不关闭溢出菜单——否则点击子菜单选色/选条件时会把溢出菜单先关掉
+  if ((target as HTMLElement).closest?.('.cf-menu, .sp-dropdown__menu, .color-picker__menu')) return;
   skipCloseAnim.value = true;
   overflowOpen.value = false;
   nextTick(() => {
@@ -230,6 +248,7 @@ function onDocPointerdown(e: PointerEvent) {
 
 function toggleOverflow() {
   overflowOpen.value = !overflowOpen.value;
+  if (overflowOpen.value) nextTick(onOverflowScroll);
 }
 
 // 点击溢出菜单中的「查找」项：触发查找后自动关闭溢出菜单
@@ -244,6 +263,22 @@ function onFilterClick() {
   overflowOpen.value = false;
   emit('toggle-filter');
 }
+
+function closeOverflow() {
+  overflowOpen.value = false;
+}
+function onOverflowScroll() {
+  const el = overflowMenuEl.value;
+  if (!el) return;
+  overflowCanUp.value = el.scrollTop > 1;
+  overflowCanDown.value = el.scrollTop + el.clientHeight < el.scrollHeight - 1;
+}
+function scrollOverflowBy(d: number) {
+  const el = overflowMenuEl.value;
+  if (!el) return;
+  el.scrollTop = Math.max(0, Math.min(el.scrollHeight - el.clientHeight, el.scrollTop + d * 40));
+}
+defineExpose({ closeOverflow });
 
 onMounted(() => {
   scheduleRecompute();
@@ -314,6 +349,8 @@ const props = defineProps<{
   isSingleCell: boolean;
   /** 当前 worksheet 是否已有冻结行或列 */
   hasFreeze: boolean;
+  /** 冻结窗格的冻结点是否位于 A1（无上方/左侧可冻结），此时禁用「冻结窗格」项 */
+  freezePanesDisabled: boolean;
   themeVars?: Record<string, string>;
   // 数字格式
   selNumberFormat: string;
@@ -331,6 +368,10 @@ const emit = defineEmits<{
   (e: 'border-change', v: BorderType): void;
   (e: 'sort-change', v: SortOrder): void;
   (e: 'merge-change', v: MergeType): void;
+  (e: 'cf-preset', type: string): void;
+  (e: 'cf-new-rule'): void;
+  (e: 'cf-manage'): void;
+  (e: 'cf-clear', scope: 'selection' | 'sheet'): void;
 }>();
 
 // 数字格式：选区格式不一致时触发器显示「混合」
@@ -349,7 +390,7 @@ const freezeOptions = computed<FontOption[]>(() => {
   if (props.hasFreeze) {
     opts.unshift({ label: t(props.locale, 'unfreezePanes'), value: 'unfreeze', icon: UNFREEZE_ICON });
   } else {
-    opts.unshift({ label: t(props.locale, 'freezePanes'), value: 'panes', icon: FREEZE_ICON });
+    opts.unshift({ label: t(props.locale, 'freezePanes'), value: 'panes', icon: FREEZE_ICON, disabled: props.freezePanesDisabled });
   }
   return opts;
 });
@@ -359,6 +400,7 @@ const freezeOptions = computed<FontOption[]>(() => {
   <div
     ref="rootEl"
     class="toolbar"
+    :class="{ 'toolbar--ready': toolbarReady }"
     @mousedown.prevent
   >
     <Teleport
@@ -383,6 +425,7 @@ const freezeOptions = computed<FontOption[]>(() => {
           >
             <path d="M596.16 284.064H258.56l101.376-101.44a31.968 31.968 0 1 0-45.248-45.216L178.56 273.504c-11.904 11.872-18.496 27.84-18.56 44.8a63.04 63.04 0 0 0 18.56 45.28l136.128 136.16a31.904 31.904 0 0 0 45.248 0 31.968 31.968 0 0 0 0-45.248l-106.752-106.496H596.16c114.88 0 208.32 93.312 208.32 208s-93.44 208-208.32 208h-223.36a32 32 0 0 0 0 64h223.36c150.144 0 272.32-122.016 272.32-272 0-149.984-122.176-272-272.32-272" />
           </svg>
+          <span class="toolbar-btn__label">{{ t(locale, 'undo') }}</span>
         </button>
       </div>
     </Teleport>
@@ -412,6 +455,7 @@ const freezeOptions = computed<FontOption[]>(() => {
               d="M596.16 284.064H258.56l101.376-101.44a31.968 31.968 0 1 0-45.248-45.216L178.56 273.504c-11.904 11.872-18.496 27.84-18.56 44.8a63.04 63.04 0 0 0 18.56 45.28l136.128 136.16a31.904 31.904 0 0 0 45.248 0 31.968 31.968 0 0 0 0-45.248l-106.752-106.496H596.16c114.88 0 208.32 93.312 208.32 208s-93.44 208-208.32 208h-223.36a32 32 0 0 0 0 64h223.36c150.144 0 272.32-122.016 272.32-272 0-149.984-122.176-272-272.32-272"
             />
           </svg>
+          <span class="toolbar-btn__label">{{ t(locale, 'redo') }}</span>
         </button>
       </div>
     </Teleport>
@@ -438,6 +482,7 @@ const freezeOptions = computed<FontOption[]>(() => {
           >
             <path d="M722.285714 438.857143a36.571429 36.571429 0 0 1-36.571428 36.571428h-512a36.571429 36.571429 0 0 1-36.571429-36.571428V164.571429a36.571429 36.571429 0 0 1 36.571429-36.571429h512a36.571429 36.571429 0 0 1 36.571428 36.571429V256h128a36.571429 36.571429 0 0 1 36.571429 36.571429v294.4a36.571429 36.571429 0 0 1-31.890286 36.278857L448 675.766857V859.428571a36.571429 36.571429 0 0 1-32.292571 36.315429l-4.278858 0.256a36.571429 36.571429 0 0 1-36.571428-36.571429v-215.771428a36.571429 36.571429 0 0 1 31.890286-36.278857l406.966857-52.553143V329.142857h-91.428572v109.714286z m-73.142857-237.714286h-438.857143V402.285714h438.857143V201.142857z" />
           </svg>
+          <span class="toolbar-btn__label">{{ t(locale, 'paintFormat') }}</span>
         </button>
       </div>
     </Teleport>
@@ -464,6 +509,7 @@ const freezeOptions = computed<FontOption[]>(() => {
           >
             <path d="M672.748 105.674c-3.666-3.799-8.778-5.949-14.125-5.949-5.341 0-10.459 2.15-14.119 5.949L10.418 754.633c-7.789 8.163-7.789 20.798 0 28.967l123.353 126.213c7.782 7.979 23.113 14.461 34.111 14.461h395.042c12.774-0.742 24.882-5.854 34.162-14.461l416.525-426.362c7.751-8.163 7.751-20.76 0-28.916l-340.92-348.861h0.057zM557.85 832.801c-9.273 8.582-21.343 13.707-34.111 14.461H217.888c-12.781-0.742-24.882-5.867-34.162-14.461l-58.074-59.482c-7.782-8.163-7.782-20.804 0-28.967l232.333-237.87c3.666-3.799 8.778-5.949 14.125-5.949s10.453 2.15 14.119 5.949l231.102 236.551c7.744 8.157 7.744 20.753 0 28.916l-59.539 60.909 0.058-0.057z m0 0" />
           </svg>
+          <span class="toolbar-btn__label">{{ t(locale, 'clearFormat') }}</span>
         </button>
       </div>
     </Teleport>
@@ -613,6 +659,7 @@ const freezeOptions = computed<FontOption[]>(() => {
             viewBox="0 0 1024 1024"
             fill="currentColor"
           ><path d="M214.857 889.143v-68.571h68.571V203.429H214.857v-68.571h411.429v1.257c96.114 10.629 171.429 87.383 171.429 181.6 0 58.971-29.486 111.086-75.109 144.457 72.069 39.291 120.823 113.234 120.823 198.4 0 119.291-95.634 216.594-217.12 227.543l-0.286.029H214.857z m388.572-388.571H352v320h251.429c95.086 0 171.429-72.091 171.429-160s-76.343-160-171.429-160z m0-297.143H352v228.571h251.429l5.211-0.091c67.52-2.515 120.503-53.235 120.503-114.195 0-62.537-55.749-114.285-125.714-114.285z" /></svg>
+          <span class="toolbar-btn__label">{{ t(locale, 'bold') }}</span>
         </button>
       </div>
     </Teleport>
@@ -636,6 +683,7 @@ const freezeOptions = computed<FontOption[]>(() => {
             viewBox="0 0 1024 1024"
             fill="currentColor"
           ><path d="M730.143 127.714v64.286h-112.329l-166.521 621.429h128.871v64.286H276.286v-64.286h108.45l166.5-621.429H426.286V127.714h303.857z" /></svg>
+          <span class="toolbar-btn__label">{{ t(locale, 'italic') }}</span>
         </button>
       </div>
     </Teleport>
@@ -659,6 +707,7 @@ const freezeOptions = computed<FontOption[]>(() => {
             viewBox="0 0 1024 1024"
             fill="currentColor"
           ><path d="M512 123.639a36.409 36.409 0 0 1 33.642 22.525l230.59 558.27a36.409 36.409 0 1 1-67.284 27.768L638.072 560.545H385.928l-70.876 171.656a36.409 36.409 0 1 1-67.332-27.768l230.59-558.27A36.409 36.409 0 0 1 512 123.639z m-95.974 364.089h191.948L512 255.439l-95.974 232.289zM769.289 827.544c19.418 0 38.836 14.564 38.836 38.836 0 19.418-14.564 33.982-29.127 33.982H259.565c-19.418 0-38.836-14.564-38.836-38.836 0-19.418 14.564-33.982 29.127-33.982h519.433z" /></svg>
+          <span class="toolbar-btn__label">{{ t(locale, 'underline') }}</span>
         </button>
       </div>
     </Teleport>
@@ -682,6 +731,7 @@ const freezeOptions = computed<FontOption[]>(() => {
             viewBox="0 0 1024 1024"
             fill="currentColor"
           ><path d="M182.044 490.667h659.911a34.133 34.133 0 0 1 4.642 67.948l-4.597 0.319h-135.395c40.05 37 60.803 81.601 60.803 133.575 0 128.569-147.092 211.171-307.382 192.512-101.717-11.833-173.352-52.565-210.944-122.971a34.133 34.133 0 0 1 60.211-32.176c25.942 48.606 77.46 77.915 158.606 87.381 124.837 14.473 231.242-45.283 231.242-124.746 0-53.339-36.636-96.802-116.736-131.345l-5.279-2.23H182.044a34.133 34.133 0 0 1-33.815-29.492L147.911 524.8a34.133 34.133 0 0 1 29.491-33.815l4.642-0.318z m68.767-176.447c6.918-128.796 128.432-203.343 287.812-184.82 99.579 11.56 175.81 47.923 226.737 109.636a34.133 34.133 0 1 1-52.657 43.463c-38.775-47.013-98.759-75.639-181.999-85.288-123.654-14.381-211.627 36.591-211.627 117.009 0 35.135 10.65 61.349 37.774 90.203l5.826 6.007c4.278 4.369 8.966 8.875 11.377 10.923l1.411 0.91H288.085l-1.092-1.729c-6.508-9.376-38.958-54.386-36.182-106.314z" /></svg>
+          <span class="toolbar-btn__label">{{ t(locale, 'strikethrough') }}</span>
         </button>
       </div>
     </Teleport>
@@ -726,6 +776,7 @@ const freezeOptions = computed<FontOption[]>(() => {
                 :fill="cachedTextColor || '#000000'"
               />
             </svg>
+            <span class="toolbar-btn__label">{{ t(locale, 'fontColor') }}</span>
           </button>
           <button
             ref="textColorArrowRef"
@@ -778,6 +829,7 @@ const freezeOptions = computed<FontOption[]>(() => {
                 :fill="cachedFillColor || 'currentColor'"
               />
             </svg>
+            <span class="toolbar-btn__label">{{ t(locale, 'fillColor') }}</span>
           </button>
           <button
             ref="fillColorArrowRef"
@@ -837,6 +889,7 @@ const freezeOptions = computed<FontOption[]>(() => {
                 :stroke-linecap="segRole(cachedBorder, s.name) === 'dashed' ? 'round' : 'square'"
               />
             </svg>
+            <span class="toolbar-btn__label">{{ t(locale, BORDER_LABEL_KEY[cachedBorder] ?? 'borders') }}</span>
           </button>
           <button
             ref="borderArrowRef"
@@ -933,6 +986,7 @@ const freezeOptions = computed<FontOption[]>(() => {
             viewBox="0 0 1024 1024"
             fill="currentColor"
           ><path d="M896 179.2a38.4 38.4 0 0 0-76.8 0v665.6a38.4 38.4 0 0 0 76.8 0v-665.6zM204.8 281.6A38.4 38.4 0 0 0 204.8 358.4h179.2a38.4 38.4 0 0 0 0-76.8H204.8zM550.4 281.6a38.4 38.4 0 0 0 0 76.8h51.2c35.328 0 64 28.672 64 64v179.2c0 35.328-28.672 64-64 64H246.272l36.864-36.864a38.4 38.4 0 1 0-54.272-54.272l-102.4 102.4a38.4 38.4 0 0 0 0 54.272l102.4 102.4a38.4 38.4 0 0 0 54.272-54.272l-36.864-36.864h355.328a140.8 140.8 0 0 0 140.8-140.8v-179.2a140.8 140.8 0 0 0-140.8-140.8h-51.2z" /></svg>
+          <span class="toolbar-btn__label">{{ t(locale, 'wrap') }}</span>
         </button>
       </div>
     </Teleport>
@@ -957,6 +1011,7 @@ const freezeOptions = computed<FontOption[]>(() => {
               viewBox="0 0 1024 1024"
               fill="currentColor"
             ><path d="M709.952 465.92l88-76.032C801.92 385.984 806.656 384 812.032 384s10.048 1.984 14.08 5.952C830.08 393.92 832 398.656 832 403.968L832 448l32 0C881.664 448 896 462.336 896 480S881.664 512 864 512L832 512l0 44.032c0 5.376-1.92 10.112-5.952 14.08C822.08 574.08 817.344 576 812.032 576s-10.048-1.92-14.08-5.952L709.952 494.08C705.984 490.112 704 485.376 704 480S705.984 469.952 709.952 465.92zM378.048 465.92 290.048 389.952C286.08 385.984 281.344 384 275.968 384s-10.048 1.984-14.08 5.952C257.92 393.92 256 398.656 256 403.968L256 448 224 448C206.336 448 192 462.336 192 480S206.336 512 224 512L256 512l0 44.032c0 5.376 1.92 10.112 5.952 14.08C265.92 574.08 270.656 576 275.968 576s10.048-1.92 14.08-5.952L378.048 494.08C382.016 490.112 384 485.376 384 480S382.016 469.952 378.048 465.92zM448 128 128 128l0 704 320 0 0-128 64 0 0 128c0 35.392-28.608 64-64 64L128 896c-35.392 0-64-28.608-64-64L64 128c0-35.392 28.608-64 64-64l320 0 0 0c35.392 0 64 28.608 64 64l0 128L448 256 448 128M640 128l320 0 0 704-320 0 0-128L576 704l0 128c0 35.392 28.608 64 64 64l320 0c35.392 0 64-28.608 64-64L1024 128c0-35.392-28.608-64-64-64l-320 0 0 0C604.608 64 576 92.608 576 128l0 128 64 0L640 128M722.304 642.304c0 8.512-3.52 16.32-10.496 23.36s-15.424 10.624-25.344 10.624c-5.76 0-10.688-1.088-14.72-3.136-4.096-2.048-7.616-4.928-10.432-8.512s-5.824-9.088-9.024-16.512-5.952-13.952-8.32-19.648l-17.28-46.016L479.36 582.464 462.08 629.568c-6.72 18.304-12.48 30.656-17.344 37.12s-12.544 9.6-23.424 9.6c-9.28 0-17.408-3.456-24.512-10.24s-10.624-14.592-10.624-23.232c0-4.992 0.896-10.176 2.496-15.488S393.024 614.592 396.8 605.056l92.672-238.016C492.096 360.256 495.296 352 499.008 342.464s7.68-17.536 11.904-23.872 9.664-11.456 16.576-15.36c6.784-3.968 15.232-5.888 25.344-5.888 10.176 0 18.752 1.92 25.472 5.888 6.848 3.968 12.352 8.96 16.64 15.104 4.096 6.208 7.744 12.8 10.624 19.904s6.528 16.576 11.008 28.352l94.656 236.48C718.592 621.056 722.304 634.112 722.304 642.304zM606.912 526.784 552.32 375.552 498.624 526.784 606.912 526.784z" /></svg>
+            <span class="toolbar-btn__label">{{ t(locale, 'mergeCenter') }}</span>
           </button>
           <button
             ref="mergeArrowRef"
@@ -1097,6 +1152,7 @@ const freezeOptions = computed<FontOption[]>(() => {
               viewBox="0 0 24 24"
               fill="currentColor"
             ><path d="M19 3H5l7 9-7 9h14v-2H8l5.5-7L8 5h11z" /></svg>
+            <span class="toolbar-btn__label">{{ t(locale, 'sum') }}</span>
           </button>
           <button
             ref="calcArrowRef"
@@ -1156,6 +1212,7 @@ const freezeOptions = computed<FontOption[]>(() => {
               />
               <path :d="SORT_ARROW_PATHS[cachedSortOrder]" />
             </svg>
+            <span class="toolbar-btn__label">{{ t(locale, 'sort') }}</span>
           </button>
           <button
             ref="sortArrowRef"
@@ -1201,6 +1258,7 @@ const freezeOptions = computed<FontOption[]>(() => {
             viewBox="0 0 1024 1024"
             fill="currentColor"
           ><path d="M96 192c0-17.6 14.4-32 32-32h768c17.6 0 32 14.4 32 32 0 9.6-4.8 19.2-12.8 25.6L608 480v320c0 19.2-12.8 35.2-32 40-4.8 1.6-9.6 1.6-14.4 1.6-12.8 0-24-4.8-33.6-12.8l-128-108.8c-8-6.4-12.8-16-12.8-25.6V480L108.8 217.6C100.8 211.2 96 201.6 96 192z" /></svg>
+          <span class="toolbar-btn__label">{{ t(locale, 'filter') }}</span>
         </button>
       </div>
     </Teleport>
@@ -1224,7 +1282,29 @@ const freezeOptions = computed<FontOption[]>(() => {
           align="right"
           :title="t(locale, 'freezePane')"
           :trigger-icon="FREEZE_ICON"
+          :trigger-label="t(locale, 'freezePane')"
           @change="emit('freeze-change', String($event))"
+        />
+      </div>
+    </Teleport>
+
+    <!-- 条件格式 -->
+    <Teleport
+      :disabled="teleportDisabled('cf')"
+      :to="overflowMenuTarget"
+    >
+      <div
+        class="tb-item"
+        data-key="cf"
+      >
+        <ConditionalFormatMenu
+          :locale="locale"
+          :has-selection="hasSelection"
+          :theme-vars="themeVars"
+          @preset="emit('cf-preset', $event)"
+          @new-rule="emit('cf-new-rule')"
+          @manage="emit('cf-manage')"
+          @clear="emit('cf-clear', $event)"
         />
       </div>
     </Teleport>
@@ -1250,6 +1330,7 @@ const freezeOptions = computed<FontOption[]>(() => {
           >
             <path d="M448 128a320 320 0 0 1 251.2 516.8l171.2 171.2a32 32 0 0 1-45.2 45.2L654 689.9A320 320 0 1 1 448 128zm0 64a256 256 0 1 0 0 512 256 256 0 0 0 0-512z" />
           </svg>
+          <span class="toolbar-btn__label">{{ t(locale, 'findReplace') }}</span>
         </button>
       </div>
     </Teleport>
@@ -1291,19 +1372,47 @@ const freezeOptions = computed<FontOption[]>(() => {
     <Transition name="menu-pop">
       <div
         v-show="overflowOpen"
-        ref="overflowMenuEl"
-        :key="overflowKeyVersion"
-        class="overflow-menu"
+        class="overflow-menu-wrap"
         :class="{ 'no-anim': skipCloseAnim }"
         :style="menuStyle"
-        @mousedown.prevent
-      />
+        @pointerdown.stop.prevent
+      >
+        <button
+          v-if="overflowCanUp || overflowCanDown"
+          type="button"
+          class="overflow-nav"
+          :class="{ 'overflow-nav--disabled': !overflowCanUp }"
+          :disabled="!overflowCanUp"
+          @click="scrollOverflowBy(-1)"
+        >
+          <svg viewBox="0 0 1024 1024" fill="currentColor"><path d="M180.053 662.613a32 32 0 0 0 45.227 0L512 375.893l286.72 286.72a32 32 0 1 0 45.227-45.226L534.613 307.053a32 32 0 0 0-45.226 0L134.827 617.387a32 32 0 0 0 0 45.226z" /></svg>
+        </button>
+        <div
+          ref="overflowMenuEl"
+          :key="overflowKeyVersion"
+          class="overflow-menu"
+          @scroll="onOverflowScroll"
+        />
+        <button
+          v-if="overflowCanUp || overflowCanDown"
+          type="button"
+          class="overflow-nav"
+          :class="{ 'overflow-nav--disabled': !overflowCanDown }"
+          :disabled="!overflowCanDown"
+          @click="scrollOverflowBy(1)"
+        >
+          <svg viewBox="0 0 1024 1024" fill="currentColor"><path d="M134.827 361.387a32 32 0 0 1 45.226 0L512 693.333l331.947-331.946a32 32 0 1 1 45.226 45.226L534.613 738.56a32 32 0 0 1-45.226 0L134.827 406.613a32 32 0 0 1 0-45.226z" /></svg>
+        </button>
+      </div>
     </Transition>
   </Teleport>
 </template>
 
 <style scoped>
 .toolbar { position: relative; display: flex; align-items: center; height: 32px; min-height: 32px; gap: 2px; padding: 0 6px; background: var(--sp-toolbar-bg); border-bottom: 1px solid var(--sp-toolbar-border); user-select: none; }
+/* 初始化时先隐藏内容（opacity，不影响尺寸测量），等溢出计算完成后淡入，避免窄屏先全显示再闪现溢出按钮 */
+.toolbar > * { opacity: 0; transition: none; }
+.toolbar.toolbar--ready > * { opacity: 1; transition: opacity .15s ease-out; }
 .tb-item { display: flex; align-items: center; flex: 0 0 auto; }
 .toolbar-sep { width: 1px; height: 18px; margin: 0 4px; background: var(--sp-toolbar-border); }
 .toolbar-font { flex: 0 0 auto; }
@@ -1330,6 +1439,8 @@ const freezeOptions = computed<FontOption[]>(() => {
 .toolbar-btn:disabled { color: var(--sp-toolbar-btn-disabled-color); cursor: default; }
 .toolbar-btn__icon { width: 18px; height: 18px; }
 .toolbar-btn svg:not(.toolbar-btn__icon) { width: 18px; height: 18px; }
+.toolbar-btn__label { display: none; font-size: 12px; margin-left: 6px; }
+.overflow-menu .toolbar-btn__label { display: inline; }
 .toolbar-split { display: inline-flex; align-items: center; position: relative; height: 26px; }
 .toolbar-split__main { border: 1px solid transparent; border-right: none; border-radius: 3px 0 0 3px; }
 .toolbar-split__arrow { display: flex; align-items: center; justify-content: center; width: 16px; height: 26px; border: 1px solid transparent; border-radius: 0 3px 3px 0; background: transparent; color: var(--sp-toolbar-btn-color); cursor: pointer; padding: 0; }
@@ -1343,8 +1454,44 @@ const freezeOptions = computed<FontOption[]>(() => {
 .toolbar-more svg { width: 18px; height: 18px; }
 
 /* 溢出菜单：fixed 定位 + 渲染到 body，彻底隔离 stacking context */
-.overflow-menu { min-width: 180px; max-width: 260px; max-height: calc(100vh - 40px); overflow-y: auto; background: var(--sp-toolbar-bg, #fff); border: 1px solid var(--sp-toolbar-border); border-radius: 4px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12); padding: 4px 6px; display: flex; flex-direction: column; gap: 2px; z-index: 1000; transform-origin: top right; }
-.overflow-menu.no-anim { transition: none !important; }
+.overflow-menu-wrap {
+  min-width: 180px;
+  max-width: 260px;
+  background: var(--sp-toolbar-bg, #fff);
+  border: 1px solid var(--sp-toolbar-border);
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  padding: 4px 6px;
+  z-index: 1000;
+  transform-origin: top right;
+  display: flex;
+  flex-direction: column;
+}
+.overflow-menu-wrap.no-anim { transition: none !important; }
+.overflow-menu {
+  max-height: calc(100vh - 80px);
+  overflow-y: auto;
+  scrollbar-width: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.overflow-menu::-webkit-scrollbar { display: none; }
+.overflow-nav {
+  flex: 0 0 auto;
+  height: 18px;
+  border: none;
+  background: transparent;
+  color: #888;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+}
+.overflow-nav:hover:not(:disabled) { background: #eef3f9; }
+.overflow-nav:disabled { color: #d5d5d5; cursor: default; }
+.overflow-nav svg { width: 10px; height: 10px; }
 .overflow-menu .tb-item { width: 100%; }
 .overflow-menu .toolbar-sep { width: 100%; height: 1px; margin: 2px 0; }
 .overflow-menu .toolbar-split { width: 100%; }
@@ -1356,9 +1503,13 @@ const freezeOptions = computed<FontOption[]>(() => {
 .overflow-menu .toolbar-align { width: 100%; }
 .overflow-menu .toolbar-freeze { width: 100%; }
 .overflow-menu .toolbar-btn:not(.toolbar-btn--step):not(.toolbar-split__arrow):not(.toolbar-number-format__btn) { width: 100%; justify-content: flex-start; padding-left: 6px; }
+.overflow-menu .toolbar-btn__label { display: inline; }
 .overflow-menu .toolbar-number-format__btn { flex: 0 0 auto; width: 30px; }
 .overflow-menu .toolbar-color { width: 100%; }
 .overflow-menu .toolbar-wrap { width: 100%; justify-content: flex-start; }
+.overflow-menu .sp-dropdown .sp-dropdown__trigger { padding-left: 6px; gap: 6px; }
+.overflow-menu .cf-menu-root .cf-menu-trigger { padding-left: 6px; gap: 6px; }
+.overflow-menu .cf-menu-trigger__icon { width: 18px; height: 18px; }
 
 /* 统一弹出动画：fade + scale */
 .menu-pop-enter-active, .menu-pop-leave-active { transition: opacity 0.12s ease-out, transform 0.12s ease-out; }
@@ -1378,9 +1529,13 @@ const freezeOptions = computed<FontOption[]>(() => {
 .overflow-menu .toolbar-align { width: 100%; }
 .overflow-menu .toolbar-freeze { width: 100%; }
 .overflow-menu .toolbar-btn:not(.toolbar-btn--step):not(.toolbar-split__arrow):not(.toolbar-number-format__btn) { width: 100%; justify-content: flex-start; padding-left: 6px; }
+.overflow-menu .toolbar-btn__label { display: inline; }
 .overflow-menu .toolbar-number-format__btn { flex: 0 0 auto; width: 30px; }
 .overflow-menu .toolbar-color { width: 100%; }
 .overflow-menu .toolbar-wrap { width: 100%; justify-content: flex-start; }
+.overflow-menu .sp-dropdown .sp-dropdown__trigger { padding-left: 6px; gap: 6px; }
+.overflow-menu .cf-menu-root .cf-menu-trigger { padding-left: 6px; gap: 6px; }
+.overflow-menu .cf-menu-trigger__icon { width: 18px; height: 18px; }
 .overflow-menu .toolbar-font-size__input { flex: 1 1 auto; width: auto; min-width: 40px; }
 
 .overflow-menu .toolbar-btn:hover:not(:disabled) { background: var(--sp-toolbar-btn-hover-bg); }
