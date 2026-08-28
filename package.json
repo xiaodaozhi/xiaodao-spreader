@@ -1,18 +1,29 @@
 {
   "name": "xiaodao-spreader",
-  "version": "0.1.31",
+  "version": "0.1.32",
   "description": "A Vue 3 component for spreading sheets",
   "type": "module",
   "license": "MIT",
   "homepage": "https://xiaodaozhi.com/xiaodao-spreader.html",
   "keywords": [
     "vue",
-    "canvas",
-    "spreader",
-    "sheet",
-    "table",
+    "vue3",
+    "vue-component",
     "spreadsheet",
-    "excel"
+    "excel",
+    "sheet",
+    "grid",
+    "data-grid",
+    "table",
+    "canvas",
+    "cell",
+    "edit-table",
+    "电子表格",
+    "表格组件",
+    "工作表",
+    "单元格",
+    "数据表格",
+    "在线表格"
   ],
   "files": [
     "dist"
