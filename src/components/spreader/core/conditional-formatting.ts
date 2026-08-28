@@ -11,7 +11,7 @@ import type {
   SelectionRange,
   CellData,
 } from './types';
-import { colToLabel, labelToCol } from './utils';
+import { colToLabel } from './utils';
 import { evalFormulaCondition, shiftFormulaRefs } from './formula';
 
 /** 条件格式求值上下文（由 core-state 注入，引擎本身保持纯净） */
@@ -88,9 +88,11 @@ export class CfValueCache implements RuleStatsCache {
   get(ruleId: string): Map<string, number> | undefined {
     return this.map.get(ruleId);
   }
+
   set(ruleId: string, stats: Map<string, number>): void {
     this.map.set(ruleId, stats);
   }
+
   invalidate(ruleId?: string): void {
     if (ruleId) this.map.delete(ruleId);
     else this.map.clear();
@@ -236,7 +238,7 @@ export function resolveConditionalFormatting(
     .sort((a, b) => a.priority - b.priority);
   if (candidates.length === 0) return null;
 
-  let merged: ConditionalFormattingFormat = {};
+  const merged: ConditionalFormattingFormat = {};
   let matched = false;
   for (const rule of candidates) {
     const anchor = ruleAnchor(rule);
@@ -252,7 +254,7 @@ export function resolveConditionalFormatting(
     try {
       ok = evaluateCondition(rule.condition, col, row, ctx, anchor, stats);
     } catch {
-      ok = false;
+      // ok remains false
     }
     if (!ok) continue;
     matched = true;

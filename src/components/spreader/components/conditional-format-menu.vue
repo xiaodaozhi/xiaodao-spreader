@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ref, computed, nextTick, onMounted, onBeforeUnmount } from 'vue';
+import { ref, nextTick, onMounted, onBeforeUnmount } from 'vue';
 import { t } from '../core/constants';
 
-const props = withDefaults(defineProps<{
+withDefaults(defineProps<{
   locale: string;
   hasSelection: boolean;
   themeVars?: Record<string, string>;
@@ -12,8 +12,7 @@ const props = withDefaults(defineProps<{
 
 const emit = defineEmits<{
   (e: 'preset', type: string): void;
-  (e: 'new-rule'): void;
-  (e: 'manage'): void;
+  (e: 'new-rule' | 'manage'): void;
   (e: 'clear', scope: 'selection' | 'sheet'): void;
 }>();
 
@@ -112,8 +111,13 @@ function onSubScroll(sub: 'highlight' | 'clear') {
   if (!el) return;
   const cU = el.scrollTop > 1;
   const cD = el.scrollTop + el.clientHeight < el.scrollHeight - 1;
-  if (sub === 'highlight') { highlightCanUp.value = cU; highlightCanDown.value = cD; }
-  else { clearCanUp.value = cU; clearCanDown.value = cD; }
+  if (sub === 'highlight') {
+    highlightCanUp.value = cU;
+    highlightCanDown.value = cD;
+  } else {
+    clearCanUp.value = cU;
+    clearCanDown.value = cD;
+  }
 }
 function scrollSubBy(sub: 'highlight' | 'clear', d: number) {
   const el = sub === 'highlight' ? highlightSubRef.value : clearSubRef.value;
@@ -126,15 +130,26 @@ function onWheelFor(el: HTMLElement | null, e: WheelEvent) {
   e.preventDefault();
   el.scrollTop = Math.max(0, Math.min(el.scrollHeight - el.clientHeight, el.scrollTop + e.deltaY));
 }
-function onMenuWheel(e: WheelEvent) { onWheelFor(menuRef.value, e); onMenuScroll(); }
-function onHighlightWheel(e: WheelEvent) { onWheelFor(highlightSubRef.value, e); onSubScroll('highlight'); }
-function onClearWheel(e: WheelEvent) { onWheelFor(clearSubRef.value, e); onSubScroll('clear'); }
+function onMenuWheel(e: WheelEvent) {
+  onWheelFor(menuRef.value, e);
+  onMenuScroll();
+}
+function onHighlightWheel(e: WheelEvent) {
+  onWheelFor(highlightSubRef.value, e);
+  onSubScroll('highlight');
+}
+function onClearWheel(e: WheelEvent) {
+  onWheelFor(clearSubRef.value, e);
+  onSubScroll('clear');
+}
 
 function onDocDown(e: PointerEvent) {
   if (!open.value) return;
   const t = e.target as Node;
   if (rootRef.value?.contains(t)) return;
-  if (menuRef.value?.contains(t)) return; // 弹层也视为组件内部
+  if (menuRef.value?.contains(t)) return;
+  if (highlightSubRef.value?.closest('.cf-submenu-wrap')?.contains(t)) return;
+  if (clearSubRef.value?.closest('.cf-submenu-wrap')?.contains(t)) return;
   close();
 }
 
@@ -254,7 +269,10 @@ onBeforeUnmount(() => {
             :disabled="!canUp"
             @click="scrollBy(-1)"
           >
-            <svg viewBox="0 0 1024 1024" fill="currentColor"><path d="M180.053 662.613a32 32 0 0 0 45.227 0L512 375.893l286.72 286.72a32 32 0 1 0 45.227-45.226L534.613 307.053a32 32 0 0 0-45.226 0L134.827 617.387a32 32 0 0 0 0 45.226z" /></svg>
+            <svg
+              viewBox="0 0 1024 1024"
+              fill="currentColor"
+            ><path d="M180.053 662.613a32 32 0 0 0 45.227 0L512 375.893l286.72 286.72a32 32 0 1 0 45.227-45.226L534.613 307.053a32 32 0 0 0-45.226 0L134.827 617.387a32 32 0 0 0 0 45.226z" /></svg>
           </button>
           <div
             ref="menuRef"
@@ -262,79 +280,87 @@ onBeforeUnmount(() => {
             @scroll="onMenuScroll"
             @wheel.passive="onMenuWheel"
           >
-          <div
-            class="cf-menu__item cf-menu__item--sub"
-            @mouseenter="enterSub('highlight', $event)"
-            @mouseleave="leaveSub"
-          >
-            <span>{{ t(locale, 'cfHighlightRules') }}</span>
-            <svg class="cf-menu__arrow" viewBox="0 0 1024 1024" fill="currentColor"><path d="M361.387 180.053a32 32 0 0 0 0 45.227L648.107 512l-286.72 286.72a32 32 0 1 0 45.227 45.227l309.333-309.334a32 32 0 0 0 0-45.226L406.613 180.053a32 32 0 0 0-45.226 0z" /></svg>
-          </div>
+            <div
+              class="cf-menu__item cf-menu__item--sub"
+              @mouseenter="enterSub('highlight', $event)"
+              @mouseleave="leaveSub"
+            >
+              <span>{{ t(locale, 'cfHighlightRules') }}</span>
+              <svg
+                class="cf-menu__arrow"
+                viewBox="0 0 1024 1024"
+                fill="currentColor"
+              ><path d="M361.387 180.053a32 32 0 0 0 0 45.227L648.107 512l-286.72 286.72a32 32 0 1 0 45.227 45.227l309.333-309.334a32 32 0 0 0 0-45.226L406.613 180.053a32 32 0 0 0-45.226 0z" /></svg>
+            </div>
 
-          <div class="cf-menu__sep" />
+            <div class="cf-menu__sep" />
 
-          <button
-            type="button"
-            class="cf-menu__item"
-            :class="{ 'cf-menu__item--disabled': !hasSelection }"
-            :disabled="!hasSelection"
-            @click="hasSelection && pickPreset('blank')"
-          >
-            {{ t(locale, 'cfBlank') }}
-          </button>
-          <button
-            type="button"
-            class="cf-menu__item"
-            :class="{ 'cf-menu__item--disabled': !hasSelection }"
-            :disabled="!hasSelection"
-            @click="hasSelection && pickPreset('notBlank')"
-          >
-            {{ t(locale, 'cfNotBlank') }}
-          </button>
-          <button
-            type="button"
-            class="cf-menu__item"
-            :class="{ 'cf-menu__item--disabled': !hasSelection }"
-            :disabled="!hasSelection"
-            @click="hasSelection && pickPreset('duplicate')"
-          >
-            {{ t(locale, 'cfDuplicate') }}
-          </button>
-          <button
-            type="button"
-            class="cf-menu__item"
-            :class="{ 'cf-menu__item--disabled': !hasSelection }"
-            :disabled="!hasSelection"
-            @click="hasSelection && pickPreset('unique')"
-          >
-            {{ t(locale, 'cfUnique') }}
-          </button>
+            <button
+              type="button"
+              class="cf-menu__item"
+              :class="{ 'cf-menu__item--disabled': !hasSelection }"
+              :disabled="!hasSelection"
+              @click="hasSelection && pickPreset('blank')"
+            >
+              {{ t(locale, 'cfBlank') }}
+            </button>
+            <button
+              type="button"
+              class="cf-menu__item"
+              :class="{ 'cf-menu__item--disabled': !hasSelection }"
+              :disabled="!hasSelection"
+              @click="hasSelection && pickPreset('notBlank')"
+            >
+              {{ t(locale, 'cfNotBlank') }}
+            </button>
+            <button
+              type="button"
+              class="cf-menu__item"
+              :class="{ 'cf-menu__item--disabled': !hasSelection }"
+              :disabled="!hasSelection"
+              @click="hasSelection && pickPreset('duplicate')"
+            >
+              {{ t(locale, 'cfDuplicate') }}
+            </button>
+            <button
+              type="button"
+              class="cf-menu__item"
+              :class="{ 'cf-menu__item--disabled': !hasSelection }"
+              :disabled="!hasSelection"
+              @click="hasSelection && pickPreset('unique')"
+            >
+              {{ t(locale, 'cfUnique') }}
+            </button>
 
-          <div class="cf-menu__sep" />
+            <div class="cf-menu__sep" />
 
-          <button
-            type="button"
-            class="cf-menu__item"
-            @click="pickNew"
-          >
-            {{ t(locale, 'cfNewRule') }}
-          </button>
-          <button
-            type="button"
-            class="cf-menu__item"
-            @click="pickManage"
-          >
-            {{ t(locale, 'cfManageRules') }}
-          </button>
+            <button
+              type="button"
+              class="cf-menu__item"
+              @click="pickNew"
+            >
+              {{ t(locale, 'cfNewRule') }}
+            </button>
+            <button
+              type="button"
+              class="cf-menu__item"
+              @click="pickManage"
+            >
+              {{ t(locale, 'cfManageRules') }}
+            </button>
 
-          <div
-            class="cf-menu__item cf-menu__item--sub"
-            @mouseenter="enterSub('clear', $event)"
-            @mouseleave="leaveSub"
-          >
-            <span>{{ t(locale, 'cfClearRules') }}</span>
-            <svg class="cf-menu__arrow" viewBox="0 0 1024 1024" fill="currentColor"><path d="M361.387 180.053a32 32 0 0 0 0 45.227L648.107 512l-286.72 286.72a32 32 0 1 0 45.227 45.227l309.333-309.334a32 32 0 0 0 0-45.226L406.613 180.053a32 32 0 0 0-45.226 0z" /></svg>
-          </div>
+            <div
+              class="cf-menu__item cf-menu__item--sub"
+              @mouseenter="enterSub('clear', $event)"
+              @mouseleave="leaveSub"
+            >
+              <span>{{ t(locale, 'cfClearRules') }}</span>
+              <svg
+                class="cf-menu__arrow"
+                viewBox="0 0 1024 1024"
+                fill="currentColor"
+              ><path d="M361.387 180.053a32 32 0 0 0 0 45.227L648.107 512l-286.72 286.72a32 32 0 1 0 45.227 45.227l309.333-309.334a32 32 0 0 0 0-45.226L406.613 180.053a32 32 0 0 0-45.226 0z" /></svg>
+            </div>
           </div>
           <button
             v-if="canUp || canDown"
@@ -344,7 +370,10 @@ onBeforeUnmount(() => {
             :disabled="!canDown"
             @click="scrollBy(1)"
           >
-            <svg viewBox="0 0 1024 1024" fill="currentColor"><path d="M134.827 361.387a32 32 0 0 1 45.226 0L512 693.333l331.947-331.946a32 32 0 1 1 45.226 45.226L534.613 738.56a32 32 0 0 1-45.226 0L134.827 406.613a32 32 0 0 1 0-45.226z" /></svg>
+            <svg
+              viewBox="0 0 1024 1024"
+              fill="currentColor"
+            ><path d="M134.827 361.387a32 32 0 0 1 45.226 0L512 693.333l331.947-331.946a32 32 0 1 1 45.226 45.226L534.613 738.56a32 32 0 0 1-45.226 0L134.827 406.613a32 32 0 0 1 0-45.226z" /></svg>
           </button>
         </div>
       </Transition>
@@ -376,7 +405,10 @@ onBeforeUnmount(() => {
             :disabled="!highlightCanUp"
             @click="scrollSubBy('highlight', -1)"
           >
-            <svg viewBox="0 0 1024 1024" fill="currentColor"><path d="M180.053 662.613a32 32 0 0 0 45.227 0L512 375.893l286.72 286.72a32 32 0 1 0 45.227-45.226L534.613 307.053a32 32 0 0 0-45.226 0L134.827 617.387a32 32 0 0 0 0 45.226z" /></svg>
+            <svg
+              viewBox="0 0 1024 1024"
+              fill="currentColor"
+            ><path d="M180.053 662.613a32 32 0 0 0 45.227 0L512 375.893l286.72 286.72a32 32 0 1 0 45.227-45.226L534.613 307.053a32 32 0 0 0-45.226 0L134.827 617.387a32 32 0 0 0 0 45.226z" /></svg>
           </button>
           <div
             ref="highlightSubRef"
@@ -402,7 +434,10 @@ onBeforeUnmount(() => {
             :disabled="!highlightCanDown"
             @click="scrollSubBy('highlight', 1)"
           >
-            <svg viewBox="0 0 1024 1024" fill="currentColor"><path d="M134.827 361.387a32 32 0 0 1 45.226 0L512 693.333l331.947-331.946a32 32 0 1 1 45.226 45.226L534.613 738.56a32 32 0 0 1-45.226 0L134.827 406.613a32 32 0 0 1 0-45.226z" /></svg>
+            <svg
+              viewBox="0 0 1024 1024"
+              fill="currentColor"
+            ><path d="M134.827 361.387a32 32 0 0 1 45.226 0L512 693.333l331.947-331.946a32 32 0 1 1 45.226 45.226L534.613 738.56a32 32 0 0 1-45.226 0L134.827 406.613a32 32 0 0 1 0-45.226z" /></svg>
           </button>
         </div>
       </Transition>
@@ -434,7 +469,10 @@ onBeforeUnmount(() => {
             :disabled="!clearCanUp"
             @click="scrollSubBy('clear', -1)"
           >
-            <svg viewBox="0 0 1024 1024" fill="currentColor"><path d="M180.053 662.613a32 32 0 0 0 45.227 0L512 375.893l286.72 286.72a32 32 0 1 0 45.227-45.226L534.613 307.053a32 32 0 0 0-45.226 0L134.827 617.387a32 32 0 0 0 0 45.226z" /></svg>
+            <svg
+              viewBox="0 0 1024 1024"
+              fill="currentColor"
+            ><path d="M180.053 662.613a32 32 0 0 0 45.227 0L512 375.893l286.72 286.72a32 32 0 1 0 45.227-45.226L534.613 307.053a32 32 0 0 0-45.226 0L134.827 617.387a32 32 0 0 0 0 45.226z" /></svg>
           </button>
           <div
             ref="clearSubRef"
@@ -467,7 +505,10 @@ onBeforeUnmount(() => {
             :disabled="!clearCanDown"
             @click="scrollSubBy('clear', 1)"
           >
-            <svg viewBox="0 0 1024 1024" fill="currentColor"><path d="M134.827 361.387a32 32 0 0 1 45.226 0L512 693.333l331.947-331.946a32 32 0 1 1 45.226 45.226L534.613 738.56a32 32 0 0 1-45.226 0L134.827 406.613a32 32 0 0 1 0-45.226z" /></svg>
+            <svg
+              viewBox="0 0 1024 1024"
+              fill="currentColor"
+            ><path d="M134.827 361.387a32 32 0 0 1 45.226 0L512 693.333l331.947-331.946a32 32 0 1 1 45.226 45.226L534.613 738.56a32 32 0 0 1-45.226 0L134.827 406.613a32 32 0 0 1 0-45.226z" /></svg>
           </button>
         </div>
       </Transition>

@@ -128,10 +128,10 @@ function syncValuesFilter() {
   if (!f) return;
   const allVals = cand.value.values;
   const allBlank = cand.value.hasBlank;
-  const allChecked =
-    selected.value.size === allVals.length &&
-    allVals.every((v) => selected.value.has(v)) &&
-    blankChecked.value === allBlank;
+  const allChecked
+    = selected.value.size === allVals.length
+      && allVals.every((v) => selected.value.has(v))
+      && blankChecked.value === allBlank;
   if (allChecked) {
     props.setFilterColumn(props.col, null);
   } else {
@@ -269,11 +269,15 @@ onBeforeUnmount(() => {
           <button
             class="filter-popup__tool"
             @click="selectAll"
-          >{{ t(locale, 'filterSelectAll') }}</button>
+          >
+            {{ t(locale, 'filterSelectAll') }}
+          </button>
           <button
             class="filter-popup__tool"
             @click="clearAllSelection"
-          >{{ t(locale, 'filterClearAll') }}</button>
+          >
+            {{ t(locale, 'filterClearAll') }}
+          </button>
           <span class="filter-popup__count">{{ t(locale, 'filterFilteredCount').replace('{n}', String(cand.values.length)) }}</span>
         </div>
         <div
@@ -302,22 +306,30 @@ onBeforeUnmount(() => {
           <div
             v-if="listItems.length === 0"
             class="filter-popup__empty"
-          >{{ t(locale, 'filterNoData') }}</div>
+          >
+            {{ t(locale, 'filterNoData') }}
+          </div>
         </div>
         <!-- 条件筛选入口 -->
         <div class="filter-popup__modes">
           <button
             class="filter-popup__mode"
             @click="enterMode('text')"
-          >{{ t(locale, 'filterText') }}</button>
+          >
+            {{ t(locale, 'filterText') }}
+          </button>
           <button
             class="filter-popup__mode"
             @click="enterMode('number')"
-          >{{ t(locale, 'filterNumber') }}</button>
+          >
+            {{ t(locale, 'filterNumber') }}
+          </button>
           <button
             class="filter-popup__mode"
             @click="enterMode('date')"
-          >{{ t(locale, 'filterDate') }}</button>
+          >
+            {{ t(locale, 'filterDate') }}
+          </button>
         </div>
       </template>
 
@@ -327,7 +339,9 @@ onBeforeUnmount(() => {
           <button
             class="filter-popup__cond-back"
             @click="backToValues"
-          >← {{ t(locale, 'filterCustom') }}</button>
+          >
+            ← {{ t(locale, 'filterCustom') }}
+          </button>
           <div class="filter-popup__cond-row">
             <select
               v-model="condOp"
@@ -337,7 +351,9 @@ onBeforeUnmount(() => {
                 v-for="op in currentOps"
                 :key="op"
                 :value="op"
-              >{{ t(locale, OP_I18N[op]) }}</option>
+              >
+                {{ t(locale, OP_I18N[op]) }}
+              </option>
             </select>
           </div>
           <div
@@ -376,16 +392,22 @@ onBeforeUnmount(() => {
         <button
           class="filter-popup__btn filter-popup__btn--clear"
           @click="clearColumn"
-        >{{ t(locale, 'clearFilter') }}</button>
+        >
+          {{ t(locale, 'clearFilter') }}
+        </button>
         <span class="filter-popup__footer-spacer" />
         <button
           class="filter-popup__btn"
           @click="onCancel"
-        >{{ t(locale, 'cancelFilter') }}</button>
+        >
+          {{ t(locale, 'cancelFilter') }}
+        </button>
         <button
           class="filter-popup__btn filter-popup__btn--primary"
           @click="viewMode === 'values' ? onOk() : applyCondition()"
-        >{{ t(locale, 'filterOk') }}</button>
+        >
+          {{ t(locale, 'filterOk') }}
+        </button>
       </div>
     </div>
   </Teleport>

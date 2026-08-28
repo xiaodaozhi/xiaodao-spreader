@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { ref, reactive, computed } from 'vue';
 import { t } from '../core/constants';
-import { colToLabel, labelToCol, parseCellRef } from '../core/utils';
+import { colToLabel, parseCellRef } from '../core/utils';
 import type {
   ConditionalFormattingRule,
   ConditionalFormattingCondition,
   ConditionalFormattingFormat,
   SelectionRange,
+  CellIsOperator,
 } from '../core/types';
 import ColorPicker from './pickers/colorPicker.vue';
 import SpDropdown from './dropdown.vue';
@@ -14,8 +15,8 @@ import SpDropdown from './dropdown.vue';
 const props = withDefaults(defineProps<{
   locale: string;
   mode: 'create' | 'edit';
-  rule: ConditionalFormattingRule | null;
-  defaultRangeText: string;
+  rule?: ConditionalFormattingRule | null;
+  defaultRangeText?: string;
   themeVars?: Record<string, string>;
 }>(), {
   rule: null,
@@ -73,9 +74,11 @@ function initForm(): FormState {
   if (props.rule) {
     const c = props.rule.condition;
     const f: FormState = {
-      type: c.type === 'cellIs' || c.type === 'textContains' || c.type === 'textNotContains' ||
-            c.type === 'blank' || c.type === 'notBlank' || c.type === 'duplicate' ||
-            c.type === 'unique' || c.type === 'formula' ? c.type : 'cellIs',
+      type: c.type === 'cellIs' || c.type === 'textContains' || c.type === 'textNotContains'
+        || c.type === 'blank' || c.type === 'notBlank' || c.type === 'duplicate'
+        || c.type === 'unique' || c.type === 'formula'
+        ? c.type
+        : 'cellIs',
       operator: c.type === 'cellIs' ? c.operator : 'greaterThan',
       value: c.type === 'cellIs' || c.type === 'textContains' || c.type === 'textNotContains' ? c.value : '',
       value2: c.type === 'cellIs' ? (c.value2 ?? '') : '',
@@ -148,7 +151,6 @@ function parseRangeText(text: string): SelectionRange[] | null {
   return ranges.length ? ranges : null;
 }
 
-const needsValue = computed(() => form.type === 'cellIs' || form.type === 'textContains' || form.type === 'textNotContains');
 const needsBetween = computed(() => form.type === 'cellIs' && (form.operator === 'between' || form.operator === 'notBetween'));
 const needsFormula = computed(() => form.type === 'formula');
 const needsNoInput = computed(() => ['blank', 'notBlank', 'duplicate', 'unique'].includes(form.type));
@@ -192,7 +194,7 @@ function validate(): boolean {
 function buildCondition(): ConditionalFormattingCondition {
   switch (form.type) {
     case 'cellIs':
-      return { type: 'cellIs', operator: form.operator as any, value: form.value, value2: form.value2 || undefined };
+      return { type: 'cellIs', operator: form.operator as CellIsOperator, value: form.value, value2: form.value2 || undefined };
     case 'textContains':
       return { type: 'textContains', value: form.value };
     case 'textNotContains':
@@ -252,7 +254,9 @@ function onCancel() {
         type="button"
         class="cf-editor__close"
         @click="onCancel"
-      >×</button>
+      >
+        ×
+      </button>
     </div>
 
     <div class="cf-editor__body">
@@ -315,7 +319,9 @@ function onCancel() {
             :placeholder="t(locale, 'cfFormulaExample')"
           >
         </div>
-        <p class="cf-hint">{{ t(locale, 'cfFormula') }}</p>
+        <p class="cf-hint">
+          {{ t(locale, 'cfFormula') }}
+        </p>
       </template>
 
       <template v-else-if="!needsNoInput">
@@ -463,7 +469,9 @@ function onCancel() {
       <div
         v-if="rangeError"
         class="cf-error"
-      >{{ rangeError }}</div>
+      >
+        {{ rangeError }}
+      </div>
 
       <div class="cf-row cf-row--inline">
         <label class="cf-chk">
@@ -504,12 +512,16 @@ function onCancel() {
         type="button"
         class="cf-btn cf-btn--primary"
         @click="onSave"
-      >{{ t(locale, 'ok') }}</button>
+      >
+        {{ t(locale, 'ok') }}
+      </button>
       <button
         type="button"
         class="cf-btn"
         @click="onCancel"
-      >{{ t(locale, 'cancel') }}</button>
+      >
+        {{ t(locale, 'cancel') }}
+      </button>
     </div>
   </div>
 </template>

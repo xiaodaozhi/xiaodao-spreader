@@ -104,7 +104,7 @@ export interface SpreadsheetData {
 
 /** 冻结窗格状态：rows/cols 为冻结的行数/列数（0 表示该方向未冻结） */
 export interface FreezePane {
-  rows:  number;
+  rows: number;
   cols: number;
 }
 
@@ -113,20 +113,20 @@ export interface FreezePane {
 export type FilterColumnType = 'values' | 'text' | 'number' | 'date';
 
 /** 条件筛选算子（文本 / 数字 / 日期通用，按 type 决定可用集合） */
-export type FilterOperator =
-  | 'equals'      // 等于
-  | 'notEquals'   // 不等于
-  | 'contains'    // 包含（文本）
-  | 'notContains' // 不包含（文本）
-  | 'startsWith'  // 开头是（文本）
-  | 'endsWith'    // 结尾是（文本）
-  | 'gt'          // 大于（数字/日期）
-  | 'gte'         // 大于等于（数字/日期）
-  | 'lt'          // 小于（数字/日期）
-  | 'lte'         // 小于等于（数字/日期）
-  | 'between'     // 介于（数字/日期，需 value + value2）
-  | 'blank'       // 空白
-  | 'notBlank';   // 非空白
+export type FilterOperator
+  = | 'equals'      // 等于
+    | 'notEquals'   // 不等于
+    | 'contains'    // 包含（文本）
+    | 'notContains' // 不包含（文本）
+    | 'startsWith'  // 开头是（文本）
+    | 'endsWith'    // 结尾是（文本）
+    | 'gt'          // 大于（数字/日期）
+    | 'gte'         // 大于等于（数字/日期）
+    | 'lt'          // 小于（数字/日期）
+    | 'lte'         // 小于等于（数字/日期）
+    | 'between'     // 介于（数字/日期，需 value + value2）
+    | 'blank'       // 空白
+    | 'notBlank';   // 非空白
 
 /** 单列筛选条件（条件筛选模式） */
 export interface FilterCondition {
@@ -157,31 +157,31 @@ export interface SheetFilter {
 
 // ============ 条件格式（Conditional Formatting）============
 /** 条件类型：第一阶段完整实现前 8 种；后几种为第二阶段预留（数据模型保留，暂不完整实现 UI/Renderer） */
-export type CFConditionType =
-  | 'cellIs'            // 单元格值比较（等于/不等于/大于/大于等于/小于/小于等于/介于/不介于）
-  | 'textContains'      // 文本包含
-  | 'textNotContains'   // 文本不包含
-  | 'blank'             // 空白
-  | 'notBlank'          // 非空白
-  | 'duplicate'         // 重复值
-  | 'unique'            // 唯一值
-  | 'formula'           // 公式（结果为真时命中）
-  | 'colorScale'        // 色阶（第二阶段，预留）
-  | 'dataBar'           // 数据条（第二阶段，预留）
-  | 'iconSet'           // 图标集（第二阶段，预留）
-  | 'topBottom'         // 前/后 N 项（第二阶段，预留）
-  | 'aboveBelowAverage'; // 高于/低于平均值（第二阶段，预留）
+export type CFConditionType
+  = | 'cellIs'            // 单元格值比较（等于/不等于/大于/大于等于/小于/小于等于/介于/不介于）
+    | 'textContains'      // 文本包含
+    | 'textNotContains'   // 文本不包含
+    | 'blank'             // 空白
+    | 'notBlank'          // 非空白
+    | 'duplicate'         // 重复值
+    | 'unique'            // 唯一值
+    | 'formula'           // 公式（结果为真时命中）
+    | 'colorScale'        // 色阶（第二阶段，预留）
+    | 'dataBar'           // 数据条（第二阶段，预留）
+    | 'iconSet'           // 图标集（第二阶段，预留）
+    | 'topBottom'         // 前/后 N 项（第二阶段，预留）
+    | 'aboveBelowAverage'; // 高于/低于平均值（第二阶段，预留）
 
 /** 单元格值比较算子 */
-export type CellIsOperator =
-  | 'equal'
-  | 'notEqual'
-  | 'greaterThan'
-  | 'greaterThanOrEqual'
-  | 'lessThan'
-  | 'lessThanOrEqual'
-  | 'between'
-  | 'notBetween';
+export type CellIsOperator
+  = | 'equal'
+    | 'notEqual'
+    | 'greaterThan'
+    | 'greaterThanOrEqual'
+    | 'lessThan'
+    | 'lessThanOrEqual'
+    | 'between'
+    | 'notBetween';
 
 export interface CFCellIsCondition {
   type: 'cellIs';
@@ -212,23 +212,23 @@ export interface CFFormulaCondition {
 }
 
 /** 第二阶段可视类型占位（暂不完整实现 UI/Renderer，仅保留数据模型） */
-export interface CFColorScaleCondition { type: 'colorScale'; }
-export interface CFDataBarCondition { type: 'dataBar'; }
-export interface CFIconSetCondition { type:  'iconSet'; }
-export interface CFTopBottomCondition { type: 'topBottom'; top: boolean; percent: boolean; n: number; }
-export interface CFAboveBelowAverageCondition { type: 'aboveBelowAverage'; above: boolean; }
+export interface CFColorScaleCondition { type: 'colorScale' }
+export interface CFDataBarCondition { type: 'dataBar' }
+export interface CFIconSetCondition { type: 'iconSet' }
+export interface CFTopBottomCondition { type: 'topBottom'; top: boolean; percent: boolean; n: number }
+export interface CFAboveBelowAverageCondition { type: 'aboveBelowAverage'; above: boolean }
 
-export type ConditionalFormattingCondition =
-  | CFCellIsCondition
-  | CFTextCondition
-  | CFBlankCondition
-  | CFDuplicateCondition
-  | CFFormulaCondition
-  | CFColorScaleCondition
-  | CFDataBarCondition
-  | CFIconSetCondition
-  | CFTopBottomCondition
-  | CFAboveBelowAverageCondition;
+export type ConditionalFormattingCondition
+  = | CFCellIsCondition
+    | CFTextCondition
+    | CFBlankCondition
+    | CFDuplicateCondition
+    | CFFormulaCondition
+    | CFColorScaleCondition
+    | CFDataBarCondition
+    | CFIconSetCondition
+    | CFTopBottomCondition
+    | CFAboveBelowAverageCondition;
 
 /** 条件格式要设置的格式（仅格式属性，不持久化选中状态）。渲染时与基础样式临时合成，不写回 cell.style */
 export interface ConditionalFormattingFormat {

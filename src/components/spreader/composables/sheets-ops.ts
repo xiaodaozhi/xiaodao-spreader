@@ -71,22 +71,34 @@ function adjustFilterCols(f: SheetFilter | null, cS: number, cE: number, inserte
 /** 删除带（axis='row' 删行 / 'col' 删列）后收缩单个 Range；整段落在删除带内则返回 null */
 function adjustRangeForDelete(r: SelectionRange, axis: 'row' | 'col', idx: number, count: number): SelectionRange | null {
   if (axis === 'row') {
-    const s = r.startRow, e = r.endRow;
-    let ns: number, ne: number;
-    if (e < idx) { ns = s; ne = e; }
-    else if (s > idx + count - 1) { ns = s - count; ne = e - count; }
-    else {
+    const s = r.startRow;
+    const e = r.endRow;
+    let ns: number;
+    let ne: number;
+    if (e < idx) {
+      ns = s;
+      ne = e;
+    } else if (s > idx + count - 1) {
+      ns = s - count;
+      ne = e - count;
+    } else {
       ns = s < idx ? s : idx;
       ne = e > idx + count - 1 ? e - count : idx - 1;
       if (ne < ns) return null;
     }
     return { ...r, startRow: ns, endRow: ne };
   } else {
-    const s = r.startCol, e = r.endCol;
-    let ns: number, ne: number;
-    if (e < idx) { ns = s; ne = e; }
-    else if (s > idx + count - 1) { ns = s - count; ne = e - count; }
-    else {
+    const s = r.startCol;
+    const e = r.endCol;
+    let ns: number;
+    let ne: number;
+    if (e < idx) {
+      ns = s;
+      ne = e;
+    } else if (s > idx + count - 1) {
+      ns = s - count;
+      ne = e - count;
+    } else {
       ns = s < idx ? s : idx;
       ne = e > idx + count - 1 ? e - count : idx - 1;
       if (ne < ns) return null;

@@ -8,10 +8,9 @@ import NumberFormatDialog from './pickers/numberFormatDialog.vue';
 import SortConfirmDialog from './pickers/sortConfirmDialog.vue';
 import InsertFunctionDialog from './pickers/insertFunctionDialog.vue';
 import FilterPopup from './filter-popup.vue';
-import ConditionalFormatMenu from './conditional-format-menu.vue';
 import ConditionalFormatManager from './conditional-format-manager.vue';
 import ConditionalFormatRuleEditor from './conditional-format-rule-editor.vue';
-import type { SheetModelData, SheetState, ConditionalFormattingRule, ConditionalFormattingCondition } from '../core/types';
+import type { SheetModelData, SheetState, ConditionalFormattingRule, ConditionalFormattingCondition, CellIsOperator } from '../core/types';
 import { colToLabel } from '../core/utils';
 
 import { createCoreState, type CoreState } from '../composables/core-state';
@@ -259,7 +258,7 @@ function onCfPreset(type: string) {
   let condition: ConditionalFormattingCondition;
   const cellOps = ['equal', 'notEqual', 'greaterThan', 'greaterThanOrEqual', 'lessThan', 'lessThanOrEqual', 'between', 'notBetween'];
   if (cellOps.includes(type)) {
-    condition = { type: 'cellIs', operator: type as any, value: '' };
+    condition = { type: 'cellIs', operator: type as CellIsOperator, value: '' };
   } else if (type === 'textContains') {
     condition = { type: 'textContains', value: '' };
   } else if (type === 'textNotContains') {
@@ -790,7 +789,8 @@ const setDimInputRef = (el: unknown) => {
           class="context-menu"
           :style="{ left: interactions.ctxMenu.x + 'px', top: interactions.ctxMenu.y + 'px' }"
           @click.stop
-        >          <template
+        >
+          <template
             v-for="(item, i) in interactions.ctxMenu.items"
             :key="i"
           >

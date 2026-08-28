@@ -723,19 +723,20 @@ export function createCoreState(
 
   function clearFilterColumn(col: number) {
     if (!filter.value) return;
-    const next = { ...filter.value, columns: { ...filter.value.columns } };
-    delete next.columns[col];
-    filter.value = next;
+    const { [col]: _removed, ...rest } = filter.value.columns;
+    filter.value = { ...filter.value, columns: rest };
     state.scheduleRender?.();
     state.emitModelData?.();
   }
 
   function setFilterColumn(col: number, colFilter: FilterColumn | null) {
     if (!filter.value) return;
-    const next = { ...filter.value, columns: { ...filter.value.columns } };
-    if (colFilter) next.columns[col] = colFilter;
-    else delete next.columns[col];
-    filter.value = next;
+    if (colFilter) {
+      filter.value = { ...filter.value, columns: { ...filter.value.columns, [col]: colFilter } };
+    } else {
+      const { [col]: _removed, ...rest } = filter.value.columns;
+      filter.value = { ...filter.value, columns: rest };
+    }
     state.scheduleRender?.();
     state.emitModelData?.();
   }
@@ -812,7 +813,8 @@ export function createCoreState(
       sc = Math.min(sel.startCol, sel.endCol);
       ec = Math.max(sel.startCol, sel.endCol);
     } else {
-      sc = ac.col; ec = ac.col;
+      sc = ac.col;
+      ec = ac.col;
     }
 
     // 向下探测：从表头行向下逐行延伸到该列范围连续有内容的最后一行；
@@ -1197,8 +1199,8 @@ export function createCoreState(
       for (let i = conditionalFormats.length - 1; i >= 0; i--) {
         const rule = conditionalFormats[i]!;
         rule.ranges = rule.ranges.filter(
-          (rg) => !(rg.startCol <= sel.endCol && rg.endCol >= sel.startCol &&
-                    rg.startRow <= sel.endRow && rg.endRow >= sel.startRow),
+          (rg) => !(rg.startCol <= sel.endCol && rg.endCol >= sel.startCol
+            && rg.startRow <= sel.endRow && rg.endRow >= sel.startRow),
         );
         if (rule.ranges.length === 0) conditionalFormats.splice(i, 1);
       }

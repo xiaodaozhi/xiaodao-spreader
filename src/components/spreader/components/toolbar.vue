@@ -360,17 +360,14 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  (e: 'undo' | 'redo' | 'paint-format' | 'clear-format' | 'font-size-blur' | 'font-size-toggle' | 'font-size-step-up' | 'font-size-step-down' | 'bold-toggle' | 'italic-toggle' | 'underline-toggle' | 'strikethrough-toggle' | 'apply-text-color' | 'apply-fill-color' | 'apply-border' | 'apply-sort' | 'wrap-toggle' | 'apply-merge' | 'calc-sum' | 'calc-avg' | 'calc-count' | 'find' | 'increase-decimals' | 'decrease-decimals' | 'toggle-filter'): void;
+  (e: 'undo' | 'redo' | 'paint-format' | 'clear-format' | 'font-size-blur' | 'font-size-toggle' | 'font-size-step-up' | 'font-size-step-down' | 'bold-toggle' | 'italic-toggle' | 'underline-toggle' | 'strikethrough-toggle' | 'apply-text-color' | 'apply-fill-color' | 'apply-border' | 'apply-sort' | 'wrap-toggle' | 'apply-merge' | 'calc-sum' | 'calc-avg' | 'calc-count' | 'find' | 'increase-decimals' | 'decrease-decimals' | 'toggle-filter' | 'cf-new-rule' | 'cf-manage'): void;
   (e: 'font-family-change' | 'font-size-change' | 'h-align-change' | 'v-align-change', v: string | number): void;
-  (e: 'font-size-input' | 'text-color-change' | 'fill-color-change' | 'number-format-change' | 'freeze-change', v: string): void;
+  (e: 'font-size-input' | 'text-color-change' | 'fill-color-change' | 'number-format-change' | 'freeze-change' | 'cf-preset', v: string): void;
   (e: 'font-size-keydown', ev: KeyboardEvent): void;
   (e: 'update:font-size-menu-open' | 'update:text-color-menu-open' | 'update:fill-color-menu-open' | 'update:border-menu-open' | 'update:sort-menu-open' | 'update:merge-menu-open' | 'update:calc-menu-open', v: boolean): void;
   (e: 'border-change', v: BorderType): void;
   (e: 'sort-change', v: SortOrder): void;
   (e: 'merge-change', v: MergeType): void;
-  (e: 'cf-preset', type: string): void;
-  (e: 'cf-new-rule'): void;
-  (e: 'cf-manage'): void;
   (e: 'cf-clear', scope: 'selection' | 'sheet'): void;
 }>();
 
@@ -1385,7 +1382,10 @@ const freezeOptions = computed<FontOption[]>(() => {
           :disabled="!overflowCanUp"
           @click="scrollOverflowBy(-1)"
         >
-          <svg viewBox="0 0 1024 1024" fill="currentColor"><path d="M180.053 662.613a32 32 0 0 0 45.227 0L512 375.893l286.72 286.72a32 32 0 1 0 45.227-45.226L534.613 307.053a32 32 0 0 0-45.226 0L134.827 617.387a32 32 0 0 0 0 45.226z" /></svg>
+          <svg
+            viewBox="0 0 1024 1024"
+            fill="currentColor"
+          ><path d="M180.053 662.613a32 32 0 0 0 45.227 0L512 375.893l286.72 286.72a32 32 0 1 0 45.227-45.226L534.613 307.053a32 32 0 0 0-45.226 0L134.827 617.387a32 32 0 0 0 0 45.226z" /></svg>
         </button>
         <div
           ref="overflowMenuEl"
@@ -1401,7 +1401,10 @@ const freezeOptions = computed<FontOption[]>(() => {
           :disabled="!overflowCanDown"
           @click="scrollOverflowBy(1)"
         >
-          <svg viewBox="0 0 1024 1024" fill="currentColor"><path d="M134.827 361.387a32 32 0 0 1 45.226 0L512 693.333l331.947-331.946a32 32 0 1 1 45.226 45.226L534.613 738.56a32 32 0 0 1-45.226 0L134.827 406.613a32 32 0 0 1 0-45.226z" /></svg>
+          <svg
+            viewBox="0 0 1024 1024"
+            fill="currentColor"
+          ><path d="M134.827 361.387a32 32 0 0 1 45.226 0L512 693.333l331.947-331.946a32 32 0 1 1 45.226 45.226L534.613 738.56a32 32 0 0 1-45.226 0L134.827 406.613a32 32 0 0 1 0-45.226z" /></svg>
         </button>
       </div>
     </Transition>

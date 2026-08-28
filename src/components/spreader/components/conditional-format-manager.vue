@@ -6,7 +6,7 @@ import type { ConditionalFormattingRule, ConditionalFormattingCondition } from '
 
 const props = withDefaults(defineProps<{
   locale: string;
-  rules: ConditionalFormattingRule[];
+  rules?: ConditionalFormattingRule[];
   themeVars?: Record<string, string>;
 }>(), {
   rules: () => [],
@@ -18,8 +18,7 @@ const emit = defineEmits<{
   (e: 'delete', id: string): void;
   (e: 'move', id: string, dir: 'up' | 'down'): void;
   (e: 'toggle', id: string, enabled: boolean): void;
-  (e: 'new'): void;
-  (e: 'close'): void;
+  (e: 'new' | 'close'): void;
 }>();
 
 const sortedRules = computed(() =>
@@ -37,13 +36,19 @@ function rangeText(r: ConditionalFormattingRule): string {
 function condSummary(c: ConditionalFormattingCondition): string {
   switch (c.type) {
     case 'cellIs': {
-      const op = t(props.locale, 'cf' + (c.operator === 'greaterThan' ? 'GreaterThan'
-        : c.operator === 'lessThan' ? 'LessThan'
-        : c.operator === 'greaterThanOrEqual' ? 'GreaterThanOrEqual'
-        : c.operator === 'lessThanOrEqual' ? 'LessThanOrEqual'
-        : c.operator === 'notEqual' ? 'NotEqual'
-        : c.operator === 'between' ? 'Between'
-        : c.operator === 'notBetween' ? 'NotBetween' : 'Equal'));
+      const op = t(props.locale, 'cf' + (c.operator === 'greaterThan'
+        ? 'GreaterThan'
+        : c.operator === 'lessThan'
+          ? 'LessThan'
+          : c.operator === 'greaterThanOrEqual'
+            ? 'GreaterThanOrEqual'
+            : c.operator === 'lessThanOrEqual'
+              ? 'LessThanOrEqual'
+              : c.operator === 'notEqual'
+                ? 'NotEqual'
+                : c.operator === 'between'
+                  ? 'Between'
+                  : c.operator === 'notBetween' ? 'NotBetween' : 'Equal'));
       if (c.operator === 'between' || c.operator === 'notBetween') {
         return `${op} ${c.value} ${t(props.locale, 'cfValue2')} ${c.value2 ?? ''}`;
       }
@@ -83,12 +88,16 @@ function previewStyle(r: ConditionalFormattingRule): Record<string, string> {
         type="button"
         class="cf-btn cf-btn--primary cf-manager__new"
         @click="emit('new')"
-      >{{ t(locale, 'cfNewRule') }}</button>
+      >
+        {{ t(locale, 'cfNewRule') }}
+      </button>
       <button
         type="button"
         class="cf-manager__close"
         @click="emit('close')"
-      >×</button>
+      >
+        ×
+      </button>
     </div>
 
     <div
@@ -114,8 +123,12 @@ function previewStyle(r: ConditionalFormattingRule): Record<string, string> {
             :style="previewStyle(r)"
           >Aa</span>
           <div class="cf-rule__info">
-            <div class="cf-rule__summary">{{ condSummary(r.condition) }}</div>
-            <div class="cf-rule__range">{{ t(locale, 'cfAppliedTo') }}: {{ rangeText(r) }}</div>
+            <div class="cf-rule__summary">
+              {{ condSummary(r.condition) }}
+            </div>
+            <div class="cf-rule__range">
+              {{ t(locale, 'cfAppliedTo') }}: {{ rangeText(r) }}
+            </div>
           </div>
         </div>
         <div class="cf-rule__actions">
@@ -140,7 +153,14 @@ function previewStyle(r: ConditionalFormattingRule): Record<string, string> {
             :title="t(locale, 'cfMoveUp')"
             @click="emit('move', r.id, 'up')"
           >
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <svg
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
               <path d="M8 3 L8 13 M4 7 L8 3 L12 7" />
             </svg>
           </button>
@@ -150,7 +170,14 @@ function previewStyle(r: ConditionalFormattingRule): Record<string, string> {
             :title="t(locale, 'cfMoveDown')"
             @click="emit('move', r.id, 'down')"
           >
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <svg
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
               <path d="M8 3 L8 13 M4 9 L8 13 L12 9" />
             </svg>
           </button>
@@ -160,7 +187,14 @@ function previewStyle(r: ConditionalFormattingRule): Record<string, string> {
             :title="t(locale, 'cfEdit')"
             @click="emit('edit', r)"
           >
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <svg
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
               <path d="M10.5 3.5 L13 6 L5 14 L2 14 L2 11 Z" />
               <path d="M9 5.5 L11.5 8" />
             </svg>
@@ -171,7 +205,13 @@ function previewStyle(r: ConditionalFormattingRule): Record<string, string> {
             :title="t(locale, 'cfDelete')"
             @click="emit('delete', r.id)"
           >
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+            <svg
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+            >
               <path d="M4.5 4.5 L11.5 11.5 M11.5 4.5 L4.5 11.5" />
             </svg>
           </button>

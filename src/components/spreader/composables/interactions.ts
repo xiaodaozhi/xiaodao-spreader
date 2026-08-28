@@ -23,8 +23,8 @@ function normalizeLoadedFilter(raw: unknown, cells: Record<string, CellData>): S
   const columns: Record<number, FilterColumn> = r.columns ?? {};
   const colKeys = Object.keys(columns).map((k) => Number(k)).filter((n) => !Number.isNaN(n));
   if (!r.range || typeof r.range.startRow !== 'number') {
-    let minC = colKeys.length ? Math.min(...colKeys) : 0;
-    let maxC = colKeys.length ? Math.max(...colKeys) : 0;
+    const minC = colKeys.length ? Math.min(...colKeys) : 0;
+    const maxC = colKeys.length ? Math.max(...colKeys) : 0;
     let maxR = 0;
     for (const key in cells) {
       const comma = key.indexOf(',');
@@ -1554,7 +1554,9 @@ export function createInteractions(
   // ============ 右键菜单 ============
   const ctxMenu = ref<{ x: number; y: number; items: ContextMenuItem[] } | null>(null);
   // 菜单被任意路径关闭（含菜单项点击经 setCtxMenuNull 直接置空）时清理点外部关闭监听
-  watch(ctxMenu, (v) => { if (v === null) rdl(); });
+  watch(ctxMenu, (v) => {
+    if (v === null) rdl();
+  });
 
   // ============ 筛选弹窗 ============
   /** 当前打开的筛选弹窗：关联的列与屏幕锚点；null 表示未打开 */
@@ -1567,7 +1569,7 @@ export function createInteractions(
   const FILTER_BTN_R = 2;
   /** toolbar 下拉框同款下箭头 caret（viewBox 0 0 1024 1024），复用为筛选箭头图标 */
   const CARET_PATH = new Path2D(
-    'M180.053333 361.386667a32 32 0 0 1 45.226667 0L512 648.106667l286.72-286.72a32 32 0 1 1 45.226667 45.226666l-309.333334 309.333334a32 32 0 0 1-45.226666 0L180.053333 406.613333a32 32 0 0 1 0-45.226666z'
+    'M180.053333 361.386667a32 32 0 0 1 45.226667 0L512 648.106667l286.72-286.72a32 32 0 1 1 45.226667 45.226666l-309.333334 309.333334a32 32 0 0 1-45.226666 0L180.053333 406.613333a32 32 0 0 1 0-45.226666z',
   );
 
   /** 圆角矩形路径（兼容降级，避免依赖 ctx.roundRect） */
@@ -1710,7 +1712,7 @@ export function createInteractions(
     // transform: scale(.9)，nextTick 测量时整棵菜单处于缩放态，getBoundingClientRect 会
     // 拿到被缩小的右缘 → 误判「右侧放得下」→ 选右弹 → 动画结束回到 scale(1) 时子菜单溢出。
     const menuRight = cm.x + 140;
-    const menuLeft = cm.x;
+    // (menuLeft intentionally unused, retained for left-side probe if needed)
     // 组件以 Vue template 形式嵌入其他页面时，子菜单必须夹在「表格容器」(wrapper) 的可视边界内，
     // 而不是整个浏览器 window：表格只占宿主页面的一部分，用 window 宽判定会漏算两侧留白导致溢出。
     const wr = wrapper.getBoundingClientRect();
@@ -2856,7 +2858,10 @@ export function createInteractions(
       return;
     }
     // 开始明显拖动 → 取消可能 pending 的长按计时（转滚动而非框选）
-    if (tLongTimer !== null) { clearTimeout(tLongTimer); tLongTimer = null; }
+    if (tLongTimer !== null) {
+      clearTimeout(tLongTimer);
+      tLongTimer = null;
+    }
     if (Math.abs(x - tSX) > 8 || Math.abs(y - tSY) > 8) {
       tMoved = true;
       e.preventDefault();
@@ -2866,7 +2871,10 @@ export function createInteractions(
   }
   function onTouchEnd() {
     if (!isTouch) return;
-    if (tLongTimer !== null) { clearTimeout(tLongTimer); tLongTimer = null; }
+    if (tLongTimer !== null) {
+      clearTimeout(tLongTimer);
+      tLongTimer = null;
+    }
     // 长按在选区内弹出的右键菜单：菜单仍开着的这一抬手不应改写选区（否则多选被缩成单选）
     if (tCtxMenuOpened) {
       tCtxMenuOpened = false;
