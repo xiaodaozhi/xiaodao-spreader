@@ -1687,6 +1687,8 @@ export function createInteractions(
   // 关键：方向只在此处算一次，onCtxItemEnter 不再改动，因此子菜单首帧绘制即正确，无任何纠正帧，
   // 彻底消除「先右后左 / 先左后右」闪动。所有子菜单共享同一右缘（菜单右缘），故取最大子菜单宽度判定即可。
   function predictCtxSubmenuDir() {
+    // 子菜单贴视口边缘时预留的间距：右弹时右缘距视口右边缘不足该值即翻到左侧弹，避免贴边裁切
+    const SUBMENU_EDGE_MARGIN = 8;
     const menuEl = document.querySelector('.context-menu') as HTMLElement | null;
     if (!menuEl) {
       ctxSubmenuLeft.value = false;
@@ -1705,10 +1707,11 @@ export function createInteractions(
     });
     // 取所有子菜单中的最大宽度与菜单右缘判定，宁左勿右（左弹不会裁切，右弹溢出才裁切）
     if (maxSubW === 0) {
-      ctxSubmenuLeft.value = window.innerWidth - menuRight < 200;
+      ctxSubmenuLeft.value = window.innerWidth - menuRight < 200 + SUBMENU_EDGE_MARGIN;
       return;
     }
-    ctxSubmenuLeft.value = menuRight + maxSubW > window.innerWidth;
+    // 右弹所需右缘 = 菜单右缘 + 子菜单最大宽；若该值已超出「视口宽 - 8px 间距」则翻左弹
+    ctxSubmenuLeft.value = menuRight + maxSubW > window.innerWidth - SUBMENU_EDGE_MARGIN;
   }
 
   function onTabCtxMenu(e: MouseEvent, i: number) {
