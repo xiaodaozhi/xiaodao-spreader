@@ -1687,17 +1687,31 @@ export function createInteractions(
   // 关键：方向只在此处算一次，onCtxItemEnter 不再改动，因此子菜单首帧绘制即正确，无任何纠正帧，
   // 彻底消除「先右后左 / 先左后右」闪动。所有子菜单共享同一右缘（菜单右缘），故取最大子菜单宽度判定即可。
   function predictCtxSubmenuDir() {
-    // 子菜单贴视口边缘时预留的间距：右弹时右缘距视口右边缘不足该值即翻到左侧弹，避免贴边裁切
+    // 子菜单贴容器边缘时预留的间距：右弹时右缘距容器右边界不足该值即翻到左侧弹，避免贴边裁切
     const SUBMENU_EDGE_MARGIN = 8;
     const menuEl = document.querySelector('.context-menu') as HTMLElement | null;
-    if (!menuEl) {
+    const cm = ctxMenu.value;
+    const wrapper = so.wrapperRef.value;
+    if (!menuEl || !cm || !wrapper) {
       ctxSubmenuLeft.value = false;
       return;
     }
-    const menuRight = menuEl.getBoundingClientRect().right;
+    // 菜单右缘必须用「逻辑坐标」(showCtx 传入并经修正的 x + 固定菜单宽 140)，不能用
+    // getBoundingClientRect()：菜单套在 <Transition name="menu-pop"> 里，进入动画是
+    // transform: scale(.9)，nextTick 测量时整棵菜单处于缩放态，getBoundingClientRect 会
+    // 拿到被缩小的右缘 → 误判「右侧放得下」→ 选右弹 → 动画结束回到 scale(1) 时子菜单溢出。
+    const menuRight = cm.x + 140;
+    const menuLeft = cm.x;
+    // 组件以 Vue template 形式嵌入其他页面时，子菜单必须夹在「表格容器」(wrapper) 的可视边界内，
+    // 而不是整个浏览器 window：表格只占宿主页面的一部分，用 window 宽判定会漏算两侧留白导致溢出。
+    const wr = wrapper.getBoundingClientRect();
+    // 子菜单宽度也用 getBoundingClientRect 实测，但测量前临时去掉菜单 transform，
+    // 否则同样会吃到缩放态宽度（偏小约 10%），导致判定右弹后实溢出。
+    const prevTransform = menuEl.style.transform;
+    menuEl.style.transform = 'none';
     let maxSubW = 0;
-    menuEl.querySelectorAll('.context-menu__item').forEach((it) => {
-      const sub = it.querySelector(':scope > .context-submenu') as HTMLElement | null;
+    menuEl.querySelectorAll<HTMLElement>('.context-menu__item').forEach((it) => {
+      const sub = it.querySelector<HTMLElement>(':scope > .context-submenu');
       if (!sub) return;
       const prev = sub.style.display;
       sub.style.display = 'block';
@@ -1705,13 +1719,16 @@ export function createInteractions(
       sub.style.display = prev;
       if (w > maxSubW) maxSubW = w;
     });
-    // 取所有子菜单中的最大宽度与菜单右缘判定，宁左勿右（左弹不会裁切，右弹溢出才裁切）
+    menuEl.style.transform = prevTransform;
+    // 测不到（字体/布局未稳）时默认左弹，宁左勿右（左弹不会裁切，右弹溢出才裁切）
     if (maxSubW === 0) {
-      ctxSubmenuLeft.value = window.innerWidth - menuRight < 200 + SUBMENU_EDGE_MARGIN;
+      ctxSubmenuLeft.value = true;
       return;
     }
-    // 右弹所需右缘 = 菜单右缘 + 子菜单最大宽；若该值已超出「视口宽 - 8px 间距」则翻左弹
-    ctxSubmenuLeft.value = menuRight + maxSubW > window.innerWidth - SUBMENU_EDGE_MARGIN;
+    // 右弹所需空间 = 容器右边界 - 菜单右缘；不足（含 8px 余量）则翻左弹。
+    // 左弹同样放不下时仍选左弹（宁左勿右兜底，左弹至多贴容器左缘、不会裁到不可见）。
+    const rightSpace = wr.right - menuRight;
+    ctxSubmenuLeft.value = rightSpace < maxSubW + SUBMENU_EDGE_MARGIN;
   }
 
   function onTabCtxMenu(e: MouseEvent, i: number) {
