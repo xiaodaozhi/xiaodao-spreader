@@ -2154,7 +2154,7 @@ export function createInteractions(
   // 关键：方向只在此处算一次，onCtxItemEnter 不再改动，因此子菜单首帧绘制即正确，无任何纠正帧，
   // 彻底消除「先右后左 / 先下后上」闪动。
   function predictCtxSubmenuDir() {
-    // 子菜单贴视口边缘时预留的间距：右弹时右缘距视口右边界不足该值即翻到左侧弹，避免贴边裁切
+    // 子菜单贴边缘时预留的间距：右弹时右缘距有效边界不足该值即翻到左侧弹，避免贴边裁切
     const SUBMENU_EDGE_MARGIN = 8;
     const menuEl = document.querySelector('.context-menu') as HTMLElement | null;
     const cm = ctxMenu.value;
@@ -2167,11 +2167,15 @@ export function createInteractions(
     // transform: scale(.9)，nextTick 测量时整棵菜单处于缩放态，getBoundingClientRect 会
     // 拿到被缩小的右缘 → 误判「右侧放得下」→ 选右弹 → 动画结束回到 scale(1) 时子菜单溢出。
     const menuRight = cm.x + 140;
-    // 边缘基准 = 「视口」而非表格容器 wrapper：菜单经 Teleport + position:fixed 挂载在视口坐标系，
-    // 视口才是「再往外就看不见」的硬边界；按容器判定会在容器小于视口时过早翻向，白丢可用空间。
-    // 与项目其他浮层（dropdown / 各 picker / conditional-format-menu 子菜单）的判据保持一致。
-    const vpW = window.innerWidth;
-    const vpH = window.innerHeight;
+    // 有效边界 = 「组件容器」∩「浏览器视口」，两者取交集，谁都不能单独作为判据：
+    //   - 浏览器视口：菜单经 Teleport + position:fixed 挂在视口坐标系，越出视口一定看不见（硬边界）。
+    //     但组件作为子组件嵌入宿主 Vue 页面时只占页面一部分，纯视口判定会漏算两侧留白 → 越界盖住宿主内容。
+    //   - 组件容器 wrapper：嵌入场景下把子菜单夹在表格可视区内。但容器可能大于视口（页面滚动、
+    //     容器底缘在视口外），纯容器判定会把「其实已在视口外」当成有空间 → 菜单照样看不见。
+    // 取交集后：组件全屏时容器≈视口，自然退化为纯视口判定；嵌入时按容器内边缘夹住。
+    const wr = so.wrapperRef.value?.getBoundingClientRect() ?? null;
+    const boundRight = Math.min(window.innerWidth, wr ? wr.right : window.innerWidth);
+    const boundBottom = Math.min(window.innerHeight, wr ? wr.bottom : window.innerHeight);
     // 子菜单宽度也用 getBoundingClientRect 实测，但测量前临时去掉菜单 transform，
     // 否则同样会吃到缩放态宽度（偏小约 10%），导致判定右弹后实溢出。
     const prevTransform = menuEl.style.transform;
@@ -2187,10 +2191,10 @@ export function createInteractions(
       const subH = subRect.height;
       sub.style.display = prev;
       if (w > maxSubW) maxSubW = w;
-      // 垂直方向：父项 top + 子菜单高度（即 top:-4 对齐时的子菜单下缘）超过视口下边界 - 余量，
+      // 垂直方向：父项 top + 子菜单高度（即 top:-4 对齐时的子菜单下缘）超过有效下边界 - 余量，
       // 则改为向上弹出（bottom 对齐父项底部），避免子菜单向下溢出。inline style 覆盖 CSS 默认 top:-4px。
       const itemRect = it.getBoundingClientRect();
-      if (itemRect.top + subH > vpH - SUBMENU_EDGE_MARGIN) {
+      if (itemRect.top + subH > boundBottom - SUBMENU_EDGE_MARGIN) {
         sub.style.top = 'auto';
         sub.style.bottom = '-4px';
       } else {
@@ -2205,9 +2209,9 @@ export function createInteractions(
       ctxSubmenuLeft.value = true;
       return;
     }
-    // 右弹所需空间 = 视口右边界 - 菜单右缘；不足（含 8px 余量）则翻左弹。
-    // 左弹同样放不下时仍选左弹（宁左勿右兜底，左弹至多贴视口左缘、不会裁到不可见）。
-    const rightSpace = vpW - menuRight;
+    // 右弹所需空间 = 有效右边界 - 菜单右缘；不足（含 8px 余量）则翻左弹。
+    // 左弹同样放不下时仍选左弹（宁左勿右兜底，左弹至多贴有效左缘、不会裁到不可见）。
+    const rightSpace = boundRight - menuRight;
     ctxSubmenuLeft.value = rightSpace < maxSubW + SUBMENU_EDGE_MARGIN;
   }
 
