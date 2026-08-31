@@ -1319,19 +1319,18 @@ const freezeOptions = computed<FontOption[]>(() => {
           :title="t(locale, 'outlineGroup')"
           @click="coordToolbarMenu('outline', !outlineMenuOpen)"
         >
-          <span class="toolbar-btn__icon">
-            <svg
-              viewBox="0 0 1024 1024"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="56"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            ><path d="M160 224 H560 V800 H160 Z" /><path
+          <svg
+            class="outline-trigger__icon"
+            viewBox="0 0 1024 1024"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="56"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          ><path d="M160 224 H560 V800 H160 Z" /><path
               stroke-width="44"
               d="M664 640 H864 V384 H664"
             /></svg>
-          </span>
           <span class="toolbar-btn__label">{{ t(locale, 'outlineGroup') }}</span>
           <svg
             class="outline-trigger__caret"
@@ -1615,9 +1614,9 @@ const freezeOptions = computed<FontOption[]>(() => {
 .outline-trigger:hover:not(:disabled) { background: var(--sp-toolbar-btn-hover-bg, #e6e6e6); }
 .outline-trigger:disabled { color: var(--sp-toolbar-btn-disabled-color, #aaa); cursor: default; }
 .outline-trigger.is-open { background: var(--sp-toolbar-btn-hover-bg, #e6e6e6); }
-.outline-trigger .toolbar-btn__icon { width: 16px; height: 16px; }
+.outline-trigger__icon { width: 16px; height: 16px; flex: none; }
 .outline-trigger .toolbar-btn__label { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; }
-.toolbar-btn.outline-trigger .outline-trigger__caret { width: 10px; height: 10px; opacity: 0.7; flex: none; }
+.toolbar-btn.outline-trigger .outline-trigger__caret { width: 10px; height: 10px; opacity: 0.7; flex: none; margin-left: auto; }
 
 /* 「更多」按钮 */
 .toolbar-more { display: flex; align-items: center; justify-content: center; width: 30px; height: 26px; border: none; border-radius: 3px; background: transparent; color: var(--sp-toolbar-btn-color); cursor: pointer; padding: 0; flex: 0 0 auto; margin-left: auto; }
@@ -1682,8 +1681,8 @@ const freezeOptions = computed<FontOption[]>(() => {
 .overflow-menu .sp-dropdown .sp-dropdown__trigger { padding-left: 6px; gap: 6px; }
 .overflow-menu .cf-menu-root .cf-menu-trigger { padding-left: 6px; gap: 6px; }
 .overflow-menu .cf-menu-trigger__icon { width: 18px; height: 18px; }
-.overflow-menu .outline-trigger { padding-left: 6px; padding-right: 3px; gap: 6px; }
-.overflow-menu .outline-trigger .toolbar-btn__icon { width: 18px; height: 18px; }
+.overflow-menu .outline-trigger { padding-left: 6px; padding-right: 6px; }
+.overflow-menu .outline-trigger__icon { width: 18px; height: 18px; flex: none; }
 
 /* 统一弹出动画：fade + scale */
 .menu-pop-enter-active, .menu-pop-leave-active { transition: opacity 0.12s ease-out, transform 0.12s ease-out; }
@@ -1710,8 +1709,8 @@ const freezeOptions = computed<FontOption[]>(() => {
 .overflow-menu .sp-dropdown .sp-dropdown__trigger { padding-left: 6px; gap: 6px; }
 .overflow-menu .cf-menu-root .cf-menu-trigger { padding-left: 6px; gap: 6px; }
 .overflow-menu .cf-menu-trigger__icon { width: 18px; height: 18px; }
-.overflow-menu .outline-trigger { padding-left: 6px; padding-right: 3px; gap: 6px; }
-.overflow-menu .outline-trigger .toolbar-btn__icon { width: 18px; height: 18px; }
+.overflow-menu .outline-trigger { padding-left: 6px; padding-right: 6px; }
+.overflow-menu .outline-trigger__icon { width: 18px; height: 18px; flex: none; }
 .overflow-menu .toolbar-font-size__input { flex: 1 1 auto; width: auto; min-width: 40px; }
 
 .overflow-menu .toolbar-btn:hover:not(:disabled) { background: var(--sp-toolbar-btn-hover-bg); }
