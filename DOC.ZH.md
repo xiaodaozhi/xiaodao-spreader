@@ -43,14 +43,21 @@ xiaodao-spreader/
             │   ├── dropdown.vue        # 通用下拉组件
             │   ├── find-replace-bar.vue # 查找/替换栏 UI
             │   └── pickers/
-            │       ├── colorPicker.vue        # 文字 / 填充颜色选择器
-            │       ├── borderPicker.vue       # 边框选择器
-            │       ├── mergePicker.vue        # 合并单元格选择器
-            │       ├── numberFormatDialog.vue  # 数字格式自定义对话框
-            │       ├── sortPicker.vue         # 排序下拉
-            │       ├── sortConfirmDialog.vue  # Excel 风格排序提醒对话框
-            │       ├── calcPicker.vue         # 求和 / 平均值 / 计数选择器
-            │       └── insertFunctionDialog.vue # 插入函数对话框
+            │       ├── border-picker.vue          # 边框选择器
+            │       ├── calc-picker.vue            # 求和 / 平均值 / 计数选择器
+            │       ├── color-picker.vue           # 文字 / 填充颜色选择器
+            │       ├── merge-picker.vue           # 合并单元格选择器
+            │       ├── sort-picker.vue            # 排序下拉
+            │       ├── sort-confirm-dialog.vue    # Excel 风格排序提醒对话框
+            │       ├── number-format-dialog.vue   # 数字格式自定义对话框
+            │       ├── insert-function-dialog.vue # 插入函数对话框
+            │       ├── filter-popup.vue           # 自动筛选面板（值 / 文本 / 数值 / 日期 + 搜索 + 空值 + 多列 AND）
+            │       ├── conditional-format-menu.vue       # 条件格式工具栏下拉（预设 + 新建 / 管理 / 清除规则）
+            │       ├── conditional-format-rule-editor.vue # 条件格式「新建规则 / 编辑规则」对话框
+            │       ├── conditional-format-manager.vue     # 条件格式「管理规则」对话框
+            │       ├── data-validation-dialog.vue    # 数据验证设置对话框（设置 / 输入信息 / 出错警告 / 应用于）
+            │       ├── data-validation-dropdown.vue  # 数据验证列表下拉（搜索 + 虚拟列表 + 键盘）
+            │       └── data-validation-alert.vue    # 数据验证出错警告（Stop / Warning / Information）
             ├── composables/
             │   ├── core-state.ts      # Props、cells/merges/selection、字体度量、导航
             │   ├── undo-styles.ts      # 撤销/重做、格式刷、字体/对齐/颜色
@@ -515,6 +522,7 @@ Canvas CSS 坐标（逻辑像素）
 - **查找/替换**: *已实现，见[第 16 节](#16-查找与替换)*
 - **数据排序**: *已实现，见[第 19 节](#19-排序)*
 - **自动筛选（AutoFilter）**: *已实现，见[第 23 节](#23-自动筛选autofilter)*
+- **数据验证（Data Validation）**: *已实现，见[第 26 节](#26-数据验证data-validation)*
 - **触屏与移动端交互**: *已实现 —— 每个鼠标路径都有对称触屏路径（选择 / 右键菜单 / 筛选命中 / 列宽行高 / 框选 / 格式刷 / tab 菜单；浮层支持点外部关闭）。见[第 24 节](#24-触屏与移动端交互)。*
 - **图表**
 
@@ -1197,3 +1205,61 @@ core-state.ts setCellValue 在写入值后失效 CfValueCache 中范围包含变
 ### 25.9 未来扩展
 
 类型系统已预留 colorScale、dataBar、iconSet、topBottom N、aboveBelowAverage 联合成员。test/conditional-formatting.test.ts 当前覆盖规则持久化、优先级合并语义、绝对引用平移、重复/唯一值统计、公式条件求值。每种新条件类型实现时同步补充单测。
+
+---
+
+## 26. 数据验证（Data Validation）
+
+类 Excel 数据验证规则，按工作表存储。引擎位于 spreader/core/data-validation.ts，纯逻辑实现，零 Vue/Canvas 依赖。单元测试见 test/data-validation.test.ts 与 test/data-validation-integration.test.ts。
+
+### 26.1 数据模型
+
+规则挂在工作表状态 SheetState.dataValidations（DataValidationRule 数组，缺省为空）。规则属于工作表而非单元格；它只描述「输入约束 + 可选 UI 行为」，绝不写回底层单元格 value 或 styleId。
+
+每条规则包含：稳定 id（禁止使用数组下标）、ranges（SelectionRange[]，支持多区域）、type、operator、formula1、formula2、listSource / values、allowBlank、showDropdown、showInputMessage、inputTitle、inputMessage、showErrorMessage、errorStyle、errorTitle、errorMessage、enabled。
+
+type 联合覆盖八种变体：any（无约束，对话框选中它即清除该范围验证）、list（下拉允许值）、wholeNumber、decimal、date、time、textLength、custom（自定义公式）。operator 联合覆盖八种：between、notBetween、equal、notEqual、greaterThan、greaterThanOrEqual、lessThan、lessThanOrEqual。出错样式：stop（拒绝提交）/ warning（可确认继续）/ information（提示后由用户决定）。
+
+列表数据源有两种：{ type: 'values'; values: string[] }（内联常量列表）或 { type: 'range'; range: SelectionRange; sheetId?: string }（单元格区域，可同表或跨表，跨表经 ctx.getSheetCells 解析）。
+
+### 26.2 验证引擎
+
+evaluateDataValidationRule(rule, value, col, row, ctx) 是单规则入口。allowBlank 优先级最高：空值在未被显式禁用时直接放行（默认 true，等同 Excel）。各类型求值复用 parseNumericText / parseDateTimeInput，因此字面量条件与实时输入共用同一套解析。between / notBetween 用 Math.min / Math.max，min/max 顺序颠倒也能正确判定。同一范围的多个规则必须全部通过——validateCellValue 以 rules.every() 聚合，最严重（级别最高）的失败规则决定弹窗内容。
+
+### 26.3 范围索引
+
+DataValidationIndex 是覆盖全部规则范围的行分带空间索引。findRule(col, row) 在渲染热路径上零分配返回命中的规则，因此单个规则覆盖 A1:A100000 的工作表，每次绘制单元格是 O(1) 查找而非逐规则扫描。
+
+### 26.4 提交与警告流程
+
+验证发生在 setCellValue 之前。commitEdit() 返回 Promise<boolean>；stop 级违规会阻止写入并保持编辑态。警告弹窗由 spreader.vue 通过 showValidationAlert 钩子（Promise 式）注入。onEditBlur 在弹窗打开时避让，避免与弹窗决策重入。
+
+### 26.5 原子粘贴 / 自动填充
+
+粘贴与自动填充先算出全部候选值，调用 validateCells()，只要存在 stop 级违规就整次取消——绝不部分写入。复制（内部剪贴板）携带相交的验证规则并平移覆盖目标区域；外部纯文本粘贴只写值。
+
+### 26.6 行列增删时的范围平移
+
+adjustDvRangeForInsert / adjustDvRangeForDelete 复用条件格式同一套传播逻辑。动态 ensureCapacity 扩展不会自动扩大验证范围——这与「插入行」语义刻意区分。
+
+### 26.7 UI 组件
+
+data-validation-dialog.vue：类 Excel 对话框，含「设置 / 输入信息 / 出错警告 / 应用于」四个分页。类型下拉、运算符、条件值（对话框内已对 min/max 字面量做校验）、列表来源、输入信息、出错警告。样式与条件格式「新建规则」对话框统一。
+
+data-validation-dropdown.vue：单元格内列表下拉，含搜索、虚拟列表（固定行高、窗口渲染）与完整键盘支持（↑ ↓ / Home / End / PageUp / PageDown / Enter / Esc）。定位由调用方传入的单元格屏幕矩形驱动，因此兼容冻结窗格与合并单元格。
+
+data-validation-alert.vue：Stop / Warning / Information 警告对话框，与条件格式共用同一套视觉语言。
+
+data-validation-input-message.vue：选中单元格且 showInputMessage 为真时显示的输入信息提示气泡（纯信息类，留在组件根目录而非 pickers/）。
+
+### 26.8 持久化与撤销
+
+规则通过 v-model 序列化持久化到 SheetState.dataValidations，反序列化时恢复。增删改排序清除遵循 core-state 现有快照模式，单次变更产生一个撤销步骤。
+
+### 26.9 集成点
+
+core-state.ts 的 commitEdit 在 setCellValue 前校验，并暴露 validateCell / getListValidation / getValidationDropdown / getValidationInputMessage / hasDataValidation。core-state.ts 的 insertRows/insertCols/deleteRows/deleteCols 调整 DV 范围。sheets-ops.ts 的 pasteFromClipboard 与 applyAutoFill 走原子校验。interactions.ts 绘制下拉指示并响应 Alt+↓。spreader.vue 装配四个 DV 组件与 showValidationAlert 钩子。
+
+### 26.10 未来扩展
+
+类型联合已为更多运算符与列表来源变体预留空间。自定义公式复用增强后的公式引擎（AND / OR / NOT 加比较 token），因此新增条件种类无需改动渲染路径。

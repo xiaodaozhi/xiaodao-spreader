@@ -43,14 +43,21 @@ xiaodao-spreader/
             │   ├── dropdown.vue        # Generic dropdown component
             │   ├── find-replace-bar.vue # Find/replace bar UI
             │   └── pickers/
-            │       ├── colorPicker.vue        # Text & fill color picker
-            │       ├── borderPicker.vue       # Border picker
-            │       ├── mergePicker.vue        # Merge cell picker
-            │       ├── numberFormatDialog.vue  # Number format custom dialog
-            │       ├── sortPicker.vue         # Sort dropdown
-            │       ├── sortConfirmDialog.vue  # Excel-style sort warning dialog
-            │       ├── calcPicker.vue         # Sum / average / count picker
-            │       └── insertFunctionDialog.vue # Insert function dialog
+            │       ├── border-picker.vue          # Border picker
+            │       ├── calc-picker.vue            # Sum / average / count picker
+            │       ├── color-picker.vue           # Text & fill color picker
+            │       ├── merge-picker.vue           # Merge cell picker
+            │       ├── sort-picker.vue            # Sort dropdown
+            │       ├── sort-confirm-dialog.vue    # Excel-style sort warning dialog
+            │       ├── number-format-dialog.vue   # Number format custom dialog
+            │       ├── insert-function-dialog.vue # Insert function dialog
+            │       ├── filter-popup.vue           # Auto Filter panel (values / text / number / date + search + blanks + multi-column AND)
+            │       ├── conditional-format-menu.vue       # Conditional formatting toolbar dropdown (presets + new / manage / clear rules)
+            │       ├── conditional-format-rule-editor.vue # Conditional formatting "New Rule / Edit Rule" dialog
+            │       ├── conditional-format-manager.vue     # Conditional formatting "Manage Rules" dialog
+            │       ├── data-validation-dialog.vue    # Data validation settings dialog (Settings / Input Message / Error Alert / Apply To)
+            │       ├── data-validation-dropdown.vue  # Data validation list dropdown (search + virtual list + keyboard)
+            │       └── data-validation-alert.vue    # Data validation error alert (Stop / Warning / Information)
             ├── composables/
             │   ├── core-state.ts      # Props, cells/merges/selection, font metrics, navigation
             │   ├── undo-styles.ts      # Undo/redo, format painter, font/alignment/color
@@ -516,6 +523,7 @@ The `ThemeColors` interface includes:
 - **Find/Replace**: *now implemented, see [Section 16](#16-find--replace)*
 - **Data Sort**: *now implemented, see [Section 19](#19-sorting)*
 - **Auto Filter (AutoFilter)**: *now implemented, see [Section 23](#23-auto-filter-autofilter)*
+- **Data Validation**: *now implemented, see [Section 26](#26-data-validation)*
 - **Touch & Mobile Interaction**: *now implemented — every mouse path has a symmetric touch path (select / context menu / filter hit-test / resize / range select / format brush / tab menu; popups close on outside tap). See [Section 24](#24-touch--mobile-interaction).*
 - **Charts**
 
@@ -1197,3 +1205,61 @@ core-state.ts setCellValue invalidates CfValueCache entries for rules whose rang
 ### 25.9 Future Extensions
 
 The type system already reserves union members for color scale, data bar, icon set, top-bottom N, and above-below average. Unit tests in test/conditional-formatting.test.ts cover rule persistence, priority merge semantics, absolute-reference shift, duplicate/unique statistics, and formula-condition evaluation. Additional coverage for each new condition type is added alongside its implementation.
+
+---
+
+## 26. Data Validation
+
+Excel-style data validation rules stored per-sheet. Engine in `spreader/core/data-validation.ts`, pure-logic, zero Vue/Canvas deps. Unit tests in `test/data-validation.test.ts` and `test/data-validation-integration.test.ts`.
+
+### 26.1 Data Model
+
+Rules live on the sheet state (`SheetState.dataValidations: DataValidationRule[]`, default empty). A rule belongs to the Sheet, not to a Cell; it describes only input constraints plus optional UI behavior and never writes to the cell `value` or `styleId`.
+
+Rule object fields: id (stable unique id, never the array index), ranges (SelectionRange[], multi-area), type, operator, formula1, formula2, listSource / values, allowBlank, showDropdown, showInputMessage, inputTitle, inputMessage, showErrorMessage, errorStyle, errorTitle, errorMessage, enabled.
+
+Type union covers eight variants: `any` (no constraint — selecting it in the dialog clears the range), `list` (dropdown of allowed values), `wholeNumber`, `decimal`, `date`, `time`, `textLength`, `custom` (formula). Operator union covers eight: `between`, `notBetween`, `equal`, `notEqual`, `greaterThan`, `greaterThanOrEqual`, `lessThan`, `lessThanOrEqual`. Error style: `stop` (reject the commit) / `warning` (let the user confirm to continue) / `information` (prompt, user decides).
+
+List source is either `{ type: 'values'; values: string[] }` (inline constant list) or `{ type: 'range'; range: SelectionRange; sheetId?: string }` (a cell range, same sheet or cross-sheet via `ctx.getSheetCells`).
+
+### 26.2 Validation Engine
+
+`evaluateDataValidationRule(rule, value, col, row, ctx)` is the per-rule entry. `allowBlank` wins first: a blank value passes when not explicitly disabled (default true, matching Excel). Type evaluators reuse `parseNumericText` / `parseDateTimeInput`, so literal criteria share the exact parsing used for live input. `between` / `notBetween` use `Math.min` / `Math.max`, so the min/max order does not matter. Multiple rules on the same range must all pass — `validateCellValue` aggregates via `rules.every()` and the worst (most severe) failing rule drives the alert.
+
+### 26.3 Range Index
+
+`DataValidationIndex` is a row-band spatial index over all rule ranges. `findRule(col, row)` returns the matching rule with zero allocation on the render hot path, so a sheet with one rule covering `A1:A100000` costs O(1) lookups instead of scanning every rule per painted cell.
+
+### 26.4 Commit & Alert Flow
+
+Validation runs *before* `setCellValue`. `commitEdit()` returns `Promise<boolean>`; a `stop`-level violation blocks the write and keeps the editor open. The alert is injected from `spreader.vue` through the `showValidationAlert` hook (Promise-based). `onEditBlur` defers when an alert is open to avoid re-entrancy with the alert decision.
+
+### 26.5 Atomic Paste / Auto Fill
+
+Paste and Auto Fill compute all candidate values first, call `validateCells()`, and cancel the entire operation if any `stop`-level violation exists — never a partial write. Copy carries intersecting rules with the internal clipboard and translates them onto the paste target; external plain-text paste writes values only.
+
+### 26.6 Range Shift on Insert / Delete
+
+`adjustDvRangeForInsert` / `adjustDvRangeForDelete` reuse the same propagation as conditional formatting. Dynamic `ensureCapacity` expansion does **not** auto-grow validation ranges — this is intentionally distinct from Insert Row semantics.
+
+### 26.7 UI Components
+
+`data-validation-dialog.vue`: Excel-style dialog with tabs Settings / Input Message / Error Alert / Apply To. Type dropdown, operator, criterion values (with min/max literal validation in the dialog), list source, input message, and error alert. Styling unified with the Conditional Formatting "New Rule" dialog.
+
+`data-validation-dropdown.vue`: in-cell list dropdown with search, a virtual list (fixed row height, windowed rendering), and full keyboard support (↑ ↓ / Home / End / PageUp / PageDown / Enter / Esc). Position is driven by the caller-supplied cell screen rect, so it is compatible with frozen panes and merged cells.
+
+`data-validation-alert.vue`: Stop / Warning / Information alert dialog, sharing the same visual language as Conditional Formatting.
+
+`data-validation-input-message.vue`: a tooltip shown on cell focus when `showInputMessage` is set (kept at the components root, not under pickers, since it is a pure informational bubble).
+
+### 26.8 Persistence and Undo
+
+Rules persist through v-model serialization as part of `SheetState.dataValidations` and are restored on deserialize. Mutations follow the existing core-state snapshot pattern, so any change (create / update / remove / clear) produces one undo step.
+
+### 26.9 Integration Points
+
+`core-state.ts` `commitEdit` validates before `setCellValue` and exposes `validateCell` / `getListValidation` / `getValidationDropdown` / `getValidationInputMessage` / `hasDataValidation`. `core-state.ts` `insertRows`/`insertCols`/`deleteRows`/`deleteCols` adjust DV ranges. `sheets-ops.ts` `pasteFromClipboard` and `applyAutoFill` validate atomically. `interactions.ts` draws the dropdown indicator and handles `Alt+↓`. `spreader.vue` wires the four DV components and the `showValidationAlert` hook.
+
+### 26.10 Future Extensions
+
+The type union already reserves room for more operators and list-source variants. Custom formula leverages the extended formula engine (`AND` / `OR` / `NOT` plus comparison tokens), so new condition kinds can be added without touching the render path.
