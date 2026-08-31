@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, nextTick, onBeforeUnmount } from 'vue';
+import { ref, watch, nextTick, onBeforeUnmount, computed } from 'vue';
 import { t } from '../../core/constants';
 import { getFloatBounds, cssRightFromX } from '../../core/utils';
 
@@ -53,6 +53,45 @@ const menuRef = ref<HTMLDivElement | null>(null);
 const pos = ref<{ left?: number; right?: number; top: number }>({ top: 0 });
 /** 当前展开的子菜单父级 key */
 const subKey = ref<string | null>(null);
+/** 二级子菜单（行/列选择）DOM 与定位，仿 conditional-format-menu：fixed + JS 测量翻向 */
+const subRef = ref<HTMLDivElement | null>(null);
+const subPos = ref<{ left?: number; right?: number; top: number }>({ top: 0 });
+const subDir = ref<'left' | 'right'>('right');
+const subUp = ref(false);
+const currentSubItem = computed(
+  () => ITEMS.find((i) => i.key === subKey.value && i.children?.length) ?? null,
+);
+
+function enterSub(item: OutlineItem, e: MouseEvent) {
+  const el = e.currentTarget as HTMLElement | null;
+  if (!el || !item.children?.length) {
+    subKey.value = null;
+    return;
+  }
+  subKey.value = item.key;
+  // 子菜单在独立 Teleport（fixed）渲染，nextTick 后可测量真实尺寸
+  nextTick(() => {
+    const r = el.getBoundingClientRect();
+    const subEl = subRef.value;
+    if (!subEl) return;
+    const b = getFloatBounds(props.boundaryEl);
+    const subW = subEl.offsetWidth;
+    const subH = subEl.offsetHeight;
+    // 左右翻向：默认向右（left = r.right + 4）；右侧放不下（含 8px 余量）则翻左（right = cssRightFromX(r.left - 4)）
+    const wantRight = r.right + subW + 8 > b.right;
+    const dir: 'left' | 'right' = wantRight ? 'left' : 'right';
+    // 上下翻向：默认向下弹（top = r.top - 5，与右键 .context-submenu top:-5px 等距）；
+    // 向下溢出有效下边界（r.top + subH > b.bottom - 8）则向上弹（top = r.bottom + 5 - subH，等价 bottom:-5px），对称
+    const overflowDown = r.top + subH > b.bottom - 8;
+    let top = overflowDown ? r.bottom + 5 - subH : r.top - 5;
+    top = Math.max(b.top + 8, Math.min(b.bottom - subH - 8, top));
+    subDir.value = dir;
+    subUp.value = overflowDown;
+    subPos.value = dir === 'right'
+      ? { left: r.right + 4, top }
+      : { right: cssRightFromX(r.left - 4), top };
+  });
+}
 
 watch(() => props.modelOpen, (v) => {
   if (v !== undefined && v !== open.value) {
@@ -64,9 +103,11 @@ watch(() => props.modelOpen, (v) => {
 function onClickOutside(e: PointerEvent) {
   const el = rootRef.value;
   const mEl = menuRef.value;
+  const sEl = subRef.value;
   const t = e.target as Node;
   if (el && el.contains(t)) return;
   if (mEl && mEl.contains(t)) return;
+  if (sEl && sEl.contains(t)) return;
   close();
 }
 
@@ -154,7 +195,7 @@ defineExpose({ open, openMenu, close });
               v-else
               class="outline-picker__item"
               :class="{ 'outline-picker__item--open': subKey === item.key }"
-              @mouseenter="subKey = item.children?.length ? item.key : null"
+              @mouseenter="enterSub(item, $event)"
               @click="item.children?.length ? null : onAction(item.key)"
             >
               <span class="outline-picker__label">{{ t(locale, item.i18nKey) }}</span>
@@ -164,22 +205,29 @@ defineExpose({ open, openMenu, close });
                 viewBox="0 0 1024 1024"
                 fill="currentColor"
               ><path d="M397.387 180.053a32 32 0 0 1 0 45.227L678.107 512l-280.72 286.72a32 32 0 1 1-45.227-45.227l258.88-241.493L352.16 225.28a32 32 0 0 1 0-45.227l45.227 0z" /></svg>
-              <div
-                v-if="item.children?.length && subKey === item.key"
-                class="outline-picker__sub"
-              >
-                <div
-                  v-for="c in item.children"
-                  :key="c.key"
-                  class="outline-picker__sub-item"
-                  @mouseenter.stop
-                  @click.stop="onAction(c.key)"
-                >
-                  {{ t(locale, c.i18nKey) }}
-                </div>
-              </div>
             </div>
           </template>
+        </div>
+      </Transition>
+    </Teleport>
+    <Teleport to="body">
+      <Transition name="menu-pop">
+        <div
+          v-if="currentSubItem"
+          ref="subRef"
+          class="outline-picker__sub"
+          :class="{ 'outline-picker__sub--left': subDir === 'left', 'outline-picker__sub--up': subUp }"
+          :style="{ left: subPos.left !== undefined ? subPos.left + 'px' : undefined, right: subPos.right !== undefined ? subPos.right + 'px' : undefined, top: subPos.top + 'px' }"
+          @mousedown.stop.prevent
+        >
+          <div
+            v-for="c in currentSubItem.children"
+            :key="c.key"
+            class="outline-picker__sub-item"
+            @click.stop="onAction(c.key)"
+          >
+            {{ t(locale, c.i18nKey) }}
+          </div>
         </div>
       </Transition>
     </Teleport>
@@ -222,19 +270,21 @@ defineExpose({ open, openMenu, close });
 .outline-picker__label { flex: 1; }
 .outline-picker__arrow { width: 12px; height: 12px; flex-shrink: 0; transform: rotate(-90deg); opacity: 0.7; }
 .outline-picker__sep { height: 0; border-top: 1px solid #e5e5e5; margin: 4px 2px; }
-/* top:-5px = 子菜单相对父项上移 1px 后的对齐值，与右键菜单 .context-submenu 保持一致 */
+/* 二级子菜单改为 fixed + JS 测量翻向（仿 conditional-format-menu），与右键 .context-submenu 的 -5px 约定对齐 */
 .outline-picker__sub {
-  position: absolute;
-  left: calc(100% + 2px);
-  top: -5px;
+  position: fixed;
+  z-index: 10000;
   min-width: 132px;
   background: #fff;
   border: 1px solid var(--sp-toolbar-border, #d0d0d0);
   border-radius: 4px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
   padding: 4px;
-  z-index: 1;
+  transform-origin: top left;
 }
+.outline-picker__sub--left { transform-origin: top right; }
+.outline-picker__sub--up { transform-origin: bottom left; }
+.outline-picker__sub--left.outline-picker__sub--up { transform-origin: bottom right; }
 .outline-picker__sub-item {
   padding: 4px 8px;
   border-radius: 3px;
