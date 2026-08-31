@@ -2195,8 +2195,10 @@ export function createInteractions(
       // 则改为向上弹出（bottom 对齐父项底部），避免子菜单向下溢出。inline style 覆盖 CSS 默认 top:-4px。
       const itemRect = it.getBoundingClientRect();
       if (itemRect.top + subH > boundBottom - SUBMENU_EDGE_MARGIN) {
+        // 向上弹出：bottom 比向下弹出的 top(-4px) 再低 1px，使子菜单顶缘与父项底缘之间留出 1px，
+        // 视觉上与向下弹出时的 -4px 上探保持对称（向下弹时子菜单下移量更大，向上弹相应多下移 1px）。
         sub.style.top = 'auto';
-        sub.style.bottom = '-4px';
+        sub.style.bottom = '-5px';
       } else {
         // 不溢出时清掉 inline，让 CSS 默认 top:-4px 生效，避免上次菜单残留方向
         sub.style.top = '';
