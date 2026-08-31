@@ -7,12 +7,12 @@ import FindReplaceBar from './find-replace-bar.vue';
 import NumberFormatDialog from './pickers/numberFormatDialog.vue';
 import SortConfirmDialog from './pickers/sortConfirmDialog.vue';
 import InsertFunctionDialog from './pickers/insertFunctionDialog.vue';
-import FilterPopup from './filter-popup.vue';
-import ConditionalFormatManager from './conditional-format-manager.vue';
-import ConditionalFormatRuleEditor from './conditional-format-rule-editor.vue';
-import DataValidationDialog from './data-validation-dialog.vue';
-import DataValidationDropdown from './data-validation-dropdown.vue';
-import DataValidationAlert from './data-validation-alert.vue';
+import FilterPopup from './pickers/filter-popup.vue';
+import ConditionalFormatManager from './pickers/conditional-format-manager.vue';
+import ConditionalFormatRuleEditor from './pickers/conditional-format-rule-editor.vue';
+import DataValidationDialog from './pickers/data-validation-dialog.vue';
+import DataValidationDropdown from './pickers/data-validation-dropdown.vue';
+import DataValidationAlert from './pickers/data-validation-alert.vue';
 import DataValidationInputMessage from './data-validation-input-message.vue';
 import type {
   SheetModelData,

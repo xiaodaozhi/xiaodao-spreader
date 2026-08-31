@@ -1,16 +1,16 @@
 <script setup lang="ts">
 import { ref, reactive, computed } from 'vue';
-import { t } from '../core/constants';
-import { colToLabel, parseCellRef } from '../core/utils';
+import { t } from '../../core/constants';
+import { colToLabel, parseCellRef } from '../../core/utils';
 import type {
   ConditionalFormattingRule,
   ConditionalFormattingCondition,
   ConditionalFormattingFormat,
   SelectionRange,
   CellIsOperator,
-} from '../core/types';
-import ColorPicker from './pickers/colorPicker.vue';
-import SpDropdown from './dropdown.vue';
+} from '../../core/types';
+import ColorPicker from './colorPicker.vue';
+import SpDropdown from '../dropdown.vue';
 
 const props = withDefaults(defineProps<{
   locale: string;

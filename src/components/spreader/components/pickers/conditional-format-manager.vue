@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import { t } from '../core/constants';
-import { colToLabel } from '../core/utils';
-import type { ConditionalFormattingRule, ConditionalFormattingCondition } from '../core/types';
+import { t } from '../../core/constants';
+import { colToLabel } from '../../core/utils';
+import type { ConditionalFormattingRule, ConditionalFormattingCondition } from '../../core/types';
 
 const props = withDefaults(defineProps<{
   locale: string;

@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue';
-import { t } from '../core/constants';
-import { colToLabel } from '../core/utils';
-import { FILTER_BLANK } from '../core/filter-core';
-import type { SheetFilter, FilterColumn, FilterCondition, FilterOperator } from '../core/types';
+import { t } from '../../core/constants';
+import { colToLabel } from '../../core/utils';
+import { FILTER_BLANK } from '../../core/filter-core';
+import type { SheetFilter, FilterColumn, FilterCondition, FilterOperator } from '../../core/types';
 
 const props = withDefaults(defineProps<{
   /** 正在筛选的列（0-based） */

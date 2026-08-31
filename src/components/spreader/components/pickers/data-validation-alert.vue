@@ -8,8 +8,8 @@
  * 视觉规范与条件格式「新建规则」对话框 / 数据验证对话框保持一致。
  */
 import { computed } from 'vue';
-import { t } from '../core/constants';
-import type { DataValidationSeverity } from '../core/types';
+import { t } from '../../core/constants';
+import type { DataValidationSeverity } from '../../core/types';
 
 const props = withDefaults(defineProps<{
   locale: string;

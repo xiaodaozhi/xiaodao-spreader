@@ -8,7 +8,7 @@ import ColorPicker from './pickers/colorPicker.vue';
 import BorderPicker, { type BorderType } from './pickers/borderPicker.vue';
 import SortPicker from './pickers/sortPicker.vue';
 import MergePicker from './pickers/mergePicker.vue';
-import ConditionalFormatMenu from './conditional-format-menu.vue';
+import ConditionalFormatMenu from './pickers/conditional-format-menu.vue';
 import CalcPicker from './pickers/calcPicker.vue';
 import type { SortOrder } from '../core/sort-core';
 

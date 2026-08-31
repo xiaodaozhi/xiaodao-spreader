@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, nextTick, onMounted, onBeforeUnmount } from 'vue';
-import { t } from '../core/constants';
+import { t } from '../../core/constants';
 
 withDefaults(defineProps<{
   locale: string;

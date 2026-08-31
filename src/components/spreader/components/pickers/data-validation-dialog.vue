@@ -10,9 +10,9 @@
  * 视觉规范与条件格式「新建规则」对话框（conditional-format-rule-editor.vue）保持一致。
  */
 import { ref, reactive, computed } from 'vue';
-import { t } from '../core/constants';
-import { colToLabel, parseCellRef } from '../core/utils';
-import { parseNumericText, parseDateTimeInput } from '../core/number-format';
+import { t } from '../../core/constants';
+import { colToLabel, parseCellRef } from '../../core/utils';
+import { parseNumericText, parseDateTimeInput } from '../../core/number-format';
 import type {
   DataValidationRule,
   DataValidationType,
@@ -20,8 +20,8 @@ import type {
   DataValidationErrorStyle,
   DataValidationListSource,
   SelectionRange,
-} from '../core/types';
-import SpDropdown from './dropdown.vue';
+} from '../../core/types';
+import SpDropdown from '../dropdown.vue';
 
 const props = withDefaults(defineProps<{
   locale: string;

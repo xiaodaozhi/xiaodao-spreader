@@ -7,7 +7,7 @@
  * 定位完全由调用方传入的单元格屏幕矩形（cellToScreenRect）决定，自动兼容冻结窗格与合并单元格。
  */
 import { ref, computed, nextTick, onMounted, onBeforeUnmount, watch } from 'vue';
-import { t } from '../core/constants';
+import { t } from '../../core/constants';
 
 const props = withDefaults(defineProps<{
   items: string[];
