@@ -386,6 +386,29 @@ const emit = defineEmits<{
   (e: 'cf-clear', scope: 'selection' | 'sheet'): void;
 }>();
 
+// 同一时刻仅允许一个工具栏下拉菜单打开：任一 picker 下拉打开时，关闭其余 picker 下拉。
+// 覆盖主栏与溢出菜单（二者同源 tb-item + 同一套状态），修复「溢出菜单里点不同下拉框、前一个不关闭」的问题。
+const TOOLBAR_MENU_KEYS = ['fontSize', 'textColor', 'fillColor', 'border', 'merge', 'calc', 'sort', 'outline'] as const;
+type ToolbarMenuKey = typeof TOOLBAR_MENU_KEYS[number];
+const MENU_EMIT: Record<ToolbarMenuKey, 'update:font-size-menu-open' | 'update:text-color-menu-open' | 'update:fill-color-menu-open' | 'update:border-menu-open' | 'update:merge-menu-open' | 'update:calc-menu-open' | 'update:sort-menu-open' | 'update:outline-menu-open'> = {
+  fontSize: 'update:font-size-menu-open',
+  textColor: 'update:text-color-menu-open',
+  fillColor: 'update:fill-color-menu-open',
+  border: 'update:border-menu-open',
+  merge: 'update:merge-menu-open',
+  calc: 'update:calc-menu-open',
+  sort: 'update:sort-menu-open',
+  outline: 'update:outline-menu-open',
+};
+function coordToolbarMenu(key: ToolbarMenuKey, v: boolean) {
+  if (v) {
+    for (const k of TOOLBAR_MENU_KEYS) {
+      if (k !== key) emit(MENU_EMIT[k], false);
+    }
+  }
+  emit(MENU_EMIT[key], v);
+}
+
 // 数字格式：选区格式不一致时触发器显示「混合」
 const nfFallbackLabel = computed(() =>
   props.selNumberFormat === NF_MIXED ? t(props.locale, 'nfMixed') : '',
@@ -594,7 +617,7 @@ const freezeOptions = computed<FontOption[]>(() => {
             :model-open="fontSizeMenuOpen"
             align="right"
             :trigger-el="fontSizeArrowRef"
-            @update:model-open="emit('update:font-size-menu-open', $event)"
+            @update:model-open="coordToolbarMenu('fontSize', $event)"
             @change="emit('font-size-change', $event)"
           />
           <button
@@ -795,7 +818,7 @@ const freezeOptions = computed<FontOption[]>(() => {
             class="toolbar-btn toolbar-split__arrow"
             :title="t(locale, 'fontColor')"
             :disabled="!hasSelection"
-            @click="emit('update:text-color-menu-open', !textColorMenuOpen)"
+            @click="coordToolbarMenu('textColor', !textColorMenuOpen)"
           >
             <svg
               viewBox="0 0 1024 1024"
@@ -808,7 +831,7 @@ const freezeOptions = computed<FontOption[]>(() => {
             :current-color="selTextColor"
             :locale="locale"
             :trigger-el="textColorArrowRef"
-            @update:model-open="emit('update:text-color-menu-open', $event)"
+            @update:model-open="coordToolbarMenu('textColor', $event)"
             @change="emit('text-color-change', $event)"
             :boundary-el="boundaryEl"
           />
@@ -849,7 +872,7 @@ const freezeOptions = computed<FontOption[]>(() => {
             class="toolbar-btn toolbar-split__arrow"
             :title="t(locale, 'fillColor')"
             :disabled="!hasSelection"
-            @click="emit('update:fill-color-menu-open', !fillColorMenuOpen)"
+            @click="coordToolbarMenu('fillColor', !fillColorMenuOpen)"
           >
             <svg
               viewBox="0 0 1024 1024"
@@ -862,7 +885,7 @@ const freezeOptions = computed<FontOption[]>(() => {
             :current-color="selFillColor"
             :locale="locale"
             :trigger-el="fillColorArrowRef"
-            @update:model-open="emit('update:fill-color-menu-open', $event)"
+            @update:model-open="coordToolbarMenu('fillColor', $event)"
             @change="emit('fill-color-change', $event)"
             :boundary-el="boundaryEl"
           />
@@ -910,7 +933,7 @@ const freezeOptions = computed<FontOption[]>(() => {
             class="toolbar-btn toolbar-split__arrow"
             :title="t(locale, 'borders')"
             :disabled="!hasSelection"
-            @click="emit('update:border-menu-open', !borderMenuOpen)"
+            @click="coordToolbarMenu('border', !borderMenuOpen)"
           >
             <svg
               viewBox="0 0 1024 1024"
@@ -922,7 +945,7 @@ const freezeOptions = computed<FontOption[]>(() => {
             :locale="locale"
             :current-border="cachedBorder"
             :trigger-el="borderArrowRef"
-            @update:model-open="emit('update:border-menu-open', $event)"
+            @update:model-open="coordToolbarMenu('border', $event)"
             @change="emit('border-change', $event)"
             :boundary-el="boundaryEl"
           />
@@ -1040,7 +1063,7 @@ const freezeOptions = computed<FontOption[]>(() => {
             class="toolbar-btn toolbar-split__arrow"
             :title="t(locale, 'mergeCells')"
             :disabled="!hasSelection"
-            @click="emit('update:merge-menu-open', !mergeMenuOpen)"
+            @click="coordToolbarMenu('merge', !mergeMenuOpen)"
           >
             <svg
               viewBox="0 0 1024 1024"
@@ -1051,7 +1074,7 @@ const freezeOptions = computed<FontOption[]>(() => {
             :model-open="mergeMenuOpen"
             :locale="locale"
             :trigger-el="mergeArrowRef"
-            @update:model-open="emit('update:merge-menu-open', $event)"
+            @update:model-open="coordToolbarMenu('merge', $event)"
             @change="emit('merge-change', $event)"
             :boundary-el="boundaryEl"
           />
@@ -1182,7 +1205,7 @@ const freezeOptions = computed<FontOption[]>(() => {
             class="toolbar-btn toolbar-split__arrow"
             :title="t(locale, 'calculate')"
             :disabled="!hasSelection"
-            @click="emit('update:calc-menu-open', !calcMenuOpen)"
+            @click="coordToolbarMenu('calc', !calcMenuOpen)"
           >
             <svg
               viewBox="0 0 1024 1024"
@@ -1194,7 +1217,7 @@ const freezeOptions = computed<FontOption[]>(() => {
             :locale="locale"
             :trigger-el="calcArrowRef"
             :disabled="isSingleCell"
-            @update:model-open="emit('update:calc-menu-open', $event)"
+            @update:model-open="coordToolbarMenu('calc', $event)"
             @change="emit(`calc-${$event}`)"
             :boundary-el="boundaryEl"
           />
@@ -1243,7 +1266,7 @@ const freezeOptions = computed<FontOption[]>(() => {
             class="toolbar-btn toolbar-split__arrow"
             :title="t(locale, 'sort')"
             :disabled="!canSort"
-            @click="emit('update:sort-menu-open', !sortMenuOpen)"
+            @click="coordToolbarMenu('sort', !sortMenuOpen)"
           >
             <svg
               viewBox="0 0 1024 1024"
@@ -1255,7 +1278,7 @@ const freezeOptions = computed<FontOption[]>(() => {
             :locale="locale"
             :current-sort="cachedSortOrder"
             :trigger-el="sortArrowRef"
-            @update:model-open="emit('update:sort-menu-open', $event)"
+            @update:model-open="coordToolbarMenu('sort', $event)"
             @change="emit('sort-change', $event)"
             :boundary-el="boundaryEl"
           />
@@ -1278,7 +1301,7 @@ const freezeOptions = computed<FontOption[]>(() => {
           :class="{ 'is-open': outlineMenuOpen }"
           :disabled="!outlineAxis"
           :title="t(locale, 'outlineGroup')"
-          @click="emit('update:outline-menu-open', !outlineMenuOpen)"
+          @click="coordToolbarMenu('outline', !outlineMenuOpen)"
         >
           <span class="toolbar-btn__icon">
             <svg
@@ -1306,7 +1329,7 @@ const freezeOptions = computed<FontOption[]>(() => {
           :trigger-el="outlineArrowRef"
           :boundary-el="boundaryEl"
           :axis="outlineAxis"
-          @update:model-open="emit('update:outline-menu-open', $event)"
+          @update:model-open="coordToolbarMenu('outline', $event)"
           @action="emit('outline-action', $event)"
         />
       </div>
@@ -1577,7 +1600,7 @@ const freezeOptions = computed<FontOption[]>(() => {
 .outline-trigger.is-open { background: var(--sp-toolbar-btn-hover-bg, #e6e6e6); }
 .outline-trigger .toolbar-btn__icon { width: 16px; height: 16px; }
 .outline-trigger .toolbar-btn__label { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; }
-.outline-trigger__caret { width: 10px; height: 10px; opacity: 0.7; flex: none; }
+.toolbar-btn.outline-trigger .outline-trigger__caret { width: 10px; height: 10px; opacity: 0.7; flex: none; }
 
 /* 「更多」按钮 */
 .toolbar-more { display: flex; align-items: center; justify-content: center; width: 30px; height: 26px; border: none; border-radius: 3px; background: transparent; color: var(--sp-toolbar-btn-color); cursor: pointer; padding: 0; flex: 0 0 auto; margin-left: auto; }
