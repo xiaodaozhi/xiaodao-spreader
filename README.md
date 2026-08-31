@@ -35,6 +35,7 @@ A high-performance, canvas-based spreadsheet component for Vue 3: bringing an Ex
 - **Conditional Formatting**: Excel-style conditional formatting rules stored per-sheet. The toolbar "Conditional Formatting" dropdown offers preset rules (greater than / less than / between / text contains / duplicate / unique / blank / not blank) and a "New Rule" dialog with cell value and formula-based conditions. Rules render as temporary style overlays on top of the base cell style — no mutation of the underlying cell `value` or `styleId`. Rule priority (smaller number = higher), `stopIfTrue` semantics, and automatic cache invalidation on cell value change. Inserting / deleting rows or columns adjusts rule ranges and formula references via the same `shiftFormulaRefs` engine used by auto-fill. Includes a "Manage Rules" dialog for editing, reordering, and deleting rules; the "Clear Rules" sub-dialog lets you clear all rules or rules from selected ranges. Render-time style synthesis correctly composes CF background, font color, bold, italic, underline, and strikethrough with the base cell style. *see [Conditional Formatting](#conditional-formatting)*
 - **Data Validation**: Excel-style data validation rules stored per-sheet. The toolbar "Data Validation" button opens a dialog to set the allowed type (any value / list / whole number / decimal / date / time / text length / custom formula), the operator (between, not between, equal, greater than, …), and the criterion values. List validation shows an in-cell dropdown with search and full keyboard navigation (↑ ↓ / Home / End / PageUp / PageDown / Enter / Esc). Per-rule input message and error alert (Stop / Warning / Information) are supported; validation runs *before* the value is committed, so Stop-level violations reject the edit while Warning/Information let the user confirm. All rules on a range must pass. Rules persist through v-model, integrate with undo/redo, and adjust automatically on row/column insert/delete. Copy/paste and Auto Fill validate atomically — a Stop violation cancels the whole operation. *see [Data Validation](#data-validation)*
 - **Auto Fill (Fill Handle)**: Excel-style fill handle at the bottom-right corner of the active selection. Drag it up/down/left/right to fill cells: single values copy, number/date/text-number sequences auto-continue (e.g. `1,2 → 3,4,5`), formula references adjust per relative/absolute/mixed rules (e.g. `=A1*2` → `=A2*2`), and source `styleId` is reused via the style pool. Live preview during drag, edge auto-scroll, dynamic sheet expansion, freeze-pane compatibility, and a single undo step per operation: *see [Auto Fill](#auto-fill)*
+- **Row / Column Grouping & Collapsing**: Excel-style row/column outlines. Select whole rows or columns, then the toolbar "Group" dropdown (between Sort and Filter) offers Add Group / Ungroup / Clear Outline / Expand All / Collapse All, applied directly to the selected axis; row/column context menus expose a matching "Group" submenu. Only one level of non-overlapping groups is supported — nesting and partial overlap are rejected with a message. Group ranges get alternating background colors in the row/column header band; ± collapse buttons float inside the header band without reserving a separate gutter. Collapsed rows/columns are skipped during content rendering; inserting/deleting rows or columns shifts group ranges and auto-removes emptied groups. Groups persist per-sheet (`rowOutlines` / `columnOutlines`) through v-model, and every mutation integrates with undo/redo. *see [Row / Column Grouping & Collapsing](#row--column-grouping--collapsing)*
 
 ### Interaction
 - **Smart Selection**: Click, drag, Shift+Click, row/column header select, corner-cell select-all
@@ -476,6 +477,33 @@ Rules persist through the sheet v-model (`dataValidations` field), round-trip th
 
 ---
 
+## Row / Column Grouping & Collapsing
+
+Excel-style row/column grouping and collapsing (`spreader/core/outline-core.ts` pure engine + `composables/core-state.ts` state layer + `composables/interactions.ts` canvas rendering layer).
+
+### Data Model
+
+Groups are stored per-sheet and per-axis in `SheetState.rowOutlines` / `columnOutlines` (`DimensionOutline[]`, serialized with v-model). Each group carries a stable `id`, `start` / `end` (0-based inclusive range), `level` (always 1), and `collapsed`.
+
+### Validation Rules
+
+`validateGroup` checks before creation: at least 2 consecutive rows/columns; fully disjoint from existing groups (partial overlap reports "group range crosses existing groups"); nesting is rejected (`MAX_OUTLINE_LEVEL = 1`). Ungrouping requires the selection to fully cover at least one group, otherwise a hint is shown.
+
+### Rendering & Collapse
+
+Group ranges get alternating background colors in the row/column header band; ± collapse buttons (~9px) float inside the header band without reserving a separate gutter. Collapsed rows/columns are skipped during content, border, and header-text rendering (0-size guard against ghost stripes), compatible with scrolling and frozen panes.
+
+### Entry Points
+
+- Toolbar "Group" dropdown (between Sort and Filter): enabled only when whole rows or columns are selected; menu items (Add Group / Ungroup / Clear Outline / Expand All / Collapse All) act directly on the selected axis
+- Row/column context menu "Group" submenu: dispatches the same items for the right-clicked axis
+
+### Propagation & Undo
+
+Inserting/deleting rows or columns shifts group ranges via `addOutlineForInsert` / `addOutlineForDelete`; fully-emptied groups are auto-removed. Group create / ungroup / clear / collapse each produce one undo step. Validation failures prefer the host-injected in-app alert (`showOutlineAlert` hook), falling back to `window.alert`. Unit tests live in `test/outline-core.test.ts`.
+
+---
+
 ## Auto Fill
 
 An Excel-style fill-handle mechanism (`spreader/core/autofill.ts` pure engine + `composables/interactions.ts` canvas/interaction layer). Drag the small square at the bottom-right corner of the active selection to fill cells: no DOM handles, all drawn on Canvas.
@@ -700,7 +728,7 @@ x-spreader is touch-first: every mouse interaction has a symmetric touch path, v
 
 - [x] Frozen panes (freeze rows/columns): *see [Freeze Panes](#features)*
 - [x] Data Validation: dropdown lists, input constraints (any value / list / whole number / decimal / date / time / text length / custom formula), list dropdown with search & keyboard nav, input message and error alert (Stop/Warning/Information), atomic paste/auto-fill validation, undo/redo and persistence; see [Data Validation](#data-validation)
-- [ ] Column / row grouping and collapsing
+- [x] Column / row grouping and collapsing: *see [Row / Column Grouping & Collapsing](#row--column-grouping--collapsing)*
 - [x] Sort & filter: sort by displayed content with Excel-style Sort Warning dialog (expand selection / current selection only); see [Sorting & Sort Warning](#features)
 - [x] Auto Filter (AutoFilter): toolbar "Filter" / `Ctrl+Shift+L` to enable, header drop-down arrows, intelligent downward data probing, value/text/number/date multi-type filters, separate clear-column vs remove-all; see [Auto Filter (AutoFilter)](#auto-filter-autofilter)
 - [x] Touch & mobile interaction: symmetric touch paths for select / context menu / filter / resize / range select / format brush / tab menu; popups close on outside tap; see [Touch & Mobile Interaction](#touch--mobile-interaction)

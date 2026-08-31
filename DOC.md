@@ -57,13 +57,15 @@ xiaodao-spreader/
             │       ├── conditional-format-manager.vue     # Conditional formatting "Manage Rules" dialog
             │       ├── data-validation-dialog.vue    # Data validation settings dialog (Settings / Input Message / Error Alert / Apply To)
             │       ├── data-validation-dropdown.vue  # Data validation list dropdown (search + virtual list + keyboard)
-            │       └── data-validation-alert.vue    # Data validation error alert (Stop / Warning / Information)
+            │       ├── data-validation-alert.vue    # Data validation error alert (Stop / Warning / Information)
+            │       └── outline-picker.vue          # Toolbar "Group" dropdown (add / ungroup / clear, expand / collapse)
             ├── composables/
-            │   ├── core-state.ts      # Props, cells/merges/selection, font metrics, navigation
+            │   ├── core-state.ts      # Props, cells/merges/selection, font metrics, navigation, outline state
             │   ├── undo-styles.ts      # Undo/redo, format painter, font/alignment/color
             │   ├── borders-merge.ts    # Border ops, merge ops, clipboard, sum/avg/count
             │   ├── sheets-ops.ts      # Row/col ops, multi-sheet, v-model emit, theme, refs
             │   ├── find-replace.ts    # Find/replace state & interaction (Vue-dependent)
+            │   ├── useFloatMenuPosition.ts # Shared toolbar dropdown positioning (right-anchor + flip/clamp)
             │   └── interactions.ts    # Renderer, formula bar, tab bar, context menu, scrollbar, events
             └── core/
                 ├── constants.ts       # Layout constants, i18n text, theme color palette
@@ -75,6 +77,7 @@ xiaodao-spreader/
                 ├── find-replace-core.ts # Find/replace pure algorithms (zero Vue deps, unit-testable)
                 ├── sort-core.ts       # Sort pure algorithms (zero Vue deps, unit-testable)
                 ├── autofill.ts        # Auto-fill pure engine (pattern inference, fill handle logic, zero Vue deps)
+                ├── outline-core.ts     # Row/column grouping pure engine (validation / shifting / collapse, zero Vue deps)
                 ├── number-format.ts    # Number format engine (Excel-style display formatting)
                 ├── theme.ts           # Theme CSS variable construction
                 └── utils.ts           # Pure utility functions (column label conversion, hit testing, etc.)
@@ -524,6 +527,7 @@ The `ThemeColors` interface includes:
 - **Data Sort**: *now implemented, see [Section 19](#19-sorting)*
 - **Auto Filter (AutoFilter)**: *now implemented, see [Section 23](#23-auto-filter-autofilter)*
 - **Data Validation**: *now implemented, see [Section 26](#26-data-validation)*
+- **Row / Column Grouping (Outline)**: *now implemented, see [Section 27](#27-row--column-grouping-outline)*
 - **Touch & Mobile Interaction**: *now implemented — every mouse path has a symmetric touch path (select / context menu / filter hit-test / resize / range select / format brush / tab menu; popups close on outside tap). See [Section 24](#24-touch--mobile-interaction).*
 - **Charts**
 
@@ -1263,3 +1267,58 @@ Rules persist through v-model serialization as part of `SheetState.dataValidatio
 ### 26.10 Future Extensions
 
 The type union already reserves room for more operators and list-source variants. Custom formula leverages the extended formula engine (`AND` / `OR` / `NOT` plus comparison tokens), so new condition kinds can be added without touching the render path.
+
+---
+
+## 27. Row / Column Grouping (Outline)
+
+Excel-style row/column grouping and collapsing. The engine lives in `spreader/core/outline-core.ts` — pure functions with zero Vue / DOM dependencies; the state layer is `composables/core-state.ts` (rowOutlines / columnOutlines plus add/remove/collapse/shift methods); rendering and interaction live in `composables/interactions.ts`. Unit tests: `test/outline-core.test.ts`.
+
+### 27.1 Data Model
+
+Groups are stored per-sheet and per-axis in `SheetState.rowOutlines` / `columnOutlines` (`DimensionOutline[]`, serialized and persisted through v-model). Each group carries:
+
+- a stable `id` (`row-N` / `col-N`; array indices are forbidden)
+- `start` / `end`: 0-based inclusive range
+- `level`: always 1 (`MAX_OUTLINE_LEVEL = 1` — one level of grouping only)
+- `collapsed`: collapse state
+
+### 27.2 Validation Rules
+
+`validateGroup(existing, start, end)` runs before creation and returns an `OutlineValidationResult` with a failure code:
+
+- `outlineInvalid`: start > end or non-integer indices
+- `outlineMinSize`: at least 2 consecutive rows/columns required
+- `outlineCrossing`: partial overlap with an existing group (neither disjoint nor fully containing, decided by `isNestedPair`)
+- `outlineTooDeep`: nesting (countContaining > 0 pushes level past 1) — message: "groups cannot nest, only one level is supported"
+
+Before creating a group the selection must cover whole rows (startCol === 0 and endCol === colCount - 1) or whole columns, otherwise the "select entire rows or columns first" hint is shown. Ungrouping requires the selection to **fully cover** at least one group (`rs <= o.start && o.end <= re`), otherwise a hint asks the user to adjust the selection.
+
+### 27.3 Collapse & Rendering
+
+- Group ranges get alternating background colors in the row/column header band (`buildOutlineColorMap` assigns alternating colors by group order).
+- ± collapse buttons (`OUTLINE_BTN`, ~9px) float inside the header band (`rowOutlineAnchorX` / `colOutlineAnchorY`); no separate gutter partition is reserved (`getOutlineGutterSize` is always 0, the grid origin never shifts).
+- Collapsed rows/columns are skipped during content (drawCells), border, and header-text rendering (`isRowCollapsed` / `isColumnCollapsed` — the 0-size guard prevents ghost stripes); merged cells straddling the freeze line are drawn per pane.
+- `afterOutlineChange` is the shared tail for any structural/collapse mutation: re-clamp scroll, schedule render, emit v-model.
+
+### 27.4 Coordinate Shifting
+
+On row/column insert/delete, `addOutlineForInsert` / `addOutlineForDelete` shift group ranges: insertions inside a group extend `end`; insertions/deletions before a group shift the whole range; groups whose range is fully deleted are dropped. Levels are recomputed via `recomputeOutlineLevels` afterwards.
+
+### 27.5 UI Entry Points
+
+- **Toolbar "Group" dropdown** (`pickers/outline-picker.vue`, button sits between Sort and Filter): enabled only when whole rows/columns are selected (the `outlineAxis` computed drives button `:disabled`; the Teleport overflow condition is unaffected by graying-out). Five verb items (Add Group → Ungroup → Clear Outline → Expand All → Collapse All, matching the context menu) act directly on the selected axis (action keys like `group-rows` / `expand-cols`) — no "rows/columns" submenu. Positioning reuses `useFloatMenuPosition`.
+- **Row/column context menu "Group" submenu** (interactions.ts): dispatches per right-clicked axis (Add Row Group / Ungroup Rows / Clear Outline / Expand All / Collapse All).
+- Validation failures go through `alertOutline`: the host-injected in-app dialog (`showOutlineAlert` hook) when available, falling back to `window.alert`.
+
+### 27.6 Persistence & Undo
+
+Groups persist through the sheet v-model (`rowOutlines` / `columnOutlines` fields) and round-trip through save/load/duplicate-sheet. Add, ungroup, clear, and single-group collapse each saveUndo into one undo step; `setAxisCollapsed` (expand/collapse all) wraps the whole-axis batch into a single undo step (silent mode skips per-group undo).
+
+### 27.7 Integration Points
+
+`core-state.ts` exposes addRowGroup / addColumnGroup / removeOutline / clearRowGroups / clearColumnGroups / setOutlineCollapsed / toggleOutline / getRowOutlines / getColumnOutlines / isRowCollapsed / isColumnCollapsed plus adjustOutlinesFor* on insert/delete. `interactions.ts` provides outlineGroupRows / outlineGroupCols / outlineUngroupRows / outlineUngroupCols / outlineExpand* / outlineCollapse* (toolbar event dispatch) and the rendering layer. `spreader.vue` wires OutlinePicker, computes outlineAxis, and injects the showOutlineAlert hook. `toolbar.vue` owns the group button and dropdown (with overflow-menu support).
+
+### 27.8 Future Extensions
+
+The types already reserve room for multi-level grouping (recomputeOutlineLevels computes levels from nesting); the validation layer currently caps it at one. Lifting `MAX_OUTLINE_LEVEL` plus adding gutter-partition rendering would enable nested groups.

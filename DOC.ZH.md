@@ -57,13 +57,15 @@ xiaodao-spreader/
             │       ├── conditional-format-manager.vue     # 条件格式「管理规则」对话框
             │       ├── data-validation-dialog.vue    # 数据验证设置对话框（设置 / 输入信息 / 出错警告 / 应用于）
             │       ├── data-validation-dropdown.vue  # 数据验证列表下拉（搜索 + 虚拟列表 + 键盘）
-            │       └── data-validation-alert.vue    # 数据验证出错警告（Stop / Warning / Information）
+            │       ├── data-validation-alert.vue    # 数据验证出错警告（Stop / Warning / Information）
+            │       └── outline-picker.vue          # 工具栏「分组」下拉（添加 / 取消 / 清除分组，展开 / 折叠）
             ├── composables/
-            │   ├── core-state.ts      # Props、cells/merges/selection、字体度量、导航
+            │   ├── core-state.ts      # Props、cells/merges/selection、字体度量、导航、行列分组状态
             │   ├── undo-styles.ts      # 撤销/重做、格式刷、字体/对齐/颜色
             │   ├── borders-merge.ts    # 边框操作、合并操作、剪贴板、求和/平均/计数
             │   ├── sheets-ops.ts      # 行列操作、多 Sheet、v-model emit、主题、refs
             │   ├── find-replace.ts    # 查找/替换状态与交互（依赖 Vue）
+            │   ├── useFloatMenuPosition.ts # 工具栏下拉菜单共享定位（右锚 + 上下翻向夹紧）
             │   └── interactions.ts    # 渲染器、公式栏、标签栏、右键菜单、滚动条、事件
             └── core/
                 ├── constants.ts       # 布局常量、i18n 文案、主题配色
@@ -75,6 +77,7 @@ xiaodao-spreader/
                 ├── find-replace-core.ts # 查找/替换纯算法（零 Vue 依赖，可单测）
                 ├── sort-core.ts       # 排序纯算法（零 Vue 依赖，可单测）
                 ├── autofill.ts        # 自动填充纯引擎（模式推断、填充柄逻辑，零 Vue 依赖）
+                ├── outline-core.ts     # 行列分组纯引擎（校验 / 平移 / 折叠，零 Vue 依赖）
                 ├── number-format.ts    # 数字格式引擎（Excel 风格显示格式化）
                 ├── theme.ts           # 主题 CSS 变量构建
                 └── utils.ts           # 纯工具函数（列标转换、命中测试等）
@@ -523,6 +526,7 @@ Canvas CSS 坐标（逻辑像素）
 - **数据排序**: *已实现，见[第 19 节](#19-排序)*
 - **自动筛选（AutoFilter）**: *已实现，见[第 23 节](#23-自动筛选autofilter)*
 - **数据验证（Data Validation）**: *已实现，见[第 26 节](#26-数据验证data-validation)*
+- **行列分组（Outline / Grouping）**: *已实现，见[第 27 节](#27-行列分组outline-grouping)*
 - **触屏与移动端交互**: *已实现 —— 每个鼠标路径都有对称触屏路径（选择 / 右键菜单 / 筛选命中 / 列宽行高 / 框选 / 格式刷 / tab 菜单；浮层支持点外部关闭）。见[第 24 节](#24-触屏与移动端交互)。*
 - **图表**
 
@@ -1263,3 +1267,58 @@ core-state.ts 的 commitEdit 在 setCellValue 前校验，并暴露 validateCell
 ### 26.10 未来扩展
 
 类型联合已为更多运算符与列表来源变体预留空间。自定义公式复用增强后的公式引擎（AND / OR / NOT 加比较 token），因此新增条件种类无需改动渲染路径。
+
+---
+
+## 27. 行列分组（Outline / Grouping）
+
+类 Excel 的行/列分组与折叠。引擎位于 `spreader/core/outline-core.ts`，纯函数实现，零 Vue / DOM 依赖；状态层在 `composables/core-state.ts`（rowOutlines / columnOutlines 及增删/折叠/平移方法）；绘制与交互在 `composables/interactions.ts`。单元测试见 `test/outline-core.test.ts`。
+
+### 27.1 数据模型
+
+分组按工作表、按轴存储于 `SheetState.rowOutlines` / `columnOutlines`（`DimensionOutline[]`，随 v-model 序列化持久化）。每条分组包含：
+
+- 稳定 `id`（`row-N` / `col-N` 形式，禁止用数组下标）
+- `start` / `end`：0-based 闭区间
+- `level`：恒为 1（`MAX_OUTLINE_LEVEL = 1`，仅支持一层分组）
+- `collapsed`：折叠状态
+
+### 27.2 校验规则
+
+`validateGroup(existing, start, end)` 在创建前校验，返回 `OutlineValidationResult`（含失败 code）：
+
+- `outlineInvalid`：start > end 或非整数
+- `outlineMinSize`：至少需要 2 个连续行/列
+- `outlineCrossing`：与既有分组部分重叠（既不相交也非完全包含，`isNestedPair` 判定）
+- `outlineTooDeep`：嵌套分组（countContaining > 0 时 level 超 1），提示「分组不能嵌套，仅支持一层」
+
+创建分组前还要求选区覆盖整行（startCol===0 且 endCol===colCount-1）或整列，否则提示「请选择整行或整列后分组」。取消分组要求选区**完整覆盖**至少一个分组（`rs <= o.start && o.end <= re`），否则提示调整选区。
+
+### 27.3 折叠与渲染
+
+- 分组区间在行号/列号带用交替背景色区分（`buildOutlineColorMap` 按分组序分配交替色）。
+- ± 折叠按钮（`OUTLINE_BTN` 约 9px）浮动于表头带内（`rowOutlineAnchorX` / `colOutlineAnchorY`），不预留独立 gutter 分区（`getOutlineGutterSize` 恒为 0，网格起点不偏移）。
+- 折叠的行/列在内容（drawCells）、边框、表头文字绘制时统一跳过（`isRowCollapsed` / `isColumnCollapsed` 0 尺寸防残影），跨冻结线的合并单元格按 pane 分段处理。
+- 分组结构/折叠变化后的统一收尾 `afterOutlineChange`：重 clamp 滚动、重绘、emit v-model。
+
+### 27.4 坐标平移
+
+插入/删除行列时 `addOutlineForInsert` / `addOutlineForDelete` 平移分组范围：插入点在分组内则 end 后移；插入/删除点在分组前则整体平移；范围被完全删除的分组自动剔除。平移后统一 `recomputeOutlineLevels` 重算层级。
+
+### 27.5 UI 入口
+
+- **工具栏「分组」下拉**（`pickers/outline-picker.vue`，按钮位于排序与筛选之间）：仅在选中整行/整列时可用（`outlineAxis` computed，按钮 `:disabled` 置灰，Teleport 溢出条件不受置灰影响）。菜单项 5 个动词（添加分组 → 取消分组 → 清除分组 → 全部展开 → 全部折叠，与右键菜单同构）直接作用于选中轴（action key 形如 `group-rows` / `expand-cols`），不弹「行/列」子菜单。定位复用 `useFloatMenuPosition`。
+- **行/列右键菜单「分组」子菜单**（interactions.ts）：按右键轴分发（添加行分组 / 取消行分组 / 清除分组 / 全部展开 / 全部折叠）。
+- 校验失败提示 `alertOutline`：优先宿主注入的应用内对话框（`showOutlineAlert` 钩子），未注入时回退 `window.alert`。
+
+### 27.6 持久化与撤销
+
+分组随工作表 v-model（`rowOutlines` / `columnOutlines` 字段）持久化，在保存/加载/复制工作表中往返。添加、取消、清除、单组折叠各自 saveUndo 产生一个撤销步骤；`setAxisCollapsed`（全部展开/折叠）将整轴分组一次 saveUndo 批量折叠（silent 模式跳过逐组撤销）。
+
+### 27.7 集成点
+
+core-state.ts 暴露 addRowGroup / addColumnGroup / removeOutline / clearRowGroups / clearColumnGroups / setOutlineCollapsed / toggleOutline / getRowOutlines / getColumnOutlines / isRowCollapsed / isColumnCollapsed 及 insert/delete 的 adjustOutlinesFor*。interactions.ts 提供 outlineGroupRows / outlineGroupCols / outlineUngroupRows / outlineUngroupCols / outlineExpand*/outlineCollapse*（工具栏事件分发）与绘制层。spreader.vue 装配 OutlinePicker、计算 outlineAxis、接 showOutlineAlert 钩子。toolbar.vue 持有分组按钮与下拉（含溢出菜单支持）。
+
+### 27.8 未来扩展
+
+类型已预留 level > 1 的多层分组空间（recomputeOutlineLevels 按嵌套关系计算），但校验层当前限制一层；如需多层分组，放开 MAX_OUTLINE_LEVEL 并补充 gutter 分区渲染即可。
