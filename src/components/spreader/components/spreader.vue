@@ -500,7 +500,7 @@ function setTextColorMenuOpen(v: boolean) {
 function setFillColorMenuOpen(v: boolean) {
   undoStylesRaw.fillColorMenuOpen.value = v;
 }
-/** 工具栏「分组」菜单动作 → 交互层 分组/取消分组/展开折叠/清除 */
+/** 工具栏「分组」菜单动作 → 交互层 分组/取消分组/展开折叠/清除（按行/列分轴，与行列右键菜单分组子菜单一致） */
 function onOutlineAction(action: string) {
   switch (action) {
     case 'group-rows':
@@ -515,16 +515,23 @@ function onOutlineAction(action: string) {
     case 'ungroup-cols':
       interactionsRaw.outlineUngroupCols();
       break;
-    case 'expand-all':
+    case 'clear-rows':
+      coreStateRaw.clearRowGroups();
+      break;
+    case 'clear-cols':
+      coreStateRaw.clearColumnGroups();
+      break;
+    case 'expand-rows':
       interactionsRaw.outlineExpandRows();
+      break;
+    case 'expand-cols':
       interactionsRaw.outlineExpandCols();
       break;
-    case 'collapse-all':
+    case 'collapse-rows':
       interactionsRaw.outlineCollapseRows();
-      interactionsRaw.outlineCollapseCols();
       break;
-    case 'clear':
-      coreStateRaw.clearAllOutlines();
+    case 'collapse-cols':
+      interactionsRaw.outlineCollapseCols();
       break;
   }
 }

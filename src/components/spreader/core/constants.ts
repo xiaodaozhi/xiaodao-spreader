@@ -255,6 +255,7 @@ export const i18n: Record<string, Record<string, string>> = {
     filterByThisColumn: '筛选此列',
     // ---- 行列分组 / 折叠（Outline / Grouping）----
     outlineGroup: '分组',
+    outlineAddGroup: '添加分组',
     outlineRows: '行分组',
     outlineColumns: '列分组',
     outlineAddRowGroup: '添加行分组',
@@ -638,6 +639,7 @@ export const i18n: Record<string, Record<string, string>> = {
     filterByThisColumn: 'Filter This Column',
     // ---- Outline / Grouping ----
     outlineGroup: 'Group',
+    outlineAddGroup: 'Add Group',
     outlineRows: 'Group Rows',
     outlineColumns: 'Group Columns',
     outlineAddRowGroup: 'Add Row Group',

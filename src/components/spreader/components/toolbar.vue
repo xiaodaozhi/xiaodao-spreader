@@ -1270,47 +1270,41 @@ const freezeOptions = computed<FontOption[]>(() => {
         class="tb-item"
         data-key="outline"
       >
-        <div class="toolbar-split">
-          <button
-            class="toolbar-btn toolbar-split__main"
-            :title="t(locale, 'outlineGroup')"
-            @click="emit('update:outline-menu-open', !outlineMenuOpen)"
-          >
-            <span class="toolbar-btn__icon">
-              <svg
-                viewBox="0 0 1024 1024"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="56"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              ><path d="M160 224 H560 V800 H160 Z" /><path
-                stroke-width="44"
-                d="M664 640 H864 V384 H664"
-              /></svg>
-            </span>
-            <span class="toolbar-btn__label">{{ t(locale, 'outlineGroup') }}</span>
-          </button>
-          <button
-            ref="outlineArrowRef"
-            class="toolbar-btn toolbar-split__arrow"
-            :title="t(locale, 'outlineGroup')"
-            @click="emit('update:outline-menu-open', !outlineMenuOpen)"
-          >
+        <button
+          ref="outlineArrowRef"
+          class="toolbar-btn outline-trigger"
+          :class="{ 'is-open': outlineMenuOpen }"
+          :title="t(locale, 'outlineGroup')"
+          @click="emit('update:outline-menu-open', !outlineMenuOpen)"
+        >
+          <span class="toolbar-btn__icon">
             <svg
               viewBox="0 0 1024 1024"
-              fill="currentColor"
-            ><path d="M180.053 361.387a32 32 0 0 1 45.227 0L512 648.107l286.72-286.72a32 32 0 1 1 45.227 45.227l-309.334 309.333a32 32 0 0 1-45.226 0L180.053 406.613a32 32 0 0 1 0-45.226z" /></svg>
-          </button>
-          <OutlinePicker
-            :model-open="outlineMenuOpen"
-            :locale="locale"
-            :trigger-el="outlineArrowRef"
-            :boundary-el="boundaryEl"
-            @update:model-open="emit('update:outline-menu-open', $event)"
-            @action="emit('outline-action', $event)"
-          />
-        </div>
+              fill="none"
+              stroke="currentColor"
+              stroke-width="56"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            ><path d="M160 224 H560 V800 H160 Z" /><path
+              stroke-width="44"
+              d="M664 640 H864 V384 H664"
+            /></svg>
+          </span>
+          <span class="toolbar-btn__label">{{ t(locale, 'outlineGroup') }}</span>
+          <svg
+            class="outline-trigger__caret"
+            viewBox="0 0 1024 1024"
+            fill="currentColor"
+          ><path d="M180.053 361.387a32 32 0 0 1 45.227 0L512 648.107l286.72-286.72a32 32 0 1 1 45.227 45.227l-309.334 309.333a32 32 0 0 1-45.226 0L180.053 406.613a32 32 0 0 1 0-45.226z" /></svg>
+        </button>
+        <OutlinePicker
+          :model-open="outlineMenuOpen"
+          :locale="locale"
+          :trigger-el="outlineArrowRef"
+          :boundary-el="boundaryEl"
+          @update:model-open="emit('update:outline-menu-open', $event)"
+          @action="emit('outline-action', $event)"
+        />
       </div>
     </Teleport>
 
@@ -1555,6 +1549,32 @@ const freezeOptions = computed<FontOption[]>(() => {
 .toolbar-split__arrow:hover:not(:disabled) { background: var(--sp-toolbar-btn-hover-bg); }
 .toolbar-split__arrow svg { width: 10px !important; height: 10px !important; }
 
+/* 分组（Outline）触发按钮：单按钮（图标 + 文字 + 箭头），参考条件格式下拉框按钮 .cf-menu-trigger */
+.outline-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  height: 26px;
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--sp-toolbar-btn-color, #444);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0 5px;
+  box-sizing: border-box;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+  min-width: 0;
+}
+.outline-trigger:hover:not(:disabled) { background: var(--sp-toolbar-btn-hover-bg, #e6e6e6); }
+.outline-trigger:disabled { color: var(--sp-toolbar-btn-disabled-color, #aaa); cursor: default; }
+.outline-trigger.is-open { background: var(--sp-toolbar-btn-hover-bg, #e6e6e6); }
+.outline-trigger .toolbar-btn__icon { width: 16px; height: 16px; }
+.outline-trigger .toolbar-btn__label { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; }
+.outline-trigger__caret { width: 10px; height: 10px; opacity: 0.7; flex: none; }
+
 /* 「更多」按钮 */
 .toolbar-more { display: flex; align-items: center; justify-content: center; width: 30px; height: 26px; border: none; border-radius: 3px; background: transparent; color: var(--sp-toolbar-btn-color); cursor: pointer; padding: 0; flex: 0 0 auto; margin-left: auto; }
 .toolbar-more:hover { background: var(--sp-toolbar-btn-hover-bg); }
@@ -1618,6 +1638,8 @@ const freezeOptions = computed<FontOption[]>(() => {
 .overflow-menu .sp-dropdown .sp-dropdown__trigger { padding-left: 6px; gap: 6px; }
 .overflow-menu .cf-menu-root .cf-menu-trigger { padding-left: 6px; gap: 6px; }
 .overflow-menu .cf-menu-trigger__icon { width: 18px; height: 18px; }
+.overflow-menu .outline-trigger { padding-left: 6px; gap: 6px; }
+.overflow-menu .outline-trigger .toolbar-btn__icon { width: 18px; height: 18px; }
 
 /* 统一弹出动画：fade + scale */
 .menu-pop-enter-active, .menu-pop-leave-active { transition: opacity 0.12s ease-out, transform 0.12s ease-out; }
@@ -1644,6 +1666,8 @@ const freezeOptions = computed<FontOption[]>(() => {
 .overflow-menu .sp-dropdown .sp-dropdown__trigger { padding-left: 6px; gap: 6px; }
 .overflow-menu .cf-menu-root .cf-menu-trigger { padding-left: 6px; gap: 6px; }
 .overflow-menu .cf-menu-trigger__icon { width: 18px; height: 18px; }
+.overflow-menu .outline-trigger { padding-left: 6px; gap: 6px; }
+.overflow-menu .outline-trigger .toolbar-btn__icon { width: 18px; height: 18px; }
 .overflow-menu .toolbar-font-size__input { flex: 1 1 auto; width: auto; min-width: 40px; }
 
 .overflow-menu .toolbar-btn:hover:not(:disabled) { background: var(--sp-toolbar-btn-hover-bg); }

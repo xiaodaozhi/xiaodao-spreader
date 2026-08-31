@@ -30,21 +30,29 @@ interface OutlineItem {
   sep?: boolean;
 }
 
-// Data > 分组 菜单项：分组/取消组合 带行·列子级，其余为直接动作
+// Data > 分组 菜单项：与行列右键菜单「分组」子菜单的 5 个动词对齐（添加/取消/清除/全部展开/全部折叠）。
+// 工具栏为单菜单覆盖行+列两轴，故每个动词下挂 [行, 列] 子级；右键子菜单按轴分菜单（行头右键=行项、列头右键=列项），此处合并为同一菜单。
 const ITEMS: OutlineItem[] = [
-  { key: 'group', i18nKey: 'outlineGroup', children: [
-    { key: 'group-rows', i18nKey: 'outlineRows' },
-    { key: 'group-cols', i18nKey: 'outlineColumns' },
+  { key: 'add-group', i18nKey: 'outlineAddGroup', children: [
+    { key: 'group-rows', i18nKey: 'outlineAddRowGroup' },
+    { key: 'group-cols', i18nKey: 'outlineAddColumnGroup' },
   ] },
   { key: 'ungroup', i18nKey: 'outlineUngroup', children: [
     { key: 'ungroup-rows', i18nKey: 'outlineUngroupRows' },
     { key: 'ungroup-cols', i18nKey: 'outlineUngroupColumns' },
   ] },
-  { key: 'sep1', i18nKey: '_sep', disabled: true, sep: true },
-  { key: 'expand-all', i18nKey: 'outlineExpandAll' },
-  { key: 'collapse-all', i18nKey: 'outlineCollapseAll' },
-  { key: 'sep2', i18nKey: '_sep', disabled: true, sep: true },
-  { key: 'clear', i18nKey: 'outlineClearAll' },
+  { key: 'clear-group', i18nKey: 'outlineClear', children: [
+    { key: 'clear-rows', i18nKey: 'outlineRowsLabel' },
+    { key: 'clear-cols', i18nKey: 'outlineColumnsLabel' },
+  ] },
+  { key: 'expand', i18nKey: 'outlineExpandAll', children: [
+    { key: 'expand-rows', i18nKey: 'outlineRowsLabel' },
+    { key: 'expand-cols', i18nKey: 'outlineColumnsLabel' },
+  ] },
+  { key: 'collapse', i18nKey: 'outlineCollapseAll', children: [
+    { key: 'collapse-rows', i18nKey: 'outlineRowsLabel' },
+    { key: 'collapse-cols', i18nKey: 'outlineColumnsLabel' },
+  ] },
 ];
 
 const open = ref(false);
