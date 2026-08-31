@@ -338,8 +338,8 @@ export interface DataValidationResult {
 }
 
 // ============ 行列分组 / 折叠（Outline / Grouping）============
-/** 单个行列分组的最大支持层级（与 Excel 一致，最多 8 级） */
-export const MAX_OUTLINE_LEVEL = 8;
+/** 单个行列分组的最大支持层级：固定为 1，即仅支持一层分组（分组之间互不嵌套） */
+export const MAX_OUTLINE_LEVEL = 1;
 
 /** 维度分组：属于 Sheet 的结构元数据。start/end 为 0-based 闭区间，且 start <= end */
 export interface DimensionOutline {

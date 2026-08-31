@@ -47,43 +47,40 @@ test('分组：不相交 OK', () => {
   assert.equal(v.ok, true);
 });
 
-test('分组：完全包含 OK，且层级按嵌套计算（2~20 内再建 5~10 → level2）', () => {
+test('分组：仅一层——完全包含被拒绝（2~20 内再建 5~10 → outlineTooDeep）', () => {
   const ex = [row('A', 2, 20, false)];
   const v = validateGroup(ex, 5, 10);
-  assert.equal(v.ok, true);
-  assert.equal(v.level, 2);
+  assert.equal(v.ok, false);
+  assert.equal(v.code, 'outlineTooDeep');
 });
 
-test('分组：嵌套层级独立计算而非累加（A 2~20、B 5~10、C 7~8 → level3）', () => {
-  let o = addOutline([], 'row', 2, 20, 'A').outlines;
-  o = addOutline(o, 'row', 5, 10, 'B').outlines;
-  const v = addOutline(o, 'row', 7, 8, 'C');
-  assert.equal(v.validation.ok, true);
-  assert.equal(v.validation.level, 3);
+test('分组：仅一层——嵌套被拒绝（A 2~20、B 5~10 → B 的创建即 outlineTooDeep）', () => {
+  const a = addOutline([], 'row', 2, 20, 'A').outlines;
+  // A 已存在，B 完全位于 A 内部 → 嵌套，应被拒绝
+  const v = validateGroup(a, 5, 10);
+  assert.equal(v.ok, false);
+  assert.equal(v.code, 'outlineTooDeep');
 });
 
-test('分组：recomputeOutlineLevels 依据嵌套关系给每个组算 level', () => {
-  let o = addOutline([], 'row', 2, 20, 'A').outlines;
-  o = addOutline(o, 'row', 5, 10, 'B').outlines;
-  o = addOutline(o, 'row', 7, 8, 'C').outlines;
+test('分组：recomputeOutlineLevels 仅一层时所有组 level 均为 1', () => {
+  let o = [row('A', 2, 20)];
   o = recomputeOutlineLevels(o);
+  o = recomputeOutlineLevels(addOutline(o, 'row', 22, 26, 'B').outlines);
   const a = o.find((x) => x.id === 'A')!;
   const b = o.find((x) => x.id === 'B')!;
-  const c = o.find((x) => x.id === 'C')!;
   assert.equal(a.level, 1);
-  assert.equal(b.level, 2);
-  assert.equal(c.level, 3);
+  assert.equal(b.level, 1);
 });
 
 // ============ 折叠可见性 / 层级查询 ============
 
-test('outlineLevelAt：Row3→1，Row6→2，Row15→1，Row25→0', () => {
+test('outlineLevelAt：不相交分组各自 level=1（Row3→1，Row15→1，Row23→1，Row27→0）', () => {
   let o = addOutline([], 'row', 2, 20, 'A').outlines;
-  o = addOutline(o, 'row', 5, 10, 'B').outlines;
+  o = addOutline(o, 'row', 22, 26, 'B').outlines;
   assert.equal(outlineLevelAt(o, 3), 1);
-  assert.equal(outlineLevelAt(o, 6), 2);
   assert.equal(outlineLevelAt(o, 15), 1);
-  assert.equal(outlineLevelAt(o, 25), 0);
+  assert.equal(outlineLevelAt(o, 23), 1);
+  assert.equal(outlineLevelAt(o, 27), 0);
 });
 
 test('折叠后：isOutlineCollapsedAt 隐藏组内维度，组外不受影响', () => {
@@ -98,16 +95,16 @@ test('折叠后：isOutlineCollapsedAt 隐藏组内维度，组外不受影响',
   assert.equal(isOutlineCollapsedAt(o, 3), false);
 });
 
-test('buildOutlineIndex：collapsed 组标记 hidden、记录 maxLevel', () => {
+test('buildOutlineIndex：collapsed 组标记 hidden、仅一层 maxLevel=1', () => {
   let o = [row('A', 2, 20, true)];
-  o = recomputeOutlineLevels(addOutline(o, 'row', 5, 10, 'B').outlines);
+  o = recomputeOutlineLevels(addOutline(o, 'row', 22, 26, 'B').outlines);
   const idx = buildOutlineIndex(o, 25);
-  assert.equal(idx.maxLevel, 2);
+  assert.equal(idx.maxLevel, 1);
   assert.equal(idx.levels[0], 0);
   assert.equal(idx.levels[3], 1);
-  assert.equal(idx.levels[6], 2);
+  assert.equal(idx.levels[23], 1);
   assert.equal(idx.hidden[3], true); // A collapsed → 命中
-  assert.equal(idx.hidden[6], true);
+  assert.equal(idx.hidden[23], false); // B 展开
   assert.equal(idx.hidden[0], false);
   assert.equal(idx.hidden[21], false);
 });
@@ -138,15 +135,15 @@ test('删除行：整个 Group 被删除 → 自动移除', () => {
   assert.equal(o.length, 0);
 });
 
-test('删除行：内层 Group 被删除后外层保留', () => {
-  let o = addOutline([], 'row', 2, 20, 'A').outlines;
-  o = recomputeOutlineLevels(addOutline(o, 'row', 5, 10, 'B').outlines);
-  o = addOutlineForDelete(o, 5, 6); // 删除 B 整段
-  assert.equal(o.some((x) => x.id === 'B'), false);
-  const a = o.find((x) => x.id === 'A')!;
-  assert.ok(a);
-  assert.equal(a.start, 2);
-  assert.equal(a.end, 14);
+test('删除行：某个 Group 整段被删除后，其余 Group 保留', () => {
+  let o = addOutline([], 'row', 2, 10, 'A').outlines;
+  o = addOutline(o, 'row', 14, 20, 'B').outlines;
+  o = addOutlineForDelete(o, 2, 9); // 删除 A 整段（2~10）
+  assert.equal(o.some((x) => x.id === 'A'), false);
+  const b = o.find((x) => x.id === 'B')!;
+  assert.ok(b);
+  assert.equal(b.start, 5); // 14 - 9
+  assert.equal(b.end, 11);  // 20 - 9
 });
 
 // ============ 列分组对称 ============

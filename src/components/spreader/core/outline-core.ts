@@ -1,6 +1,6 @@
 // ============ 行列分组 / 折叠（Outline / Grouping）纯逻辑引擎 ============
 // 本模块是 Outline 的纯函数核心，负责：
-//   - 分组合法性校验（禁止交叉、至少 2 个连续维度、最多 8 级）
+//   - 分组合法性校验（禁止交叉与嵌套、至少 2 个连续维度、仅一层）
 //   - 层级（level）由嵌套关系计算
 //   - 折叠可见性（hidden by collapsed）、每个维度的所处层级
 //   - 插入 / 删除行列后的坐标平移与清理
@@ -12,7 +12,7 @@ import { MAX_OUTLINE_LEVEL } from './types';
 export type OutlineValidationCode
   = | 'outlineMinSize'    // 分组至少需要 2 个连续行/列
     | 'outlineCrossing'   // 与既有分组部分重叠（既不相交也非完全包含）
-    | 'outlineTooDeep'    // 层级超过 MAX_OUTLINE_LEVEL
+    | 'outlineTooDeep'    // 尝试嵌套分组（违反仅一层限制）
     | 'outlineInvalid';   // start>end
 
 export interface OutlineValidationResult {
@@ -49,8 +49,8 @@ function isNestedPair(aS: number, aE: number, bS: number, bE: number): boolean {
  * 规则：
  *   - start <= end
  *   - 至少连续 2 个维度
- *   - 与既有分组要么不相交要么完全包含，禁止部分重叠
- *   - 层级（countContaining + 1）不超过 MAX_OUTLINE_LEVEL
+ *   - 与既有分组必须完全不相交，禁止部分重叠与嵌套（仅支持一层分组）
+ *   - 层级恒为 1（countContaining 必须为 0）
  */
 export function validateGroup(
   existing: DimensionOutline[],

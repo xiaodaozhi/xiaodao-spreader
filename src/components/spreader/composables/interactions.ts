@@ -232,7 +232,7 @@ export function createInteractions(
   const DV_DROPDOWN_W = 14;
   // ---- 行列分组（Outline）绘制常量 ----
   const OUTLINE_STEP = 9;      // 浮动显示时每个分组层级在行头/列头内占用的像素步长
-  const OUTLINE_PANEL = 16;    // 左上 Outline Level 控件条宽度像素（pinned 不滚动）
+  const OUTLINE_PANEL = 16;    // 行分组 ± 按钮的起始左内边距（左上 Level 控件条已移除，仅一层分组）
   const OUTLINE_BTN = Math.min(OUTLINE_STEP - 1, 9); // ± 折叠按钮边长（浮动于表头内）
   /** 行/列 gutter 总尺寸：浮动显示于行头/列头内，不再预留独立分区 → 恒为 0 */
   function outlineGutterSize(_axis: 'row' | 'column'): number {
@@ -246,29 +246,11 @@ export function createInteractions(
   const hwOff = () => HEADER_WIDTH + outlineGapX();
   /** 含 Outline gutter 偏移后的表头上边界（网格起点 y） */
   const hhOff = () => HEADER_HEIGHT + outlineGapY();
-  /** 当前生效的 outline level（用于 Level 控件高亮）：
-   *  无折叠 → 最深等级；否则 = 处于折叠状态的最大层级。 */
-  function activeOutlineLevel(): number {
-    const rows = s.getRowOutlines();
-    const cols = s.getColumnOutlines();
-    if (!rows.length && !cols.length) return 0;
-    let maxL = 0;
-    let maxCollapsed = 0;
-    for (const o of rows) {
-      if (o.level > maxL) maxL = o.level;
-      if (o.collapsed && o.level > maxCollapsed) maxCollapsed = o.level;
-    }
-    for (const o of cols) {
-      if (o.level > maxL) maxL = o.level;
-      if (o.collapsed && o.level > maxCollapsed) maxCollapsed = o.level;
-    }
-    return maxCollapsed > 0 ? maxCollapsed : maxL;
-  }
-  /** 行分组折叠括号/±按钮的浮动锚点 x（行头带内，按层级从左往右排列，避开左上 Level 控件条）。 */
+  /** 行分组 ± 折叠按钮的浮动锚点 x（行头带内，分组区间用背景色区分）。 */
   function rowOutlineAnchorX(o: { level: number }, maxRowL: number): number {
     return OUTLINE_PANEL + 2 + (maxRowL - o.level) * OUTLINE_STEP;
   }
-  /** 列分组折叠括号/±按钮的浮动锚点 y（列头带内，按层级从上往下排列）。 */
+  /** 列分组 ± 折叠按钮的浮动锚点 y（列头带内，分组区间用背景色区分）。 */
   function colOutlineAnchorY(o: { level: number }, maxColL: number): number {
     return 3 + (maxColL - o.level) * OUTLINE_STEP;
   }
@@ -1136,26 +1118,14 @@ export function createInteractions(
     rCtx.closePath();
     rCtx.fill();
 
-    // ---- 行列分组 Outline 控件：浮动于列头/行头带内的 ±/折叠括号 + 左上 Level 控件 ----
+    // ---- 行列分组 Outline 控件：浮动于列头/行头带内的 ± 折叠按钮（分组区间用背景色区分） ----
     const maxRowL = s.getOutlineLevel('row');
     const maxColL = s.getOutlineLevel('column');
-    // 行分组：竖向折叠括号 + ± 按钮，浮动于行号带内（x∈[OUTLINE_PANEL, HW]）
+    // 行分组：± 折叠按钮，浮动于行号带内（x∈[OUTLINE_PANEL, HW]），分组区间用背景色区分
     if (s.getRowOutlines().length) {
       for (const o of s.getRowOutlines()) {
         const xc = rowOutlineAnchorX(o, maxRowL);
         const gyT = hh + rP[o.start]! - sy;
-        const eIdx = Math.min(o.end + 1, rP.length - 1);
-        const gyB = hh + rP[eIdx]! - sy;
-        // 竖向括号连线穿过 ± 按钮中心，用较淡的边框色降低与行号的重叠干扰
-        const bracketX = Math.round(xc);
-        if (gyB - gyT >= 1) {
-          rCtx.strokeStyle = cs.headerBorder;
-          rCtx.lineWidth = 1;
-          rCtx.beginPath();
-          rCtx.moveTo(bracketX, Math.round(gyT) + 2);
-          rCtx.lineTo(bracketX, Math.max(1, Math.round(gyB) - 2));
-          rCtx.stroke();
-        }
         const bx = xc - OUTLINE_BTN / 2;
         const by = gyT - OUTLINE_BTN / 2;
         rCtx.fillStyle = cs.headerBg;
@@ -1178,22 +1148,11 @@ export function createInteractions(
         }
       }
     }
-    // 列分组：横向折叠括号 + ± 按钮，浮动于列号带内（y∈[0, HH]）
+    // 列分组：± 折叠按钮，浮动于列号带内（y∈[0, HH]），分组区间用背景色区分
     if (s.getColumnOutlines().length) {
       for (const o of s.getColumnOutlines()) {
         const yc = colOutlineAnchorY(o, maxColL);
         const gxL = hw + cP[o.start]! - sx;
-        const eIdx = Math.min(o.end + 1, cP.length - 1);
-        const gxR = hw + cP[eIdx]! - sx;
-        const bracketY = Math.round(yc);
-        if (gxR - gxL >= 1) {
-          rCtx.strokeStyle = cs.headerBorder;
-          rCtx.lineWidth = 1;
-          rCtx.beginPath();
-          rCtx.moveTo(Math.round(gxL) + 2, bracketY);
-          rCtx.lineTo(Math.max(1, Math.round(gxR) - 2), bracketY);
-          rCtx.stroke();
-        }
         const bx = gxL - OUTLINE_BTN / 2;
         const by = yc - OUTLINE_BTN / 2;
         rCtx.fillStyle = cs.headerBg;
@@ -1214,27 +1173,6 @@ export function createInteractions(
           rCtx.lineTo(gxL, yc + 2);
           rCtx.stroke();
         }
-      }
-    }
-    // 左上 Outline Level 控件条（pinned 不滚动，控制整体显示深度）
-    const maxLvl = Math.max(maxRowL, maxColL);
-    if (maxLvl > 0) {
-      const aL = activeOutlineLevel();
-      rCtx.fillStyle = cs.headerBg;
-      rCtx.fillRect(0, 0, OUTLINE_PANEL, maxLvl * OUTLINE_PANEL);
-      for (let L = 1; L <= maxLvl; L++) {
-        const cy0 = (L - 1) * OUTLINE_PANEL;
-        rCtx.fillStyle = L === aL ? cs.selectionBg : cs.headerBg;
-        rCtx.strokeStyle = cs.headerBorder;
-        rCtx.lineWidth = 1;
-        roundRectPath(rCtx, 1, cy0 + 1, OUTLINE_PANEL - 2, OUTLINE_PANEL - 2, 2);
-        rCtx.fill();
-        rCtx.stroke();
-        rCtx.fillStyle = L === aL ? cs.activeCellBorder : cs.headerText;
-        rCtx.font = '9px -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif';
-        rCtx.textAlign = 'center';
-        rCtx.textBaseline = 'middle';
-        rCtx.fillText(String(L), OUTLINE_PANEL / 2 + 0.5, cy0 + OUTLINE_PANEL / 2 + 0.5);
       }
     }
 
@@ -2054,17 +1992,11 @@ export function createInteractions(
   }
 
   // ---- 行列分组（Outline）交互：命中测试 / 分组 / 取消分组 / 展开折叠 / Level ----
-  type OutlineHit = { kind: 'toggle'; outlineId: string } | { kind: 'level'; level: number };
+  type OutlineHit = { kind: 'toggle'; outlineId: string };
   /** 命中测试：返回命中的 ± 按钮或左上 Level 按钮；否则 null。坐标 = getCanvasXY 内的画板坐标。 */
   function hitTestOutlineControl(x: number, y: number): OutlineHit | null {
     const maxRowL = s.getOutlineLevel('row');
     const maxColL = s.getOutlineLevel('column');
-    const maxLvl = Math.max(maxRowL, maxColL);
-    // 左上 pinned Level 控件条
-    if (x >= 0 && x < OUTLINE_PANEL && maxLvl > 0 && y >= 0 && y < maxLvl * OUTLINE_PANEL) {
-      const L = Math.floor(y / OUTLINE_PANEL) + 1;
-      if (L >= 1 && L <= maxLvl) return { kind: 'level', level: L };
-    }
     const rP = s.rowPositions.value;
     const cP = s.colPositions.value;
     const sx = s.scrollX.value;
@@ -2091,20 +2023,6 @@ export function createInteractions(
       }
     }
     return null;
-  }
-  /** 将 Level 控件设为 L：高于 L 的层级全部折叠、≤L 的全部展开（一次撤消） */
-  function applyOutlineLevel(level: number) {
-    const rows = s.getRowOutlines();
-    const cols = s.getColumnOutlines();
-    let changed = false;
-    for (const o of rows) if (o.collapsed !== (o.level > level)) changed = true;
-    for (const o of cols) if (o.collapsed !== (o.level > level)) changed = true;
-    if (!changed) return;
-    us.saveUndo();
-    for (const o of rows) if (o.collapsed !== (o.level > level)) s.setOutlineCollapsed(o.id, o.level > level, true);
-    for (const o of cols) if (o.collapsed !== (o.level > level)) s.setOutlineCollapsed(o.id, o.level > level, true);
-    so.emitModelData();
-    scheduleRender();
   }
   /** 取消分组：删除被选区完整覆盖的分组（每个分组由 removeOutline 内部保存一次 undo） */
   function removeOutlinesBulk(ids: string[]) {
@@ -2920,15 +2838,13 @@ export function createInteractions(
       openFilterPopup(hitFilter);
       return;
     }
-    // 行列分组 Outline 控件命中（± 展开折叠 / Level 控件）
+    // 行列分组 Outline 控件命中（± 展开折叠）
     const hitOl = hitTestOutlineControl(p.x, p.y);
     if (hitOl) {
       if (hitOl.kind === 'toggle') {
         s.toggleOutline(hitOl.outlineId);
         scheduleRender();
         so.emitModelData();
-      } else if (hitOl.kind === 'level') {
-        applyOutlineLevel(hitOl.level);
       }
       return;
     }
