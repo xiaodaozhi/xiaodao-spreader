@@ -1616,7 +1616,7 @@ const freezeOptions = computed<FontOption[]>(() => {
 .outline-trigger.is-open { background: var(--sp-toolbar-btn-hover-bg, #e6e6e6); }
 .outline-trigger__icon { width: 16px; height: 16px; flex: none; }
 .outline-trigger .toolbar-btn__label { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; }
-.toolbar-btn.outline-trigger .outline-trigger__caret { width: 10px; height: 10px; opacity: 0.7; flex: none; margin-left: auto; }
+.toolbar-btn.outline-trigger .outline-trigger__caret { width: 10px; height: 10px; opacity: 0.7; flex: none; }
 
 /* 「更多」按钮 */
 .toolbar-more { display: flex; align-items: center; justify-content: center; width: 30px; height: 26px; border: none; border-radius: 3px; background: transparent; color: var(--sp-toolbar-btn-color); cursor: pointer; padding: 0; flex: 0 0 auto; margin-left: auto; }
@@ -1681,7 +1681,8 @@ const freezeOptions = computed<FontOption[]>(() => {
 .overflow-menu .sp-dropdown .sp-dropdown__trigger { padding-left: 6px; gap: 6px; }
 .overflow-menu .cf-menu-root .cf-menu-trigger { padding-left: 6px; gap: 6px; }
 .overflow-menu .cf-menu-trigger__icon { width: 18px; height: 18px; }
-.overflow-menu .outline-trigger { padding-left: 6px; padding-right: 6px; gap: 0; }
+.overflow-menu .outline-trigger { padding-left: 6px; gap: 6px; }
+.overflow-menu .outline-trigger .toolbar-btn__label { margin-left: 0; }
 .overflow-menu .outline-trigger__icon { width: 18px; height: 18px; flex: none; }
 
 /* 统一弹出动画：fade + scale */
@@ -1709,7 +1710,8 @@ const freezeOptions = computed<FontOption[]>(() => {
 .overflow-menu .sp-dropdown .sp-dropdown__trigger { padding-left: 6px; gap: 6px; }
 .overflow-menu .cf-menu-root .cf-menu-trigger { padding-left: 6px; gap: 6px; }
 .overflow-menu .cf-menu-trigger__icon { width: 18px; height: 18px; }
-.overflow-menu .outline-trigger { padding-left: 6px; padding-right: 6px; gap: 0; }
+.overflow-menu .outline-trigger { padding-left: 6px; gap: 6px; }
+.overflow-menu .outline-trigger .toolbar-btn__label { margin-left: 0; }
 .overflow-menu .outline-trigger__icon { width: 18px; height: 18px; flex: none; }
 .overflow-menu .toolbar-font-size__input { flex: 1 1 auto; width: auto; min-width: 40px; }
 
