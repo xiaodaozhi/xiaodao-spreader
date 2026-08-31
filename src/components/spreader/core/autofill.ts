@@ -355,6 +355,9 @@ export function validateMergeCompatibility(
   }
   for (const key of keys) {
     const m = merges[key]!;
+    // 目标区域与「源已完全包含」的合并格相交属于合法场景（如整块合并格被整体选中再向外填充），
+    // 不对其判为不兼容，否则选中单个合并格时填充柄会被误判为灰色 / 不可拖拽。
+    if (contains(sourceRange, m)) continue;
     if (intersects(targetRange, m)) return false;
   }
   return true;

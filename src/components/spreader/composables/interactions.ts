@@ -812,10 +812,21 @@ export function createInteractions(
           ctx.fillStyle = bg;
           ctx.fillRect(ix, iy, segRight - ix, segBottom - iy);
         }
+        // 合并格选中态：anchor 命中选中区时整块填充浅蓝背景（Excel 样式），与普通单元格一致
+        if (s.isSelected(aC, aR)) {
+          ctx.fillStyle = cs.selectionBg;
+          ctx.fillRect(ix, iy, segRight - ix, segBottom - iy);
+        }
         ctx.strokeStyle = cs.gridLine;
         ctx.lineWidth = 0.5;
         ctx.strokeRect(ax + 0.25, ay + 0.25, (segRight - ax) - 0.5, (segBottom - ay) - 0.5);
         drawMergeBorder(ctx, m, ax, ay, aw, ah, hFrozenPane, vFrozenPane);
+        // 合并格选中边框：merge 为当前 activeCell 时在整个合并矩形外围描蓝色粗边框
+        if (s.activeCell.value.col === aC && s.activeCell.value.row === aR) {
+          ctx.strokeStyle = cs.activeCellBorder;
+          ctx.lineWidth = 2;
+          ctx.strokeRect(ax + 1, ay + 1, aw - 2, ah - 2);
+        }
         // 数据验证下拉箭头：合并单元格统一在锚点处绘制（不重复绘制）
         if (s.getListValidation(aR, aC)) {
           const isActive = s.activeCell.value.col === aC && s.activeCell.value.row === aR;
