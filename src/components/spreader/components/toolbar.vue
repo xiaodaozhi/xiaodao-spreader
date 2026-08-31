@@ -1265,7 +1265,7 @@ const freezeOptions = computed<FontOption[]>(() => {
 
     <!-- 分组 / 折叠（Outline），位于排序与筛选之间 -->
     <Teleport
-      :disabled="!outlineAxis || teleportDisabled('outline')"
+      :disabled="teleportDisabled('outline')"
       :to="overflowMenuTarget"
     >
       <div
@@ -1276,6 +1276,7 @@ const freezeOptions = computed<FontOption[]>(() => {
           ref="outlineArrowRef"
           class="toolbar-btn outline-trigger"
           :class="{ 'is-open': outlineMenuOpen }"
+          :disabled="!outlineAxis"
           :title="t(locale, 'outlineGroup')"
           @click="emit('update:outline-menu-open', !outlineMenuOpen)"
         >
