@@ -542,8 +542,12 @@ const setFormulaBarRef = (el: unknown) => {
 function toggleFormulaBarExpanded() {
   interactionsRaw.formulaBarExpanded.value = !interactionsRaw.formulaBarExpanded.value;
 }
+/** 表格容器元素（响应式副本）：传给 Toolbar 作为弹出菜单的边界基准，
+ *  使其嵌入宿主 Vue 页面时菜单不会越界盖住宿主内容。 */
+const wrapperEl = ref<HTMLDivElement | null>(null);
 const setWrapperRef = (el: unknown) => {
   sheetsOpsRaw.wrapperRef.value = el as HTMLDivElement | null;
+  wrapperEl.value = el as HTMLDivElement | null;
 };
 const setCanvasRef = (el: unknown) => {
   sheetsOpsRaw.canvasRef.value = el as HTMLCanvasElement | null;
@@ -610,6 +614,7 @@ const setDimInputRef = (el: unknown) => {
       :nf-options="undoStyles.nfOptions"
       :can-increase-decimals="undoStyles.canIncreaseDecimals"
       :can-decrease-decimals="undoStyles.canDecreaseDecimals"
+      :boundary-el="wrapperEl"
       :theme-vars="sheetsOps.toolbarThemeVars"
       @undo="undoStyles.undo()"
       @redo="undoStyles.redo()"

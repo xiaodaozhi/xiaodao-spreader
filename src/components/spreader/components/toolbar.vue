@@ -365,6 +365,9 @@ const props = defineProps<{
   nfOptions: NFOption[];
   canIncreaseDecimals: boolean;
   canDecreaseDecimals: boolean;
+  /** 边界基准元素（通常是表格容器 wrapper）：弹出菜单不得越出其可视区。
+   *  组件嵌入宿主 Vue 页面时必需——否则菜单会越界盖住宿主内容。缺省时退化为纯视口判定。 */
+  boundaryEl?: HTMLElement | null;
 }>();
 
 const emit = defineEmits<{
@@ -1295,6 +1298,7 @@ const freezeOptions = computed<FontOption[]>(() => {
             :model-open="outlineMenuOpen"
             :locale="locale"
             :trigger-el="outlineArrowRef"
+            :boundary-el="boundaryEl"
             @update:model-open="emit('update:outline-menu-open', $event)"
             @action="emit('outline-action', $event)"
           />
