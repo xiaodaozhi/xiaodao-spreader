@@ -2,6 +2,7 @@
 import { ref, nextTick, onMounted, onBeforeUnmount } from 'vue';
 import { t } from '../../core/constants';
 import { getFloatBounds, cssRightFromX } from '../../core/utils';
+import { useFloatMenuPosition } from '../../composables/useFloatMenuPosition';
 
 const props = withDefaults(defineProps<{
   locale: string;
@@ -33,13 +34,13 @@ const highlightDir = ref<'left' | 'right'>('right');
 const clearDir = ref<'left' | 'right'>('right');
 const highlightUp = ref(false);
 const clearUp = ref(false);
-const pos = ref<{ right: number; top: number; up: boolean }>({ right: 0, top: 0, up: false });
 const canUp = ref(false);
 const canDown = ref(false);
 const highlightCanUp = ref(false);
 const highlightCanDown = ref(false);
 const clearCanUp = ref(false);
 const clearCanDown = ref(false);
+const { pos, place } = useFloatMenuPosition();
 interface SubPos { left?: number; right?: number; top: number }
 const highlightSubPos = ref<SubPos>({ top: 0 });
 const clearSubPos = ref<SubPos>({ top: 0 });
@@ -70,31 +71,15 @@ function toggle() {
 function openMenu() {
   const el = btnRef.value;
   if (!el) return;
-  const r = el.getBoundingClientRect();
   open.value = true;
   submenu.value = null;
-  const b = getFloatBounds(props.boundaryEl);
-  pos.value = {
-    right: cssRightFromX(Math.min(r.right, b.right)),
-    top: r.bottom + 4,
-    up: false,
-  };
+  // 初始下落放置（与分组下拉框共用同一套定位逻辑）
+  place(el, props.boundaryEl);
   // 下一帧菜单 DOM 已挂载，测量实际高度再决定向上还是向下
   nextTick(() => {
     const menu = menuRef.value?.closest('.cf-menu') as HTMLElement | null;
     if (!menu) return;
-    const h = menu.offsetHeight;
-    const spaceBelow = b.bottom - r.bottom - 8;
-    const spaceAbove = r.top - b.top - 8;
-    // 下方放得下就向下；下方放不下但上方有空间（哪怕不够完整）就向上；两边都不够→兜底贴顶
-    const up = spaceBelow < h && spaceAbove > 0;
-    let top = up ? r.top - h - 4 : r.bottom + 4;
-    top = Math.max(b.top + 8, Math.min(b.bottom - h - 8, top));
-    pos.value = {
-      right: cssRightFromX(Math.min(r.right, b.right)),
-      top,
-      up,
-    };
+    place(el, props.boundaryEl, menu);
     onMenuScroll();
   });
 }

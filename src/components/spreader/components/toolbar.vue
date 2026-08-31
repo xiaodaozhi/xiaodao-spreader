@@ -242,7 +242,7 @@ function onDocPointerdown(e: PointerEvent) {
   if (moreBtnEl.value?.contains(target)) return;
   // CF 弹层（condition format Teleport 到 body 的菜单）、ColorPicker 弹层、SpDropdown 弹层都可能在 body 上，
   // 只要点在弹层内部就不关闭溢出菜单——否则点击子菜单选色/选条件时会把溢出菜单先关掉
-  if ((target as HTMLElement).closest?.('.cf-menu, .sp-dropdown__menu, .color-picker__menu')) return;
+  if ((target as HTMLElement).closest?.('.cf-menu, .sp-dropdown__menu, .color-picker__menu, .outline-picker__menu')) return;
   skipCloseAnim.value = true;
   overflowOpen.value = false;
   nextTick(() => {
