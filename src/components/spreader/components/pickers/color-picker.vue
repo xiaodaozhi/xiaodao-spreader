@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onBeforeUnmount } from 'vue';
 import { t } from '../../core/constants';
-import { getFloatBounds, cssRightFromX } from '../../core/utils';
+import { useFloatMenuPosition } from '../../composables/useFloatMenuPosition';
 
 interface ColorOption {
   key: string;
@@ -180,11 +180,8 @@ function isSelected(value: string): boolean {
 const open = ref(false);
 const rootRef = ref<HTMLDivElement | null>(null);
 const menuRef = ref<HTMLDivElement | null>(null);
-const pos = ref<{
-  left?: number;
-  right?: number;
-  top: number;
-}>({ top: 0 });
+// 复用与条件格式下拉框同一套定位逻辑（useFloatMenuPosition），不再单独写一套
+const { pos, place } = useFloatMenuPosition();
 
 watch(() => props.modelOpen, (v) => {
   if (v !== undefined && v !== open.value) {
@@ -210,34 +207,14 @@ function openMenu() {
   if (!el) return;
   open.value = true;
   if (props.modelOpen !== undefined) emit('update:modelOpen', true);
-  const b = getFloatBounds(props.boundaryEl);
-  const r = el.getBoundingClientRect();
-  // 菜单右缘目标位置：贴 trigger 右缘，但若越出有效右边界则夹回边界内
-  let right: number | undefined = cssRightFromX(Math.min(r.right, b.right));
-  const estMenuW = 120;
-  let posLeft: number | undefined;
-  if (r.left - estMenuW < b.left + 4) {
-    right = undefined;
-    posLeft = Math.max(b.left + 4, r.left);
-  }
-  pos.value = right !== undefined
-    ? { right, top: r.bottom + 4 }
-    : { left: posLeft!, top: r.bottom + 4 };
+  // 与条件格式下拉框同构：初始下落放置 → nextTick 量高后上下翻向夹紧
+  place(el, props.boundaryEl);
   nextTick(() => {
     const el2 = props.triggerEl ?? rootRef.value;
     if (!el2) return;
-    const r2 = el2.getBoundingClientRect();
     const menuEl = menuRef.value;
     if (!menuEl) return;
-    const h = menuEl.offsetHeight;
-    const spaceBelow = b.bottom - r2.bottom - 8;
-    const spaceAbove = r2.top - b.top - 8;
-    const up = spaceBelow < h && spaceAbove > 0;
-    let top = up ? r2.top - h - 4 : r2.bottom + 4;
-    top = Math.max(b.top + 4, Math.min(b.bottom - h - 4, top));
-    pos.value = right !== undefined
-      ? { right: cssRightFromX(Math.min(r2.right, b.right)), top }
-      : { left: posLeft!, top };
+    place(el2, props.boundaryEl, menuEl);
     document.addEventListener('pointerdown', onClickOutside);
   });
 }
@@ -314,7 +291,7 @@ defineExpose({ open, openMenu, close });
   padding: 6px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
   user-select: none;
-  transform-origin: top right;
+  transform-origin: top center;
 }
 .menu-pop-enter-active, .menu-pop-leave-active { transition: opacity 0.12s ease-out, transform 0.12s ease-out; }
 .menu-pop-enter-from, .menu-pop-leave-to { opacity: 0; transform: scale(0.9); }

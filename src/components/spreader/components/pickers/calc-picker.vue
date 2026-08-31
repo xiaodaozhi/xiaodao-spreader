@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, nextTick, onBeforeUnmount } from 'vue';
 import { t } from '../../core/constants';
-import { getFloatBounds, cssRightFromX } from '../../core/utils';
+import { useFloatMenuPosition } from '../../composables/useFloatMenuPosition';
 
 export type CalcType = 'sum' | 'avg' | 'count';
 
@@ -33,7 +33,8 @@ const CALC_OPTIONS: { key: CalcType; labelKey: string }[] = [
 const open = ref(false);
 const rootRef = ref<HTMLDivElement | null>(null);
 const menuRef = ref<HTMLDivElement | null>(null);
-const pos = ref<{ left?: number; right?: number; top: number }>({ top: 0 });
+// 复用与条件格式下拉框同一套定位逻辑（useFloatMenuPosition），不再单独写一套
+const { pos, place } = useFloatMenuPosition();
 
 watch(() => props.modelOpen, (v) => {
   if (v !== undefined && v !== open.value) {
@@ -59,35 +60,14 @@ function openMenu() {
   if (!el) return;
   open.value = true;
   if (props.modelOpen !== undefined) emit('update:modelOpen', true);
-  const b = getFloatBounds(props.boundaryEl);
-  const r = el.getBoundingClientRect();
-  // 先给一个临时向下位置，让菜单能渲染出来
-  // 菜单右缘目标位置：贴 trigger 右缘，但若越出有效右边界则夹回边界内
-  let right: number | undefined = cssRightFromX(Math.min(r.right, b.right));
-  const estMenuW = 160;
-  let posLeft: number | undefined;
-  if (r.left - estMenuW < b.left + 4) {
-    right = undefined;
-    posLeft = Math.max(b.left + 4, r.left);
-  }
-  pos.value = right !== undefined
-    ? { right, top: r.bottom + 4 }
-    : { left: posLeft!, top: r.bottom + 4 };
+  // 与条件格式下拉框同构：初始下落放置 → nextTick 量高后上下翻向夹紧
+  place(el, props.boundaryEl);
   nextTick(() => {
     const el2 = props.triggerEl ?? rootRef.value;
     if (!el2) return;
-    const r2 = el2.getBoundingClientRect();
     const menuEl = menuRef.value;
     if (!menuEl) return;
-    const h = menuEl.offsetHeight;
-    const spaceBelow = b.bottom - r2.bottom - 8;
-    const spaceAbove = r2.top - b.top - 8;
-    const up = spaceBelow < h && spaceAbove > 0;
-    let top = up ? r2.top - h - 4 : r2.bottom + 4;
-    top = Math.max(b.top + 4, Math.min(b.bottom - h - 4, top));
-    pos.value = right !== undefined
-      ? { right: cssRightFromX(Math.min(r2.right, b.right)), top }
-      : { left: posLeft!, top };
+    place(el2, props.boundaryEl, menuEl);
     document.addEventListener('pointerdown', onClickOutside);
   });
 }
@@ -152,7 +132,7 @@ defineExpose({ open, openMenu, close });
 .calc-picker { position: relative; display: inline-flex; height: 26px; }
 .calc-picker__menu {
   position: fixed;
-  z-index: 9999;
+  z-index: 40000;
   min-width: 120px;
   background: #fff;
   border: 1px solid var(--sp-toolbar-border, #d0d0d0);
@@ -160,12 +140,13 @@ defineExpose({ open, openMenu, close });
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
   user-select: none;
   padding: 4px;
-  transform-origin: top right;
+  transform-origin: top center;
 }
 .calc-picker__item {
   display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: space-between;
+  gap: 8px;
   width: 100%;
   padding: 4px 8px;
   border: none;
@@ -174,12 +155,14 @@ defineExpose({ open, openMenu, close });
   cursor: pointer;
   border-radius: 3px;
   font-size: 12px;
+  text-align: left;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
   white-space: nowrap;
+  box-sizing: border-box;
 }
 .calc-picker__item:hover:not(.calc-picker__item--disabled) { background: #eef3f9; }
 .calc-picker__item--disabled { color: var(--sp-toolbar-btn-disabled-color, #bbb); cursor: default; }
-.calc-picker__label { overflow: hidden; text-overflow: ellipsis; }
+.calc-picker__label { flex: 1; overflow: hidden; text-overflow: ellipsis; }
 .menu-pop-enter-active, .menu-pop-leave-active { transition: opacity 0.12s ease-out, transform 0.12s ease-out; }
-.menu-pop-enter-from, .menu-pop-leave-to { opacity: 0; transform: scale(0.9); }
+.menu-pop-enter-from, .menu-pop-leave-to { opacity: 0; transform: scaleY(0.85); }
 </style>

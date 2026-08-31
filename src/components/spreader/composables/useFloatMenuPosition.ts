@@ -29,7 +29,7 @@ export function useFloatMenuPosition() {
 
   function place(
     triggerEl: HTMLElement,
-    boundaryEl: HTMLElement | null,
+    boundaryEl: HTMLElement | null | undefined,
     menuEl?: HTMLElement | null,
   ) {
     const b = getFloatBounds(boundaryEl);
