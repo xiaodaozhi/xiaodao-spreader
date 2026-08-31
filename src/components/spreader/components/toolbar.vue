@@ -4,15 +4,15 @@ import { t } from '../core/constants';
 import type { FontOption, MergeType } from '../core/constants';
 import { NF_MIXED, type NFOption } from '../core/number-format';
 import SpDropdown from './dropdown.vue';
-import ColorPicker from './pickers/colorPicker.vue';
-import BorderPicker, { type BorderType } from './pickers/borderPicker.vue';
-import SortPicker from './pickers/sortPicker.vue';
-import MergePicker from './pickers/mergePicker.vue';
+import ColorPicker from './pickers/color-picker.vue';
+import BorderPicker, { type BorderType } from './pickers/border-picker.vue';
+import SortPicker from './pickers/sort-picker.vue';
+import MergePicker from './pickers/merge-picker.vue';
 import ConditionalFormatMenu from './pickers/conditional-format-menu.vue';
-import CalcPicker from './pickers/calcPicker.vue';
+import CalcPicker from './pickers/calc-picker.vue';
 import type { SortOrder } from '../core/sort-core';
 
-// 田字型边框按钮图标：4 个外边 + 1 条竖中线 + 1 条横中线（与 borderPicker.vue 保持一致）
+// 田字型边框按钮图标：4 个外边 + 1 条竖中线 + 1 条横中线（与 border-picker.vue 保持一致）
 interface BorderSeg { name: string; x1: number; y1: number; x2: number; y2: number }
 const BORDER_SEGS: BorderSeg[] = [
   { name: 'top', x1: 4, y1: 4, x2: 26, y2: 4 },
@@ -58,7 +58,7 @@ const BORDER_LABEL_KEY: Record<BorderType, string> = {
   thickOuter: 'borderThickOuter',
 };
 
-// 排序按钮图标：左侧三条渐宽横线 + 右侧方向箭头（与 sortPicker.vue 保持一致）
+// 排序按钮图标：左侧三条渐宽横线 + 右侧方向箭头（与 sort-picker.vue 保持一致）
 interface SortBar { name: string; x1: number; y1: number; x2: number; y2: number }
 const SORT_BARS: SortBar[] = [
   { name: 'bar1', x1: 96, y1: 224, x2: 352, y2: 224 },

@@ -9,7 +9,7 @@ import type {
   SelectionRange,
   CellIsOperator,
 } from '../../core/types';
-import ColorPicker from './colorPicker.vue';
+import ColorPicker from './color-picker.vue';
 import SpDropdown from '../dropdown.vue';
 
 const props = withDefaults(defineProps<{
