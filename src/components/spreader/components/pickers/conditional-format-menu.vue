@@ -31,6 +31,8 @@ const submenu = ref<'highlight' | 'clear' | null>(null);
 // 正在退场的那个面板按新方向收拢，收拢角与弹出角对不上。
 const highlightDir = ref<'left' | 'right'>('right');
 const clearDir = ref<'left' | 'right'>('right');
+const highlightUp = ref(false);
+const clearUp = ref(false);
 const pos = ref<{ right: number; top: number; up: boolean }>({ right: 0, top: 0, up: false });
 const canUp = ref(false);
 const canDown = ref(false);
@@ -175,19 +177,30 @@ function enterSub(name: 'highlight' | 'clear', e?: MouseEvent) {
     if (!subEl) return;
     const b = getFloatBounds(props.boundaryEl);
     const subW = subEl.offsetWidth;
+    const subH = subEl.offsetHeight;
+    // 左右翻向：默认向右；右侧放不下（含 8px 余量）则翻左；左右都放不下仍选左（宁左勿右兜底）
     const wantRight = r.right + subW + 8 > b.right;
     const wantLeft = r.left - subW - 8 < b.left;
     let dir: 'left' | 'right' = 'right';
-    if (wantRight && !wantLeft) dir = 'left';
-    else if (wantRight && wantLeft) dir = 'left';
-    if (name === 'highlight') highlightDir.value = dir;
-    else clearDir.value = dir;
-    const top = Math.max(b.top + 8, Math.min(b.bottom - 30, r.top - 4));
+    if (wantRight) dir = 'left';
+    // 上下翻向：默认向下弹（top 对齐触发项顶 -5px，与右键 .context-submenu 的 top:-5px 等距）；
+    // 向下会溢出有效下边界（触发项顶 + 子高 > 下边界 - 8）则向上弹，子菜单底对齐触发项底 +5px
+    // （等价于右键向上弹的 bottom:-5px），与 -5px 约定对称。两处偏移需同步维护。
+    const overflowDown = r.top + subH > b.bottom - 8;
+    let top = overflowDown ? r.bottom + 5 - subH : r.top - 5;
+    top = Math.max(b.top + 8, Math.min(b.bottom - subH - 8, top));
     const posObj = dir === 'right'
       ? { left: r.right + 4, top }
       : { right: cssRightFromX(r.left - 4), top };
-    if (name === 'highlight') highlightSubPos.value = posObj;
-    else clearSubPos.value = posObj;
+    if (name === 'highlight') {
+      highlightDir.value = dir;
+      highlightUp.value = overflowDown;
+      highlightSubPos.value = posObj;
+    } else {
+      clearDir.value = dir;
+      clearUp.value = overflowDown;
+      clearSubPos.value = posObj;
+    }
     onSubScroll(name);
   });
 }
@@ -395,7 +408,7 @@ onBeforeUnmount(() => {
         <div
           v-if="open && submenu === 'highlight'"
           class="cf-submenu-wrap"
-          :class="{ 'cf-submenu-wrap--left': highlightDir === 'left' }"
+          :class="{ 'cf-submenu-wrap--left': highlightDir === 'left', 'cf-submenu-wrap--up': highlightUp }"
           :style="{
             ...themeVars,
             left: highlightSubPos.left !== undefined ? highlightSubPos.left + 'px' : undefined,
@@ -459,7 +472,7 @@ onBeforeUnmount(() => {
         <div
           v-if="open && submenu === 'clear'"
           class="cf-submenu-wrap"
-          :class="{ 'cf-submenu-wrap--left': clearDir === 'left' }"
+          :class="{ 'cf-submenu-wrap--left': clearDir === 'left', 'cf-submenu-wrap--up': clearUp }"
           :style="{
             ...themeVars,
             left: clearSubPos.left !== undefined ? clearSubPos.left + 'px' : undefined,
@@ -626,6 +639,8 @@ onBeforeUnmount(() => {
   transform-origin: top left;
 }
 .cf-submenu-wrap--left { transform-origin: top right; }
+.cf-submenu-wrap--up { transform-origin: bottom left; }
+.cf-submenu-wrap--left.cf-submenu-wrap--up { transform-origin: bottom right; }
 .cf-submenu {
   max-height: calc(100vh - 120px);
   overflow-y: auto;
