@@ -1585,7 +1585,6 @@ const freezeOptions = computed<FontOption[]>(() => {
 .toolbar-btn__icon { width: 18px; height: 18px; }
 .toolbar-btn svg:not(.toolbar-btn__icon) { width: 18px; height: 18px; }
 .toolbar-btn__label { display: none; font-size: 12px; margin-left: 6px; }
-.overflow-menu .toolbar-btn__label { display: inline; }
 .toolbar-split { display: inline-flex; align-items: center; position: relative; height: 26px; }
 .toolbar-split__main { border: 1px solid transparent; border-right: none; border-radius: 3px 0 0 3px; }
 .toolbar-split__arrow { display: flex; align-items: center; justify-content: center; width: 16px; height: 26px; border: 1px solid transparent; border-radius: 0 3px 3px 0; background: transparent; color: var(--sp-toolbar-btn-color); cursor: pointer; padding: 0; }
@@ -1663,31 +1662,15 @@ const freezeOptions = computed<FontOption[]>(() => {
 .overflow-nav:hover:not(:disabled) { background: #eef3f9; }
 .overflow-nav:disabled { color: #d5d5d5; cursor: default; }
 .overflow-nav svg { width: 10px; height: 10px; }
-.overflow-menu .tb-item { width: 100%; }
-.overflow-menu .toolbar-sep { width: 100%; height: 1px; margin: 2px 0; }
-.overflow-menu .toolbar-split { width: 100%; }
-.overflow-menu .toolbar-split__main { flex: 1 1 auto; justify-content: flex-start; padding-left: 6px; }
-.overflow-menu .toolbar-font-size { width: 100%; justify-content: flex-start; }
-.overflow-menu .toolbar-number-format-group { width: 100%; justify-content: flex-start; }
-.overflow-menu .toolbar-font { width: 100%; }
-.overflow-menu .toolbar-number-format { flex: 1 1 auto; width: auto !important; min-width: 0; }
-.overflow-menu .toolbar-align { width: 100%; }
-.overflow-menu .toolbar-freeze { width: 100%; }
-.overflow-menu .toolbar-btn:not(.toolbar-btn--step):not(.toolbar-split__arrow):not(.toolbar-number-format__btn) { width: 100%; justify-content: flex-start; padding-left: 6px; }
-.overflow-menu .toolbar-btn__label { display: inline; }
-.overflow-menu .toolbar-number-format__btn { flex: 0 0 auto; width: 30px; }
-.overflow-menu .toolbar-color { width: 100%; }
-.overflow-menu .toolbar-wrap { width: 100%; justify-content: flex-start; }
-.overflow-menu .sp-dropdown .sp-dropdown__trigger { padding-left: 6px; gap: 6px; }
-.overflow-menu .cf-menu-root .cf-menu-trigger { padding-left: 6px; gap: 6px; }
-.overflow-menu .cf-menu-trigger__icon { width: 18px; height: 18px; }
 
 /* 统一弹出动画：fade + scale */
 .menu-pop-enter-active, .menu-pop-leave-active { transition: opacity 0.12s ease-out, transform 0.12s ease-out; }
 .menu-pop-enter-from, .menu-pop-leave-to { opacity: 0; transform: scale(0.9); }
 </style>
 
-<!-- 非 scoped 样式：溢出菜单通过 Teleport 渲染到 body，scoped 样式无法穿透 -->
+<!-- 非 scoped 样式：溢出菜单经 Teleport 渲染到 body。选择器要伸进子组件内部（cf-menu-trigger、
+     sp-dropdown__trigger 等，不带本组件 data-v）的必须写在这里；溢出覆盖规则统一只在此维护，
+     不在 scoped 块另写副本，避免双份不同步 -->
 <style>
 .overflow-menu .tb-item { width: 100%; }
 .overflow-menu .toolbar-sep { width: 100%; height: 1px; margin: 2px 0; }
