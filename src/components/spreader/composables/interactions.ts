@@ -2175,9 +2175,11 @@ export function createInteractions(
     //   - 组件容器 wrapper：嵌入场景下把子菜单夹在表格可视区内。但容器可能大于视口（页面滚动、
     //     容器底缘在视口外），纯容器判定会把「其实已在视口外」当成有空间 → 菜单照样看不见。
     // 取交集后：组件全屏时容器≈视口，自然退化为纯视口判定；嵌入时按容器内边缘夹住。
-    const wr = so.wrapperRef.value?.getBoundingClientRect() ?? null;
-    const boundRight = Math.min(window.innerWidth, wr ? wr.right : window.innerWidth);
-    const boundBottom = Math.min(window.innerHeight, wr ? wr.bottom : window.innerHeight);
+    // 有效边界复用 getFloatBounds（容器 ∩ 视口取交集），与全局浮层边缘判定保持单一来源；
+    // 其 right/bottom 即「Math.min(视口, 容器右/下缘)」，与原内联逻辑等价，且用 Math.max(0,*) 防负边界更稳。
+    const b = getFloatBounds(so.wrapperRef.value);
+    const boundRight = b.right;
+    const boundBottom = b.bottom;
     // 子菜单宽度也用 getBoundingClientRect 实测，但测量前临时去掉菜单 transform，
     // 否则同样会吃到缩放态宽度（偏小约 10%），导致判定右弹后实溢出。
     const prevTransform = menuEl.style.transform;
