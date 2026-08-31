@@ -526,54 +526,6 @@ const freezeOptions = computed<FontOption[]>(() => {
       </div>
     </Teleport>
 
-    <!-- 分组 / 折叠（Outline），位于字体区之前（clear 之后） -->
-    <Teleport
-      :disabled="!outlineAxis || teleportDisabled('outline')"
-      :to="overflowMenuTarget"
-    >
-      <div
-        class="tb-item"
-        data-key="outline"
-      >
-        <button
-          ref="outlineArrowRef"
-          class="toolbar-btn outline-trigger"
-          :class="{ 'is-open': outlineMenuOpen }"
-          :title="t(locale, 'outlineGroup')"
-          @click="emit('update:outline-menu-open', !outlineMenuOpen)"
-        >
-          <span class="toolbar-btn__icon">
-            <svg
-              viewBox="0 0 1024 1024"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="56"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            ><path d="M160 224 H560 V800 H160 Z" /><path
-              stroke-width="44"
-              d="M664 640 H864 V384 H664"
-            /></svg>
-          </span>
-          <span class="toolbar-btn__label">{{ t(locale, 'outlineGroup') }}</span>
-          <svg
-            class="outline-trigger__caret"
-            viewBox="0 0 1024 1024"
-            fill="currentColor"
-          ><path d="M180.053 361.387a32 32 0 0 1 45.227 0L512 648.107l286.72-286.72a32 32 0 1 1 45.227 45.227l-309.334 309.333a32 32 0 0 1-45.226 0L180.053 406.613a32 32 0 0 1 0-45.226z" /></svg>
-        </button>
-        <OutlinePicker
-          :model-open="outlineMenuOpen"
-          :locale="locale"
-          :trigger-el="outlineArrowRef"
-          :boundary-el="boundaryEl"
-          :axis="outlineAxis"
-          @update:model-open="emit('update:outline-menu-open', $event)"
-          @action="emit('outline-action', $event)"
-        />
-      </div>
-    </Teleport>
-
     <Teleport
       :disabled="teleportDisabled('sep1')"
       :to="overflowMenuTarget"
@@ -1308,6 +1260,54 @@ const freezeOptions = computed<FontOption[]>(() => {
             :boundary-el="boundaryEl"
           />
         </div>
+      </div>
+    </Teleport>
+
+    <!-- 分组 / 折叠（Outline），位于排序与筛选之间 -->
+    <Teleport
+      :disabled="!outlineAxis || teleportDisabled('outline')"
+      :to="overflowMenuTarget"
+    >
+      <div
+        class="tb-item"
+        data-key="outline"
+      >
+        <button
+          ref="outlineArrowRef"
+          class="toolbar-btn outline-trigger"
+          :class="{ 'is-open': outlineMenuOpen }"
+          :title="t(locale, 'outlineGroup')"
+          @click="emit('update:outline-menu-open', !outlineMenuOpen)"
+        >
+          <span class="toolbar-btn__icon">
+            <svg
+              viewBox="0 0 1024 1024"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="56"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            ><path d="M160 224 H560 V800 H160 Z" /><path
+              stroke-width="44"
+              d="M664 640 H864 V384 H664"
+            /></svg>
+          </span>
+          <span class="toolbar-btn__label">{{ t(locale, 'outlineGroup') }}</span>
+          <svg
+            class="outline-trigger__caret"
+            viewBox="0 0 1024 1024"
+            fill="currentColor"
+          ><path d="M180.053 361.387a32 32 0 0 1 45.227 0L512 648.107l286.72-286.72a32 32 0 1 1 45.227 45.227l-309.334 309.333a32 32 0 0 1-45.226 0L180.053 406.613a32 32 0 0 1 0-45.226z" /></svg>
+        </button>
+        <OutlinePicker
+          :model-open="outlineMenuOpen"
+          :locale="locale"
+          :trigger-el="outlineArrowRef"
+          :boundary-el="boundaryEl"
+          :axis="outlineAxis"
+          @update:model-open="emit('update:outline-menu-open', $event)"
+          @action="emit('outline-action', $event)"
+        />
       </div>
     </Teleport>
 
