@@ -1560,12 +1560,8 @@ const freezeOptions = computed<FontOption[]>(() => {
 .toolbar.toolbar--ready > * { opacity: 1; transition: opacity .15s ease-out; }
 .tb-item { display: flex; align-items: center; flex: 0 0 auto; }
 .toolbar-sep { width: 1px; height: 18px; margin: 0 4px; background: var(--sp-toolbar-border); }
-.toolbar-font { flex: 0 0 auto; }
-.toolbar-number-format { flex: 0 0 auto; }
-.toolbar-align { flex: 0 0 auto; }
-.toolbar-freeze { flex: 0 0 auto; }
-.toolbar-font-size { display: inline-flex; align-items: center; gap: 0; height: 26px; position: relative; }
-.toolbar-number-format-group { display: inline-flex; align-items: center; gap: 0; height: 26px; position: relative; }
+.toolbar-font, .toolbar-number-format, .toolbar-align, .toolbar-freeze { flex: 0 0 auto; }
+.toolbar-font-size, .toolbar-number-format-group { display: inline-flex; align-items: center; gap: 0; height: 26px; position: relative; }
 .toolbar-font-size__input { width: 36px; height: 26px; border: 1px solid transparent; border-right: none; border-radius: 3px 0 0 3px; background: transparent; color: var(--sp-toolbar-btn-color); font-size: 12px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; text-align: left; padding: 0 5px; outline: none; box-sizing: border-box; appearance: none; -moz-appearance: textfield; }
 .toolbar-font-size__input::-webkit-outer-spin-button,
 .toolbar-font-size__input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
@@ -1695,18 +1691,11 @@ const freezeOptions = computed<FontOption[]>(() => {
 .overflow-menu .outline-trigger__icon { width: 18px; height: 18px; flex: none; }
 .overflow-menu .toolbar-font-size__input { flex: 1 1 auto; width: auto; min-width: 40px; }
 
-.overflow-menu .toolbar-btn:hover:not(:disabled) { background: var(--sp-toolbar-btn-hover-bg); }
-.overflow-menu .toolbar-btn:active:not(:disabled) { opacity: 0.7; }
-.overflow-menu .toolbar-btn--active { background: var(--sp-toolbar-btn-hover-bg); color: var(--sp-toolbar-btn-active-color); }
-.overflow-menu .toolbar-btn:disabled { color: var(--sp-toolbar-btn-disabled-color); cursor: default; }
-
+/* 以下带 .overflow-menu 前缀的 hover/active/disabled/focus 规则（原 .toolbar-btn:hover、:active、
+   --active、:disabled、.toolbar-split__arrow:hover、.toolbar-font-size__input:hover/:focus/__btn:hover、
+   .toolbar-more:hover/--active）已全部删除：toolbar 自有元素经 Teleport 渲染到 body 后仍携带本组件
+   data-v，scoped 基础规则(.toolbar-btn:hover 等)本身即可命中，重复写一份纯属冗余、且两处不同步是隐患。
+   仅保留 scoped 缺失的 .toolbar-split__main:hover（溢出态整行高亮），以及子组件内部元素
+   (.sp-dropdown__trigger / .cf-menu-trigger / .cf-menu-trigger__icon) 与新增覆盖属性（width:100% 等）。 */
 .overflow-menu .toolbar-split__main:hover:not(:disabled) { background: var(--sp-toolbar-btn-hover-bg); }
-.overflow-menu .toolbar-split__arrow:hover:not(:disabled) { background: var(--sp-toolbar-btn-hover-bg); }
-
-.overflow-menu .toolbar-font-size__input:hover { background: var(--sp-toolbar-btn-hover-bg); }
-.overflow-menu .toolbar-font-size__input:focus { border-color: var(--sp-toolbar-border); background: #fff; }
-.overflow-menu .toolbar-font-size__btn:hover { background: var(--sp-toolbar-btn-hover-bg); }
-
-.overflow-menu .toolbar-more:hover { background: var(--sp-toolbar-btn-hover-bg); }
-.overflow-menu .toolbar-more--active { background: var(--sp-toolbar-btn-hover-bg); color: var(--sp-toolbar-btn-active-color); }
 </style>
