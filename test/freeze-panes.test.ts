@@ -45,7 +45,7 @@ function fullStack(colCount = 26, rowCount = 200) {
       selection: null, activeCell: { col: 0, row: 0 },
       scrollX: 0, scrollY: 0, colWidths: [], rowHeights: [],
       colCount: 0, rowCount: 0, freeze: { rows: 0, cols: 0 }, filter: null,
-      conditionalFormats: [],
+      conditionalFormats: [], dataValidations: [],
     }),
   };
 

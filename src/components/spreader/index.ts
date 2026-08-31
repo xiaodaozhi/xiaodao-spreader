@@ -20,6 +20,24 @@ export type {
   ContextMenuItem,
   ThemeColors,
   Point,
+  DataValidationRule,
+  DataValidationType,
+  DataValidationOperator,
+  DataValidationErrorStyle,
+  DataValidationListSource,
+  DataValidationResult,
+  DataValidationSeverity,
+  ConditionalFormattingRule,
+  ConditionalFormattingCondition,
+  ConditionalFormattingFormat,
 } from './core/types';
+
+export {
+  validateCellValue,
+  evaluateDataValidationRule,
+  resolveListItems,
+  DataValidationIndex,
+  genDataValidationId,
+} from './core/data-validation';
 
 export { StylePool, resolveStyle, migrateCells, cloneCells } from './core/style-pool';

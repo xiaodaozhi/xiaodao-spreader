@@ -145,6 +145,7 @@ export function createUndoStyles(
         freeze: { ...sh.freeze },
         filter: sh.filter ? JSON.parse(JSON.stringify(sh.filter)) : null,
         conditionalFormats: sh.conditionalFormats ? sh.conditionalFormats.map((r) => ({ ...r, ranges: r.ranges.map((rg) => ({ ...rg })) })) : [],
+        dataValidations: sh.dataValidations ? sh.dataValidations.map((r) => ({ ...r, ranges: (r.ranges ?? []).map((rg) => ({ ...rg })) })) : [],
       })),
       styles: [...s.styles],
       activeSheetIndex: sheetsCtx.activeSheetIndex.value,
@@ -184,6 +185,7 @@ export function createUndoStyles(
     redoStack.value.push(takeSnap());
     restoreSnap(undoStack.value.pop()!);
     s.invalidateConditionalFormatCache?.();
+    s.invalidateDataValidationCache?.();
     s.scheduleRender?.();
     nextTick(() => s.emitModelData?.());
   }
@@ -193,6 +195,7 @@ export function createUndoStyles(
     undoStack.value.push(takeSnap());
     restoreSnap(redoStack.value.pop()!);
     s.invalidateConditionalFormatCache?.();
+    s.invalidateDataValidationCache?.();
     s.scheduleRender?.();
     nextTick(() => s.emitModelData?.());
   }

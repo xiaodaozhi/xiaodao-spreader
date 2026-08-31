@@ -895,6 +895,11 @@ export function parseDateTimeInput(
       y = Number(m[1]);
       mo = Number(m[2]);
       d = Number(m[3]);
+    } else if ((m = /^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/.exec(ds))) {
+      // 美式：月/日/年（与 YYYY/MM/DD 互不冲突：前者 4 位年结尾，后者 4 位年开头）
+      mo = Number(m[1]);
+      d = Number(m[2]);
+      y = Number(m[3]);
     } else if ((m = /^(\d{1,2})[-/](\d{1,2})$/.exec(ds))) {
       y = now.getUTCFullYear();
       mo = Number(m[1]);

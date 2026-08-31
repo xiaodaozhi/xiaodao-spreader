@@ -8,7 +8,7 @@ import { migrateCells } from '../core/style-pool';
 import { migrateBordersInStyles } from '../core/border-pool';
 import type { BordersMergeState } from './borders-merge';
 import type { SheetsOpsState } from './sheets-ops';
-import type { ContextMenuItem, BorderSide, ThemeColors, SelectionRange, FilterColumn, SheetFilter, CellData } from '../core/types';
+import type { ContextMenuItem, BorderSide, ThemeColors, SelectionRange, FilterColumn, SheetFilter, CellData, DataValidationRule } from '../core/types';
 import { resolveSharedBorder } from '../core/border-resolve';
 import { computeTargetRange, validateMergeCompatibility } from '../core/autofill';
 import { isColumnFiltered } from '../core/filter-core';
@@ -40,6 +40,20 @@ function normalizeLoadedFilter(raw: unknown, cells: Record<string, CellData>): S
     if (c > range.endCol) range.endCol = c;
   }
   return { range, columns };
+}
+
+/** 数据验证下拉弹窗状态：anchor 为单元格在视口中的位置（client 坐标） */
+export interface ValidationDropdownState {
+  col: number;
+  row: number;
+  rule: DataValidationRule;
+  items: string[];
+  /** 当前单元格原始值（用于标记选中项） */
+  current: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 
 export interface InteractionsState {
@@ -86,6 +100,14 @@ export interface InteractionsState {
   isFilterButtonHit: (x: number, y: number) => number;
   openFilterPopup: (col: number) => void;
   closeFilterPopup: () => void;
+
+  // 数据验证下拉列表（List Validation）
+  validationDropdown: Ref<ValidationDropdownState | null>;
+  /** 屏幕坐标（client）是否命中某单元格的下拉箭头；命中返回该单元格坐标（合并格返回左上角） */
+  isValidationDropdownHit: (x: number, y: number) => { col: number; row: number } | null;
+  openValidationDropdown: (col: number, row: number) => boolean;
+  closeValidationDropdown: () => void;
+  onValidationDropdownSelect: (value: string) => void;
 
   // 行高/列宽浮动设置栏
   dimInputRef: Ref<HTMLInputElement | null>;
@@ -191,6 +213,8 @@ export function createInteractions(
   }
 
   const BORDER_COLOR = '#444';
+  /** 单元格内下拉箭头的命中/绘制宽度 */
+  const DV_DROPDOWN_W = 14;
 
   function render() {
     const wrapper = so.wrapperRef.value;
@@ -280,6 +304,8 @@ export function createInteractions(
 
     // 第一步：绘制背景色、选中状态、文本内容（抽取为局部函数 drawCells，坐标改用 cellToScreenRect 以兼容冻结）
     drawCells = (rCtx: CanvasRenderingContext2D, sC2: number, eC2: number, sR2: number, eR2: number, rHs: number[]): void => {
+      // 无任何数据验证规则时跳过全部判定（零开销快路径）
+      const dvHasAny = s.dataValidations.length > 0;
       for (let row = sR2; row <= eR2; row++) {
         for (let col = sC2; col <= eC2; col++) {
           const mergeInfo = s.findMerge(col, row);
@@ -430,6 +456,11 @@ export function createInteractions(
           // ---- AutoFilter 箭头：仅绘制在 Filter Range 的 Header 行、且列落在范围内 ----
           if (f && row === f.range.startRow && col >= f.range.startCol && col <= f.range.endCol) {
             drawFilterButton(rCtx, x, y, cw, rh, isColumnFiltered(f.columns[col]), cs);
+          }
+          // ---- 数据验证下拉箭头：list 验证 + showDropdown !== false ----
+          if (dvHasAny && s.getListValidation(row, col)) {
+            const isActive = s.activeCell.value.col === col && s.activeCell.value.row === row;
+            drawValidationDropdownIndicator(rCtx, x, y, cw, rh, isActive || s.isSelected(col, row), cs);
           }
         }
       }
@@ -785,6 +816,11 @@ export function createInteractions(
         ctx.lineWidth = 0.5;
         ctx.strokeRect(ax + 0.25, ay + 0.25, (segRight - ax) - 0.5, (segBottom - ay) - 0.5);
         drawMergeBorder(ctx, m, ax, ay, aw, ah, hFrozenPane, vFrozenPane);
+        // 数据验证下拉箭头：合并单元格统一在锚点处绘制（不重复绘制）
+        if (s.getListValidation(aR, aC)) {
+          const isActive = s.activeCell.value.col === aC && s.activeCell.value.row === aR;
+          drawValidationDropdownIndicator(ctx, ax, ay, aw, ah, isActive, cs);
+        }
         if (!(s.editingCell.value && s.editingCell.value.col === aC && s.editingCell.value.row === aR)) {
           // 文本布局宽/高用逻辑尺寸（不随滚动）；绘制起点按 pane 与是否跨冻结线决定：
           //  - 冻结 pane：直接用 anchor 屏幕坐标 ax/ay（cellToScreenRect 对冻结列/行已不含滚动偏移）；
@@ -1278,7 +1314,7 @@ export function createInteractions(
     const ac = { ...s.activeCell.value };
     if (s.editingCell.value) {
       s.editValue.value = text;
-      s.commitEdit();
+      void s.commitEdit();
     } else {
       s.saveUndo?.();
       s.setCellValue(ac.col, ac.row, text);
@@ -1371,18 +1407,22 @@ export function createInteractions(
     if (fbDirty) {
       // 1) 用户在公式栏修改过（fbDirty=true，onFormulaBarInput 置）：优先生效，draft.value → s.editValue → commitEdit
       s.editValue.value = formulaBarDraft.value;
-      s.commitEdit();
-      s.moveActive(0, 1);
-      s.ensureVisible(s.activeCell.value.col, s.activeCell.value.row);
-      so.formulaBarRef.value?.blur();
-      formulaBarDraft.value = '';
-      formulaBarExpanded.value = false;
-      fbDirty = false;
-      scheduleRender();
-      so.focusEditInput();
-      so.emitModelData?.();
-      nextTick(() => {
-        fbGate_committing = false;
+      // 数据验证：commitEdit 可能因非法值被拦截（保持编辑态），此时不移动活动单元格
+      void s.commitEdit().then((ok) => {
+        if (ok) {
+          s.moveActive(0, 1);
+          s.ensureVisible(s.activeCell.value.col, s.activeCell.value.row);
+        }
+        so.formulaBarRef.value?.blur();
+        formulaBarDraft.value = '';
+        formulaBarExpanded.value = false;
+        fbDirty = false;
+        scheduleRender();
+        so.focusEditInput();
+        so.emitModelData?.();
+        nextTick(() => {
+          fbGate_committing = false;
+        });
       });
     } else if (focusOnFormulaBar) {
       // 2) 仅 focus 了公式栏（fbDirty=false，用户没在公式栏输入，只是"点一下看看"）：
@@ -1390,31 +1430,35 @@ export function createInteractions(
       //       当 A1 原值为空/初始值且 onMouseDown e.preventDefault() 让 textarea 保持为 activeElement 时，就会把行内已编辑内容覆盖为空/原值 —— 导致"清空单元格"严重 BUG）。
       //    —— 先把 draft 反向同步为最新 editValue（保持显示一致性），然后直接 commit s.editValue。
       formulaBarDraft.value = s.editValue.value;
-      s.commitEdit();
-      s.moveActive(0, 1);
-      s.ensureVisible(s.activeCell.value.col, s.activeCell.value.row);
-      so.formulaBarRef.value?.blur();
-      formulaBarDraft.value = '';
-      formulaBarExpanded.value = false;
-      fbDirty = false;
-      scheduleRender();
-      so.focusEditInput();
-      so.emitModelData?.();
-      nextTick(() => {
-        fbGate_committing = false;
+      void s.commitEdit().then((ok) => {
+        if (ok) {
+          s.moveActive(0, 1);
+          s.ensureVisible(s.activeCell.value.col, s.activeCell.value.row);
+        }
+        so.formulaBarRef.value?.blur();
+        formulaBarDraft.value = '';
+        formulaBarExpanded.value = false;
+        fbDirty = false;
+        scheduleRender();
+        so.focusEditInput();
+        so.emitModelData?.();
+        nextTick(() => {
+          fbGate_committing = false;
+        });
       });
     } else {
       // 3) 行内编辑器来源 / 画布点击失焦 / 非公式栏焦点：直接 s.commitEdit()（s.editValue 已被 onEditInput 填充为最新输入）
-      s.commitEdit();
-      so.formulaBarRef.value?.blur();
-      formulaBarDraft.value = '';
-      formulaBarExpanded.value = false;
-      fbDirty = false;
-      scheduleRender();
-      so.focusEditInput();
-      so.emitModelData?.();
-      nextTick(() => {
-        fbGate_committing = false;
+      void s.commitEdit().then(() => {
+        so.formulaBarRef.value?.blur();
+        formulaBarDraft.value = '';
+        formulaBarExpanded.value = false;
+        fbDirty = false;
+        scheduleRender();
+        so.focusEditInput();
+        so.emitModelData?.();
+        nextTick(() => {
+          fbGate_committing = false;
+        });
       });
     }
   }
@@ -1561,6 +1605,8 @@ export function createInteractions(
   // ============ 筛选弹窗 ============
   /** 当前打开的筛选弹窗：关联的列与屏幕锚点；null 表示未打开 */
   const filterPopup = ref<{ col: number; x: number; y: number } | null>(null);
+  /** 数据验证下拉列表弹窗（list 验证）；null 表示未打开 */
+  const validationDropdown = ref<ValidationDropdownState | null>(null);
 
   /** 列头筛选按钮宽度 */
   const FILTER_BTN_W = 18;
@@ -1587,6 +1633,119 @@ export function createInteractions(
   /** 在 Header 单元格右侧绘制筛选按钮：带背景色块（2px 圆角、2px 外边距）+ toolbar 同款下箭头 caret。
    *  active=true（该列已应用筛选）→ 蓝色背景 + 白色箭头；否则浅灰背景 + 深灰箭头。
    *  (cellX, cellY, cellW, cellH) 为 Header 单元格的屏幕矩形。 */
+/**
+   * 绘制数据验证「单元格内下拉箭头」。
+   * 该指示器是纯 UI 层装饰：不写入 cell style / styleId，也不进入 StylePool。
+   * 仅在单元格存在 list 验证且 showDropdown !== false 时绘制（普通单元格不绘制）。
+   */
+  function drawValidationDropdownIndicator(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    cw: number,
+    rh: number,
+    emphasized: boolean,
+    cs: ThemeColors,
+  ): void {
+    if (cw < DV_DROPDOWN_W + 4 || rh < 10) return;
+    const bx = x + cw - DV_DROPDOWN_W;
+    const by = y + 1;
+    const bh = rh - 2;
+    ctx.save();
+    if (emphasized) {
+      ctx.fillStyle = cs.selectionBg;
+      ctx.fillRect(bx, by, DV_DROPDOWN_W, bh);
+    }
+    ctx.fillStyle = cs.activeCellBorder;
+    const tw = 6;
+    const th = 4;
+    const cx = bx + DV_DROPDOWN_W / 2;
+    const cy = by + bh / 2;
+    ctx.beginPath();
+    ctx.moveTo(cx - tw / 2, cy - th / 2 + 0.5);
+    ctx.lineTo(cx + tw / 2, cy - th / 2 + 0.5);
+    ctx.lineTo(cx, cy + th / 2 + 0.5);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  /**
+   * 命中测试：是否点在某单元格的下拉箭头上。
+   * 坐标一律通过 cellToScreenRect 推导，自动兼容冻结窗格与合并单元格。
+   */
+  function isValidationDropdownHit(x: number, y: number): { col: number; row: number } | null {
+    if (s.dataValidations.length === 0) return null;
+    const hit = s.screenToCell(x, y);
+    if (!hit) return null;
+    // 合并单元格：下拉只归属左上角锚点，避免重复绘制 / 重复命中
+    const m = s.findMerge(hit.col, hit.row);
+    const ac = m ? m.range.startCol : hit.col;
+    const ar = m ? m.range.startRow : hit.row;
+    if (!s.getListValidation(ar, ac)) return null;
+    const rect = s.cellToScreenRect(ar, ac);
+    if (rect.width < DV_DROPDOWN_W + 4) return null;
+    const bx = rect.x + rect.width - DV_DROPDOWN_W;
+    if (x < bx || x > rect.x + rect.width) return null;
+    if (y < rect.y || y > rect.y + rect.height) return null;
+    return { col: ac, row: ar };
+  }
+
+  /** 打开某单元格的下拉列表；不存在可显示下拉的 list 规则时返回 false */
+  function openValidationDropdown(col: number, row: number): boolean {
+    const dd = s.getValidationDropdown(row, col);
+    if (!dd) return false;
+    const cvs = so.canvasRef.value;
+    if (!cvs) return false;
+    // 先选中并滚动到该单元格，保证 anchor 位置与视觉一致
+    if (!(s.activeCell.value.col === col && s.activeCell.value.row === row)) s.selectCell(col, row);
+    s.ensureVisible(col, row);
+    scheduleRender();
+    const rect = s.cellToScreenRect(row, col);
+    const cr = cvs.getBoundingClientRect();
+    validationDropdown.value = {
+      col,
+      row,
+      rule: dd.rule,
+      items: dd.items,
+      current: s.getCellRaw(col, row),
+      x: cr.left + rect.x,
+      y: cr.top + rect.y,
+      width: rect.width,
+      height: rect.height,
+    };
+    return true;
+  }
+
+  function closeValidationDropdown(): void {
+    if (validationDropdown.value) {
+      validationDropdown.value = null;
+      scheduleRender();
+    }
+  }
+
+  /** 下拉选中一项：值来自规则候选，通常必然通过 list 规则；仍走一遍验证以兼容多规则叠加 */
+  async function onValidationDropdownSelect(value: string): Promise<void> {
+    const dd = validationDropdown.value;
+    if (!dd) return;
+    const { col, row } = dd;
+    validationDropdown.value = null;
+    const res = s.validateCell(row, col, value);
+    if (!res.valid) {
+      const action = await s.confirmInvalidValue(res, col, row);
+      if (action !== 'continue') {
+        scheduleRender();
+        so.focusEditInput();
+        return;
+      }
+    }
+    us.saveUndo();
+    s.setCellValue(col, row, value);
+    s.emitModelData?.();
+    scheduleRender();
+    so.focusEditInput();
+  }
+
   function drawFilterButton(ctx: CanvasRenderingContext2D, cellX: number, cellY: number, cellW: number, cellH: number, active: boolean, cs: ThemeColors) {
     const btnW = Math.min(cellW, FILTER_BTN_W) - FILTER_BTN_M;
     const bx = cellX + cellW - btnW - FILTER_BTN_M;
@@ -1934,6 +2093,13 @@ export function createInteractions(
         { label: t(s.locale.value, 'avg'), action: bm.avgSelected, disabled: isSingleCell },
         { label: t(s.locale.value, 'count'), action: bm.countSelected, disabled: isSingleCell },
       ] },
+      { label: `${t(s.locale.value, 'dv')}...`, action: () => s.requestDataValidationDialog?.() },
+      { label: t(s.locale.value, 'dvClearValidation'), action: () => {
+        us.saveUndo();
+        s.clearDataValidation(s.selection.value);
+        scheduleRender();
+        so.emitModelData();
+      } },
     ]);
   }
 
@@ -2343,6 +2509,20 @@ export function createInteractions(
     e.preventDefault();
     ctxMenu.value = null;
     const p = getCanvasXY(e, so.canvasRef.value);
+    // 数据验证下拉箭头命中（最高优先级：高于筛选按钮 / resize / 选择）
+    const hitDv = isValidationDropdownHit(p.x, p.y);
+    if (hitDv) {
+      // 编辑中点击下拉箭头：先提交（丢弃未决输入会让用户丢失内容，直接 cancelEdit 更糟），
+      // 提交被数据验证拦截时不打开下拉，交给出错警告引导用户修正。
+      if (s.editingCell.value) {
+        void s.commitEdit().then((ok) => {
+          if (ok) openValidationDropdown(hitDv.col, hitDv.row);
+        });
+        return;
+      }
+      openValidationDropdown(hitDv.col, hitDv.row);
+      return;
+    }
     // 筛选按钮命中（最高优先级：高于 resize / 选择 / 行列头选择）
     const hitFilter = isFilterButtonHit(p.x, p.y);
     if (hitFilter >= 0) {
@@ -2479,6 +2659,10 @@ export function createInteractions(
       }
       const p = getCanvasXY(e, cvs);
       if (isFilterButtonHit(p.x, p.y) >= 0) {
+        cvs.style.cursor = 'pointer';
+        return;
+      }
+      if (isValidationDropdownHit(p.x, p.y)) {
         cvs.style.cursor = 'pointer';
         return;
       }
@@ -2960,6 +3144,11 @@ export function createInteractions(
     if (s.editingCell.value) return;
     const ctl = e.ctrlKey || e.metaKey, sh = e.shiftKey;
     switch (true) {
+      case e.altKey && e.key === 'ArrowDown':
+        // Alt+↓：打开当前活动单元格的下拉列表（Excel 快捷键，仅 list 验证有效）
+        e.preventDefault();
+        openValidationDropdown(s.activeCell.value.col, s.activeCell.value.row);
+        return;
       case ctl && (e.key === 'c' || e.key === 'C'):
         e.preventDefault();
         bm.copyToClipboard();
@@ -3163,18 +3352,31 @@ export function createInteractions(
       scheduleRender();
     } else if (e.key === 'Enter') {
       e.preventDefault();
-      s.commitEdit();
-      s.moveActive(0, 1);
-      s.ensureVisible(s.activeCell.value.col, s.activeCell.value.row);
-      scheduleRender();
-      so.focusEditInput();
+      // 数据验证：校验发生在写入之前；非法且未被放行时保持编辑态，不移动活动单元格
+      void s.commitEdit().then((ok) => {
+        if (!ok) {
+          scheduleRender();
+          so.focusEditInput();
+          return;
+        }
+        s.moveActive(0, 1);
+        s.ensureVisible(s.activeCell.value.col, s.activeCell.value.row);
+        scheduleRender();
+        so.focusEditInput();
+      });
     } else if (e.key === 'Tab') {
       e.preventDefault();
-      s.commitEdit();
-      s.moveActive(e.shiftKey ? -1 : 1, 0);
-      s.ensureVisible(s.activeCell.value.col, s.activeCell.value.row);
-      scheduleRender();
-      so.focusEditInput();
+      void s.commitEdit().then((ok) => {
+        if (!ok) {
+          scheduleRender();
+          so.focusEditInput();
+          return;
+        }
+        s.moveActive(e.shiftKey ? -1 : 1, 0);
+        s.ensureVisible(s.activeCell.value.col, s.activeCell.value.row);
+        scheduleRender();
+        so.focusEditInput();
+      });
     } else if (e.key === 'Escape') {
       e.preventDefault();
       s.cancelEdit();
@@ -3187,9 +3389,10 @@ export function createInteractions(
   }
   function onEditBlur() {
     setTimeout(() => {
+      // 出错警告弹窗打开期间：编辑框失焦不应再次触发提交（避免与弹窗决策重入）
+      if (s.isValidationAlertOpen()) return;
       if (s.editingCell.value) {
-        s.commitEdit();
-        scheduleRender();
+        void s.commitEdit().then(() => scheduleRender());
       }
     }, 0);
   }
@@ -3260,6 +3463,8 @@ export function createInteractions(
           sh.freeze = smd.freeze ? { rows: smd.freeze.rows, cols: smd.freeze.cols } : { rows: 0, cols: 0 };
           // 恢复筛选状态（兼容旧版数据，深拷贝避免与外部数据共享引用）
           sh.filter = normalizeLoadedFilter(smd.filter, sh.cells);
+          // 恢复数据验证规则（旧数据无该字段视为无验证）
+          sh.dataValidations = Array.isArray(smd.dataValidations) ? [...smd.dataValidations] : [];
           return sh;
         });
         if (so.sheets.value.length > 0) so.loadSheet(0);
@@ -3328,6 +3533,8 @@ export function createInteractions(
         sh.freeze = smd.freeze ? { rows: smd.freeze.rows, cols: smd.freeze.cols } : { rows: 0, cols: 0 };
         // 恢复筛选状态（兼容旧版数据，深拷贝避免与外部数据共享引用）
         sh.filter = normalizeLoadedFilter(smd.filter, sh.cells);
+        // 恢复数据验证规则（旧数据无该字段视为无验证）
+        sh.dataValidations = Array.isArray(smd.dataValidations) ? [...smd.dataValidations] : [];
         return sh;
       });
       if (so.sheets.value.length > 0) so.loadSheet(0);
@@ -3380,6 +3587,12 @@ export function createInteractions(
     isFilterButtonHit,
     openFilterPopup,
     closeFilterPopup,
+
+    validationDropdown,
+    isValidationDropdownHit,
+    openValidationDropdown,
+    closeValidationDropdown,
+    onValidationDropdownSelect,
     onCtxItemEnter,
     onTabCtxMenu,
     onTabBarCtx,

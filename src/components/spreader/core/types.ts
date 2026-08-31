@@ -256,6 +256,87 @@ export interface ConditionalFormattingRule {
   enabled: boolean;
 }
 
+// ============ 数据验证（Data Validation）============
+/** 数据验证类型（对齐 Excel：整数 / 小数 / 列表 / 日期 / 时间 / 文本长度 / 自定义） */
+export type DataValidationType
+  = | 'any'
+    | 'list'
+    | 'wholeNumber'
+    | 'decimal'
+    | 'date'
+    | 'time'
+    | 'textLength'
+    | 'custom';
+
+/** 条件运算符（数值 / 日期 / 时间 / 文本长度通用） */
+export type DataValidationOperator
+  = | 'between'
+    | 'notBetween'
+    | 'equal'
+    | 'notEqual'
+    | 'greaterThan'
+    | 'greaterThanOrEqual'
+    | 'lessThan'
+    | 'lessThanOrEqual';
+
+/** 出错警告样式：停止（拒绝提交）/ 警告（可确认继续）/ 信息（提示后由用户决定） */
+export type DataValidationErrorStyle = 'stop' | 'warning' | 'information';
+
+/** 下拉列表数据源：
+ *  - values：直接输入的逗号分隔常量列表；
+ *  - range：引用工作表区域（可跨表），支持动态列表（区域数据变化时下拉项同步更新）。
+ */
+export type DataValidationListSource
+  = | { type: 'values'; values: string[] }
+    | { type: 'range'; range: SelectionRange; /** 目标工作表 id 或名称；缺省表示当前工作表 */ sheetId?: string };
+
+/** 单条数据验证规则：属于 Sheet 而非 Cell；仅描述「输入约束 + UI 行为」，不写入 cell style */
+export interface DataValidationRule {
+  /** 稳定唯一 ID（禁止数组 index） */
+  id: string;
+  /** 应用范围（支持多区域） */
+  ranges: SelectionRange[];
+  type: DataValidationType;
+  operator?: DataValidationOperator;
+  /** 条件值 1（between/notBetween 时为下界） */
+  formula1?: string;
+  /** 条件值 2（between/notBetween 时为上界） */
+  formula2?: string;
+  /** list 类型的数据源（优先于 values） */
+  listSource?: DataValidationListSource;
+  /** 兼容字段：list + 常量列表时与 listSource.values 保持同步 */
+  values?: string[];
+  /** 忽略空值（默认 true） */
+  allowBlank?: boolean;
+  /** list 类型是否显示单元格内下拉箭头（默认 true） */
+  showDropdown?: boolean;
+  /** 选中单元格时显示输入信息（默认 false） */
+  showInputMessage?: boolean;
+  inputTitle?: string;
+  inputMessage?: string;
+  /** 无效数据时显示错误警告（默认 true） */
+  showErrorMessage?: boolean;
+  /** 出错警告样式（默认 stop） */
+  errorStyle?: DataValidationErrorStyle;
+  errorTitle?: string;
+  errorMessage?: string;
+  /** 是否启用（默认 true） */
+  enabled?: boolean;
+}
+
+/** 单条规则的验证结果严重级别（与 errorStyle 对应） */
+export type DataValidationSeverity = 'stop' | 'warning' | 'information';
+
+/** 数据验证结果：valid=false 时携带最严重的那条失败规则与提示文案 */
+export interface DataValidationResult {
+  valid: boolean;
+  /** 命中的失败规则（多条失败时取严重级别最高的一条） */
+  rule?: DataValidationRule;
+  severity?: DataValidationSeverity;
+  title?: string;
+  message?: string;
+}
+
 export interface SheetModelData {
   name: string;
   /** 表格级样式池：styles[0] 始终为默认空样式 {} */
@@ -276,6 +357,8 @@ export interface SheetModelData {
   filter?: SheetFilter;
   /** 条件格式规则集合；缺省视为无规则 */
   conditionalFormats?: ConditionalFormattingRule[];
+  /** 数据验证规则集合；旧数据缺省视为无数据验证 */
+  dataValidations?: DataValidationRule[];
 }
 
 export interface SheetState {
@@ -303,6 +386,8 @@ export interface SheetState {
   filter: SheetFilter | null;
   /** 条件格式规则集合；缺省为空数组 */
   conditionalFormats: ConditionalFormattingRule[];
+  /** 数据验证规则集合；缺省为空数组 */
+  dataValidations: DataValidationRule[];
 }
 
 /** 视口区域：冻结窗格将画布划分为四个独立滚动区域 */

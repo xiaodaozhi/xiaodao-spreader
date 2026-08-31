@@ -4,8 +4,21 @@ import { FormulaDeps, clearEvalCache, computeCellValue, parseFormulaRefs } from 
 import { formatNumber, isGeneralFormat, parseDateTimeInput, parseNumericText } from '../core/number-format';
 import { applyAutoFillPlan, validateMergeCompatibility } from '../core/autofill';
 import { colToLabel } from '../core/utils';
-import type { CellCoord, CellData, CellStyle, SelectionRange, BorderStyle, BorderSide, FreezePane, ViewportRegion, SheetFilter, FilterColumn, ConditionalFormattingRule, ConditionalFormattingFormat } from '../core/types';
+import type { CellCoord, CellData, CellStyle, SelectionRange, BorderStyle, BorderSide, FreezePane, ViewportRegion, SheetFilter, FilterColumn, ConditionalFormattingRule, ConditionalFormattingFormat, DataValidationRule, DataValidationResult, DataValidationSeverity } from '../core/types';
 import { resolveConditionalFormatting, CfValueCache, genRuleId, type CFContext } from '../core/conditional-formatting';
+import {
+  DataValidationIndex,
+  dvCellInRanges,
+  dvSeverityOf,
+  genDataValidationId,
+  hasDropdownIndicator,
+  intersectDvRange,
+  resolveListItems,
+  subtractDvRange,
+  translateDvRange,
+  validateCellValue as _validateCellValue,
+  type DataValidationContext,
+} from '../core/data-validation';
 import { isRowVisible as _isRowVisible, getColumnCandidates as _getColumnCandidates, isColumnFiltered, type FilterCellAccessor, type FilterCandidates } from '../core/filter-core';
 import { resolveStyle as _resolveStyle } from '../core/style-pool';
 import type { BorderPool } from '../core/border-pool';
@@ -18,6 +31,22 @@ import { getCellBorderSide as _getCellBorderSide } from '../core/border-pool';
  *  - 'all' ：左上角全选按钮 → expandSelectionForMerges 行为
  */
 export type SelectionMode = 'cell' | 'row' | 'col' | 'all';
+
+/** 数据验证出错警告的用户选择：
+ *  - 'continue'：确认继续（写入非法值）；
+ *  - 'retry'  ：返回编辑态修正（stop 专用）；
+ *  - 'cancel' ：放弃本次输入（不写入）。
+ */
+export type DataValidationAlertAction = 'continue' | 'retry' | 'cancel';
+
+/** 出错警告弹窗需要展示的信息 */
+export interface DataValidationAlertPayload {
+  severity: DataValidationSeverity;
+  title: string;
+  message: string;
+  col: number;
+  row: number;
+}
 
 /** AutoFill 拖拽状态 */
 export interface AutoFillState {
@@ -163,7 +192,9 @@ export interface CoreState {
 
   // 编辑状态
   startEdit: (initialValue?: string) => void;
-  commitEdit: () => void;
+  /** 提交编辑：数据验证发生在写入之前。
+   *  @returns Promise<boolean> —— true 表示已写入；false 表示被数据验证拦截（仍保持编辑态） */
+  commitEdit: () => Promise<boolean>;
   cancelEdit: () => void;
 
   // 导航
@@ -218,6 +249,49 @@ export interface CoreState {
   clampScroll?: (sx: number | null, sy: number | null) => void;
   /** 查找高亮钩子：返回某单元格当前的高亮类型（由 find-replace 模块注入） */
   findHighlight?: (col: number, row: number) => 'active' | 'match' | null;
+
+  // ============ 数据验证（Data Validation）============
+  // 注意：本组 API 统一采用 (row, col) 参数顺序，与 Excel/Univer 的「先行后列」习惯一致。
+  /** 当前工作表的全部数据验证规则（规则属于 Sheet，不属于 Cell） */
+  dataValidations: DataValidationRule[];
+  /** 命中该单元格的全部规则（经空间索引，不遍历整表） */
+  getDataValidationRules: (row: number, col: number) => DataValidationRule[];
+  /** 命中该单元格的首条规则（用于「打开数据验证对话框」时回填已有规则） */
+  getDataValidationRule: (row: number, col: number) => DataValidationRule | null;
+  hasDataValidation: (row: number, col: number) => boolean;
+  /** 命中且需要显示下拉箭头的 list 规则 */
+  getListValidation: (row: number, col: number) => DataValidationRule | null;
+  /** 下拉列表数据（去重、跟随源区域变化） */
+  getValidationDropdown: (row: number, col: number) => { rule: DataValidationRule; items: string[] } | null;
+  /** 选中单元格时展示的输入信息 */
+  getValidationInputMessage: (row: number, col: number) => { title: string; message: string } | null;
+  /** 核心校验入口：编辑 / 粘贴 / AutoFill 等所有输入链路统一调用 */
+  validateCell: (row: number, col: number, value: string | null | undefined) => DataValidationResult;
+  /** 批量校验（粘贴 / 填充等原子操作）：返回最严重的那条失败结果 */
+  validateCells: (entries: { col: number; row: number; value: string | null | undefined }[]) => DataValidationResult;
+  /** 新建规则（一个完整的规则级 Undo） */
+  createDataValidation: (rule: DataValidationRule, opts?: { silent?: boolean }) => DataValidationRule;
+  /** 更新既有规则（按 id），不存在则视为新建 */
+  updateDataValidation: (id: string, patch: Partial<DataValidationRule>, opts?: { silent?: boolean }) => void;
+  removeDataValidation: (id: string, opts?: { silent?: boolean }) => void;
+  /** 清除指定范围的验证（规则的 Range 会被拆分/缩小）；range 为 null 时清除整个工作表 */
+  clearDataValidation: (range: SelectionRange | null, opts?: { silent?: boolean }) => void;
+  /** 与给定矩形相交的规则（复制携带规则时用） */
+  getDataValidationsInRange: (range: SelectionRange) => { rule: DataValidationRule; range: SelectionRange }[];
+  /** 将一批规则应用到目标矩形（先扣除目标区域已有规则，再写入） */
+  applyDataValidationsToRange: (rules: DataValidationRule[], target: SelectionRange, opts?: { silent?: boolean }) => void;
+  /** 规则集合 / 源区域数据变化后失效索引与列表缓存 */
+  invalidateDataValidationCache: () => void;
+  /** 出错警告弹窗是否打开（编辑器 blur 提交需要避让，避免重入） */
+  isValidationAlertOpen: () => boolean;
+  /** 出错警告弹窗钩子（由 spreader.vue 注入；未注入时按「stop 拒绝 / 其它放行」处理） */
+  showValidationAlert?: (payload: DataValidationAlertPayload) => Promise<DataValidationAlertAction>;
+  /** 复用出错警告流程：传入校验失败结果，返回用户决策（供下拉选择等非编辑器入口调用） */
+  confirmInvalidValue: (res: DataValidationResult, col: number, row: number) => Promise<DataValidationAlertAction>;
+  /** 按 id 或名称取其它工作表的 cells（list 跨表引用，由 spreader.vue 注入） */
+  getSheetCellsById?: (sheetId: string) => Record<string, CellData> | null;
+  /** 请求打开「数据验证」对话框（由 spreader.vue 注入，供右键菜单 / 工具栏使用） */
+  requestDataValidationDialog?: () => void;
 
   // 自动填充（AutoFill / Fill Handle）
   /** AutoFill 拖拽状态：active 时 render 绘制预览，mouseup 触发 applyAutoFill */
@@ -284,6 +358,15 @@ export function createCoreState(
   const conditionalFormats = reactive<ConditionalFormattingRule[]>([]);
   // 重复/唯一值统计缓存（不序列化、不持久化）
   const cfCache = new CfValueCache();
+
+  // ============ 数据验证（Data Validation）============
+  // 规则属于当前工作表（不是 Cell），随 saveSheet 持久化到 SheetState。
+  // dvIndex：行分带空间索引，避免「编辑一个 Cell → 遍历全部规则」。
+  // dvListCache：list 规则引用区域时的解析缓存，源区域数据变化时整体失效。
+  const dataValidations = reactive<DataValidationRule[]>([]);
+  const dvIndex = new DataValidationIndex(dataValidations);
+  const dvListCache = new Map<string, string[]>();
+  let dvAlertDepth = 0;
 
   /** 生成稳定的样式 key（属性排序后 JSON.stringify） */
   function stableStyleKey(style: CellStyle): string {
@@ -1047,6 +1130,8 @@ export function createCoreState(
     clearEvalCache();
     // 值变化可能影响 duplicate/unique 统计与公式条件：条件格式缓存一并失效
     cfCache.invalidate();
+    // 值变化可能改变 list 规则的源区域内容：下拉列表缓存一并失效
+    if (dataValidations.length > 0) invalidateDataValidationCache();
     if (v === '' || v == null) {
       formulaDeps.clear(k);
       const styleId = cells[k]?.styleId;
@@ -1106,6 +1191,7 @@ export function createCoreState(
       }
     }
     cfCache.invalidate();
+    if (dataValidations.length > 0) invalidateDataValidationCache();
   }
 
   // ============ 条件格式（Conditional Formatting）============
@@ -1210,6 +1296,281 @@ export function createCoreState(
     state.emitModelData?.();
   }
 
+  // ============ 数据验证（Data Validation）============
+
+  /** 规则集合 / 列表源数据变化 → 失效索引与列表缓存 */
+  function invalidateDataValidationCache(): void {
+    dvIndex.invalidate();
+    dvListCache.clear();
+  }
+
+  /** 构建数据验证求值上下文（引擎保持纯净，所有外部依赖在此注入） */
+  function buildDVContext(): DataValidationContext {
+    return {
+      cells,
+      colCount: dims.colCount,
+      rowCount: dims.rowCount,
+      locale: locale.value,
+      getCellValue: (c: number, r: number) => getCellValue(c, r),
+      getSheetCells: (sheetId: string) => (state.getSheetCellsById ? state.getSheetCellsById(sheetId) : null),
+    };
+  }
+
+  function getDataValidationRules(row: number, col: number): DataValidationRule[] {
+    // 合并单元格：统一按左上角（anchor）判定，避免在合并区内产生多套判定结果
+    const m = findMergeFn(col, row);
+    const rc = m ? { col: m.range.startCol, row: m.range.startRow } : { col, row };
+    return dvIndex.getRules(rc.col, rc.row, dataValidations);
+  }
+
+  function getDataValidationRule(row: number, col: number): DataValidationRule | null {
+    const list = getDataValidationRules(row, col);
+    return list.length ? list[0]! : null;
+  }
+
+  function hasDataValidation(row: number, col: number): boolean {
+    return getDataValidationRules(row, col).length > 0;
+  }
+
+  function getListValidation(row: number, col: number): DataValidationRule | null {
+    // 合并单元格：统一按左上角（anchor）判定，避免在合并区内产生多套判定结果
+    const m = findMergeFn(col, row);
+    const rc = m ? { col: m.range.startCol, row: m.range.startRow } : { col, row };
+    // 渲染热路径：走索引的零分配查询，不构造中间数组
+    return dvIndex.findRule(rc.col, rc.row, hasDropdownIndicator, dataValidations);
+  }
+
+  /** list 规则的候选项（带缓存；源区域数据变化时由 invalidateDataValidationCache 失效） */
+  function getListItems(rule: DataValidationRule): string[] {
+    const src = rule.listSource;
+    const cacheKey = src && src.type === 'range'
+      ? `range:${src.sheetId ?? ''}:${src.range.startCol},${src.range.startRow},${src.range.endCol},${src.range.endRow}`
+      : `values:${(src && src.type === 'values' ? src.values : rule.values ?? []).join('\u0001')}`;
+    const cached = dvListCache.get(cacheKey);
+    if (cached) return cached;
+    const items = resolveListItems(rule, buildDVContext());
+    dvListCache.set(cacheKey, items);
+    return items;
+  }
+
+  function getValidationDropdown(row: number, col: number): { rule: DataValidationRule; items: string[] } | null {
+    const rule = getListValidation(row, col);
+    if (!rule) return null;
+    return { rule, items: getListItems(rule) };
+  }
+
+  function getValidationInputMessage(row: number, col: number): { title: string; message: string } | null {
+    for (const rule of getDataValidationRules(row, col)) {
+      if (rule.enabled === false) continue;
+      if (!rule.showInputMessage) continue;
+      const title = rule.inputTitle ?? '';
+      const message = rule.inputMessage ?? '';
+      if (!title && !message) continue;
+      return { title, message };
+    }
+    return null;
+  }
+
+  function validateCell(row: number, col: number, value: string | null | undefined): DataValidationResult {
+    const rules = getDataValidationRules(row, col);
+    if (rules.length === 0) return { valid: true };
+    return _validateCellValue(value, col, row, rules, buildDVContext());
+  }
+
+  function validateCells(
+    entries: { col: number; row: number; value: string | null | undefined }[],
+  ): DataValidationResult {
+    const ctx = buildDVContext();
+    const rank: Record<string, number> = { stop: 3, warning: 2, information: 1 };
+    let worst: DataValidationResult | null = null;
+    let worstRank = 0;
+    for (const e of entries) {
+      const rules = getDataValidationRules(e.row, e.col);
+      if (rules.length === 0) continue;
+      const res = _validateCellValue(e.value, e.col, e.row, rules, ctx);
+      if (res.valid) continue;
+      const r = rank[dvSeverityOf(res.rule!)] ?? 0;
+      if (r > worstRank) {
+        worstRank = r;
+        worst = res;
+      }
+    }
+    return worst ?? { valid: true };
+  }
+
+  /** 新建规则；silent=true 表示由调用方统一负责 Undo（如粘贴） */
+  function createDataValidation(rule: DataValidationRule, opts?: { silent?: boolean }): DataValidationRule {
+    if (!opts?.silent) state.saveUndo?.();
+    const next: DataValidationRule = {
+      ...rule,
+      id: rule.id || genDataValidationId(),
+      ranges: (rule.ranges ?? []).map((r) => ({ ...r })),
+      enabled: rule.enabled !== false,
+    };
+    dataValidations.push(next);
+    invalidateDataValidationCache();
+    if (!opts?.silent) {
+      state.scheduleRender?.();
+      state.emitModelData?.();
+    }
+    return next;
+  }
+
+  function updateDataValidation(
+    id: string,
+    patch: Partial<DataValidationRule>,
+    opts?: { silent?: boolean },
+  ): void {
+    const idx = dataValidations.findIndex((r) => r.id === id);
+    if (idx < 0) {
+      // 按 id 找不到（例如规则已被清除）→ 退化为新建，保持调用方语义简单
+      createDataValidation({ id, ...patch } as DataValidationRule, opts);
+      return;
+    }
+    if (!opts?.silent) state.saveUndo?.();
+    dataValidations[idx] = { ...dataValidations[idx]!, ...patch, id };
+    invalidateDataValidationCache();
+    if (!opts?.silent) {
+      state.scheduleRender?.();
+      state.emitModelData?.();
+    }
+  }
+
+  function removeDataValidation(id: string, opts?: { silent?: boolean }): void {
+    const idx = dataValidations.findIndex((r) => r.id === id);
+    if (idx < 0) return;
+    if (!opts?.silent) state.saveUndo?.();
+    dataValidations.splice(idx, 1);
+    invalidateDataValidationCache();
+    if (!opts?.silent) {
+      state.scheduleRender?.();
+      state.emitModelData?.();
+    }
+  }
+
+  /**
+   * 清除指定范围的数据验证：
+   *  - 规则的 Range 会被矩形差集拆分/缩小，剩余为空才删除整条规则；
+   *  - range 为 null 表示清除当前工作表全部规则。
+   */
+  function clearDataValidation(range: SelectionRange | null, opts?: { silent?: boolean }): void {
+    if (!range) {
+      if (dataValidations.length === 0) return;
+      if (!opts?.silent) state.saveUndo?.();
+      dataValidations.splice(0, dataValidations.length);
+      invalidateDataValidationCache();
+      if (!opts?.silent) {
+        state.scheduleRender?.();
+        state.emitModelData?.();
+      }
+      return;
+    }
+    const cut: SelectionRange = {
+      startCol: Math.min(range.startCol, range.endCol),
+      endCol: Math.max(range.startCol, range.endCol),
+      startRow: Math.min(range.startRow, range.endRow),
+      endRow: Math.max(range.startRow, range.endRow),
+    };
+    const touched = dataValidations.filter((r) => (r.ranges ?? []).some((rg) => {
+      return !(rg.endCol < cut.startCol || rg.startCol > cut.endCol
+        || rg.endRow < cut.startRow || rg.startRow > cut.endRow);
+    }));
+    if (touched.length === 0) return;
+    if (!opts?.silent) state.saveUndo?.();
+    for (let i = dataValidations.length - 1; i >= 0; i--) {
+      const rule = dataValidations[i]!;
+      const nextRanges: SelectionRange[] = [];
+      for (const rg of rule.ranges ?? []) {
+        nextRanges.push(...subtractDvRange(rg, cut));
+      }
+      if (nextRanges.length === 0) dataValidations.splice(i, 1);
+      else rule.ranges = nextRanges;
+    }
+    invalidateDataValidationCache();
+    if (!opts?.silent) {
+      state.scheduleRender?.();
+      state.emitModelData?.();
+    }
+  }
+
+  function getDataValidationsInRange(range: SelectionRange): { rule: DataValidationRule; range: SelectionRange }[] {
+    const out: { rule: DataValidationRule; range: SelectionRange }[] = [];
+    for (const rule of dataValidations) {
+      for (const rg of rule.ranges ?? []) {
+        const it = intersectDvRange(rg, range);
+        if (it) out.push({ rule, range: it });
+      }
+    }
+    return out;
+  }
+
+  /** 将一批规则应用到目标矩形：先扣除目标区域已有规则，再写入（复制粘贴携带规则） */
+  function applyDataValidationsToRange(
+    rules: DataValidationRule[],
+    target: SelectionRange,
+    opts?: { silent?: boolean },
+  ): void {
+    if (!rules.length) return;
+    if (!opts?.silent) state.saveUndo?.();
+    // 1) 扣除目标区域（含未被覆盖的规则残余）
+    for (let i = dataValidations.length - 1; i >= 0; i--) {
+      const rule = dataValidations[i]!;
+      const nextRanges: SelectionRange[] = [];
+      for (const rg of rule.ranges ?? []) nextRanges.push(...subtractDvRange(rg, target));
+      if (nextRanges.length === 0) dataValidations.splice(i, 1);
+      else rule.ranges = nextRanges;
+    }
+    // 2) 写入新规则（区域裁剪到目标矩形内）
+    for (const rule of rules) {
+      const clipped: SelectionRange[] = [];
+      for (const rg of rule.ranges ?? []) {
+        const it = intersectDvRange(rg, target);
+        if (it) clipped.push(it);
+      }
+      if (!clipped.length) continue;
+      dataValidations.push({ ...rule, id: genDataValidationId(), ranges: clipped });
+    }
+    invalidateDataValidationCache();
+    if (!opts?.silent) {
+      state.scheduleRender?.();
+      state.emitModelData?.();
+    }
+  }
+
+  /**
+   * 出错警告：把「是否继续」的决策交给 UI 层（异步）。
+   * 未注入钩子（如纯逻辑/测试环境）时：stop 拒绝写入，warning / information 放行。
+   */
+  async function resolveValidationAlert(
+    res: DataValidationResult,
+    col: number,
+    row: number,
+  ): Promise<DataValidationAlertAction> {
+    const severity = res.severity ?? 'stop';
+    const showError = !res.rule || res.rule.showErrorMessage !== false;
+    if (!showError) return severity === 'stop' ? 'cancel' : 'continue';
+    const hook = state.showValidationAlert;
+    if (!hook) return severity === 'stop' ? 'cancel' : 'continue';
+    dvAlertDepth++;
+    try {
+      return await hook({
+        severity,
+        title: res.title ?? '',
+        message: res.message ?? '',
+        col,
+        row,
+      });
+    } catch {
+      return 'cancel';
+    } finally {
+      dvAlertDepth = Math.max(0, dvAlertDepth - 1);
+    }
+  }
+
+  function isValidationAlertOpen(): boolean {
+    return dvAlertDepth > 0;
+  }
+
   // ============ 编辑状态 ============
   // saveUndo 后续注入
   let saveUndoFn: () => void = () => {};
@@ -1225,13 +1586,30 @@ export function createCoreState(
     }
   }
 
-  function commitEdit() {
-    if (editingCell.value) {
-      saveUndoFn();
-      setCellValue(editingCell.value.col, editingCell.value.row, editValue.value);
-      editingCell.value = null;
-      editValue.value = '';
+  /**
+   * 提交编辑：数据验证发生在 Cell mutation 之前。
+   *  - 校验通过 → 写入并退出编辑；
+   *  - 校验失败且为 stop（或用户在警告中选择取消）→ 不写入任何数据，保持编辑态等待修正；
+   *  - warning / information 用户确认继续 → 写入（不再二次校验，避免死循环）。
+   * @returns 是否已写入单元格
+   */
+  async function commitEdit(): Promise<boolean> {
+    const cur = editingCell.value;
+    if (!cur) return false;
+    const col = cur.col;
+    const row = cur.row;
+    const value = editValue.value;
+    const res = validateCell(row, col, value);
+    if (!res.valid) {
+      const action = await resolveValidationAlert(res, col, row);
+      // 'retry' / 'cancel' 均不写入；保持编辑态，由调用方把焦点交还编辑器
+      if (action !== 'continue') return false;
     }
+    saveUndoFn();
+    setCellValue(col, row, value);
+    editingCell.value = null;
+    editValue.value = '';
+    return true;
   }
 
   function cancelEdit() {
@@ -1456,7 +1834,7 @@ export function createCoreState(
   }
 
   // ============ AutoFill 提交入口 ============
-  // 一次操作一个 Undo 快照：saveUndo → ensureCapacity → applyAutoFillPlan → 写入 cells + formulaDeps → selectRange → scheduleRender
+  // 一次操作一个 Undo 快照：数据验证 → saveUndo → ensureCapacity → applyAutoFillPlan → 写入 cells + formulaDeps → selectRange → scheduleRender
   // 不走 setCellValue：避免触发 setCellValue 内部的日期/数字格式自动识别（会覆盖 styleId 透传）
   function applyAutoFill(
     sourceRange: SelectionRange,
@@ -1466,6 +1844,47 @@ export function createCoreState(
     // Merge 兼容性校验（双保险）
     if (!validateMergeCompatibility(sourceRange, targetRange, merges)) return;
 
+    // 1. 先纯函数计算目标 cells 增量（不落盘），供数据验证整体校验
+    const draftPlan = applyAutoFillPlan(
+      sourceRange,
+      targetRange,
+      { cells, styles },
+      direction,
+      locale.value,
+      dims.colCount,
+      dims.rowCount,
+      colToLabel,
+    );
+
+    // 2. 数据验证：整个 targetRange 作为一次原子操作。
+    //    存在 Stop 级非法结果则整次 AutoFill 取消（不产生任何写入、不产生 Undo 快照）。
+    const entries = Object.entries(draftPlan.cells).map(([k, cell]) => {
+      const comma = k.indexOf(',');
+      return {
+        col: parseInt(k.substring(0, comma), 10),
+        row: parseInt(k.substring(comma + 1), 10),
+        value: cell ? cell.value : '',
+      };
+    });
+    const vRes = validateCells(entries);
+    if (!vRes.valid) {
+      void (async () => {
+        const action = await resolveValidationAlert(vRes, targetRange.startCol, targetRange.startRow);
+        if (action !== 'continue') return;
+        writeAutoFillPlan(sourceRange, targetRange, direction);
+      })();
+      return;
+    }
+
+    writeAutoFillPlan(sourceRange, targetRange, direction);
+  }
+
+  /** AutoFill 实际写入（校验通过后调用）：saveUndo → ensureCapacity → 计算 plan → 写入 */
+  function writeAutoFillPlan(
+    sourceRange: SelectionRange,
+    targetRange: SelectionRange,
+    direction: 'up' | 'down' | 'left' | 'right',
+  ) {
     // 1. 一次 Undo 快照
     state.saveUndo?.();
 
@@ -1683,6 +2102,26 @@ export function createCoreState(
     moveConditionalFormatRule,
     clearConditionalFormats,
     invalidateConditionalFormatCache,
+
+    // 数据验证（Data Validation）
+    dataValidations,
+    getDataValidationRules,
+    getDataValidationRule,
+    hasDataValidation,
+    getListValidation,
+    getValidationDropdown,
+    getValidationInputMessage,
+    validateCell,
+    validateCells,
+    createDataValidation,
+    updateDataValidation,
+    removeDataValidation,
+    clearDataValidation,
+    getDataValidationsInRange,
+    applyDataValidationsToRange,
+    invalidateDataValidationCache,
+    isValidationAlertOpen,
+    confirmInvalidValue: resolveValidationAlert,
   };
 
   // 设置内部函数对 state 的反向引用

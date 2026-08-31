@@ -39,6 +39,36 @@ test('日期：m-d / m/d 补当前年', () => {
   assert.equal(r2.serial, expectSerial(2026, 12, 31));
 });
 
+test('日期：美式 月/日/年（m/d/yyyy）解析，格式跟随 locale', () => {
+  const en = parseDateTimeInput('8/25/2026', 'en-US', NOW);
+  assert.ok(en);
+  assert.equal(en.serial, expectSerial(2026, 8, 25));
+  assert.equal(en.format, 'm/d/yyyy');
+  // 与 YYYY/MM/DD 不冲突：2026/8/25 仍按 年/月/日 解析
+  const iso = parseDateTimeInput('2026/8/25', 'en-US', NOW);
+  assert.ok(iso);
+  assert.equal(iso.serial, expectSerial(2026, 8, 25));
+  // 带时间：月/日/年 时:分
+  const dt = parseDateTimeInput('8/25/2026 12:30', 'en-US', NOW);
+  assert.ok(dt);
+  assert.equal(dt.serial, expectSerial(2026, 8, 25) + (12 * 3600 + 30 * 60) / 86400);
+});
+
+test('日期：美式解析各 locale 均可识别（不依赖 en-US）', () => {
+  const zh = parseDateTimeInput('8/25/2026', 'zh-CN', NOW);
+  assert.ok(zh);
+  assert.equal(zh.serial, expectSerial(2026, 8, 25));
+  // 美式 12/31/2026 不会被误读为 年/月/日（否则会越界或错配）
+  const r = parseDateTimeInput('12/31/2026', 'zh-CN', NOW);
+  assert.ok(r);
+  assert.equal(r.serial, expectSerial(2026, 12, 31));
+});
+
+test('日期：美式非法（月越界/缺年）仍拒绝', () => {
+  assert.equal(parseDateTimeInput('13/25/2026', 'en-US', NOW), null);
+  assert.equal(parseDateTimeInput('8/25', 'en-US', NOW)?.serial, expectSerial(2026, 8, 25));
+});
+
 test('日期：闰年与非法日期', () => {
   assert.ok(parseDateTimeInput('2024-2-29', 'zh-CN', NOW));
   assert.equal(parseDateTimeInput('2023-2-29', 'zh-CN', NOW), null);

@@ -5,7 +5,8 @@ import type { CoreState } from './core-state';
 import type { UndoStylesState } from './undo-styles';
 import type { BorderType } from '../components/pickers/borderPicker.vue';
 import type { MergeType } from '../core/constants';
-import type { SelectionRange, BorderStyle, BorderSide } from '../core/types';
+import type { SelectionRange, BorderStyle, BorderSide, DataValidationRule } from '../core/types';
+import { translateDvRange } from '../core/data-validation';
 import { setCellBorderSide as _setCellBorderSidePool } from '../core/border-pool';
 
 // ============ 共享 BordersMerge 接口 ============
@@ -35,6 +36,8 @@ export interface BordersMergeState {
   copySourceRange: SelectionRange | null;
   copySourceStyles: number[][];
   captureStyles: (cS: number, cE: number, rS: number, rE: number) => void;
+  /** 复制选区与源选区相交的数据验证规则（相对源选区左上角归一化，便于粘贴平移） */
+  captureDataValidations: (cS: number, cE: number, rS: number, rE: number) => void;
   setCellWithStyle: (c: number, r: number, val: string, styleId: number | null) => void;
   copyToClipboard: () => void;
   copyRowCol: () => void;
@@ -315,6 +318,20 @@ export function createBordersMerge(
   // ============ 剪贴板 ============
   let copySourceRange: SelectionRange | null = null;
   let copySourceStyles: number[][] = [];
+  /** 复制时携带的数据验证规则：ranges 已裁剪到源选区内（绝对坐标） */
+  let copySourceValidations: DataValidationRule[] = [];
+
+  /**
+   * 复制「完整单元格」时携带数据验证规则（Excel 语义：普通粘贴会覆盖目标区域的验证）。
+   * 仅记录与源选区相交的部分，粘贴时按目标位置平移。
+   */
+  function captureDataValidations(cS: number, cE: number, rS: number, rE: number) {
+    copySourceValidations = [];
+    const src: SelectionRange = { startCol: cS, endCol: cE, startRow: rS, endRow: rE };
+    for (const { rule, range } of s.getDataValidationsInRange(src)) {
+      copySourceValidations.push({ ...rule, ranges: [{ ...range }] });
+    }
+  }
 
   function captureStyles(cS: number, cE: number, rS: number, rE: number) {
     copySourceStyles = [];
@@ -355,6 +372,7 @@ export function createBordersMerge(
     if (!sel) return;
     copySourceRange = { ...sel };
     captureStyles(sel.startCol, sel.endCol, sel.startRow, sel.endRow);
+    captureDataValidations(sel.startCol, sel.endCol, sel.startRow, sel.endRow);
     const ls: string[] = [];
     for (let r = sel.startRow; r <= sel.endRow; r++) {
       const row: string[] = [];
@@ -370,6 +388,7 @@ export function createBordersMerge(
     if (sel.startCol === 0 && sel.endCol === s.colCount - 1) {
       copySourceRange = { ...sel };
       captureStyles(0, s.colCount - 1, sel.startRow, sel.endRow);
+      captureDataValidations(0, s.colCount - 1, sel.startRow, sel.endRow);
       const ls: string[] = [];
       for (let r = sel.startRow; r <= sel.endRow; r++) {
         const row: string[] = [];
@@ -380,6 +399,7 @@ export function createBordersMerge(
     } else if (sel.startRow === 0 && sel.endRow === s.rowCount - 1) {
       copySourceRange = { ...sel };
       captureStyles(sel.startCol, sel.endCol, 0, s.rowCount - 1);
+      captureDataValidations(sel.startCol, sel.endCol, 0, s.rowCount - 1);
       const ls: string[] = [];
       for (let r = 0; r < s.rowCount; r++) {
         const row: string[] = [];
@@ -408,6 +428,9 @@ export function createBordersMerge(
     const targetCol = ac.col + maxCols - 1;
     const targetRow = ac.row + lines.length - 1;
     if (targetCol >= 0 && targetRow >= 0) s.ensureCapacity(targetCol, targetRow);
+
+    // ---- 1. 先整体解析出待写入内容（不落盘），供数据验证做原子校验 ----
+    const jobs: { c: number; r: number; val: string; styleId: number | null }[] = [];
     for (let r = 0; r < lines.length; r++) {
       const cs = lines[r]!.split('\t');
       for (let c = 0; c < cs.length; c++) {
@@ -422,13 +445,43 @@ export function createBordersMerge(
             s.colCount, s.rowCount, colToLabel,
           );
         }
-        if (hasSrcStyles && r < copySourceStyles.length && c < (copySourceStyles[r]?.length ?? 0)) {
-          const srcStyle = copySourceStyles[r]![c] ?? null;
-          setCellWithStyle(tc, tr, val, srcStyle);
-        } else {
-          s.setCellValue(tc, tr, val);
-        }
+        const srcStyle = (hasSrcStyles && r < copySourceStyles.length && c < (copySourceStyles[r]?.length ?? 0))
+          ? (copySourceStyles[r]![c] ?? null)
+          : null;
+        jobs.push({ c: tc, r: tr, val, styleId: srcStyle });
       }
+    }
+
+    // ---- 2. 数据验证：整次 Paste 作为一次原子操作 ----
+    // 存在 Stop 级非法数据 → 整次取消，绝不产生部分写入；Warning/Information 由用户确认后决定。
+    const vRes = s.validateCells(jobs.map((j) => ({ col: j.c, row: j.r, value: j.val })));
+    if (!vRes.valid) {
+      const action = await s.confirmInvalidValue(vRes, ac.col, ac.row);
+      if (action !== 'continue') return;
+    }
+
+    // ---- 3. 落盘：单元格值 + 样式 +（内部复制时）数据验证规则 ----
+    for (const j of jobs) {
+      if (j.styleId !== null) setCellWithStyle(j.c, j.r, j.val, j.styleId);
+      else s.setCellValue(j.c, j.r, j.val);
+    }
+    if (src && copySourceValidations.length > 0) {
+      // 完整单元格粘贴：按目标位置平移后覆盖目标区域的验证规则
+      const dCol = ac.col - src.startCol;
+      const dRow = ac.row - src.startRow;
+      const target: SelectionRange = {
+        startCol: ac.col,
+        endCol: ac.col + maxCols - 1,
+        startRow: ac.row,
+        endRow: ac.row + lines.length - 1,
+      };
+      const moved = copySourceValidations.map((rule) => ({
+        ...rule,
+        ranges: rule.ranges.map((rg) => translateDvRange(rg, dCol, dRow)),
+      }));
+      // 规则区域裁剪到实际粘贴矩形内（不齐的多行文本不会越界写入）
+      s.applyDataValidationsToRange(moved, target, { silent: true });
+      s.invalidateDataValidationCache();
     }
   }
 
@@ -585,6 +638,7 @@ export function createBordersMerge(
     copySourceRange: null as SelectionRange | null,
     copySourceStyles: [] as number[][],
     captureStyles,
+    captureDataValidations,
     setCellWithStyle,
     copyToClipboard,
     copyRowCol,

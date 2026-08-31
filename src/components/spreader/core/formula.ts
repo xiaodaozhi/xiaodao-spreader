@@ -430,6 +430,16 @@ function evalExpr(
   if (toks.length === 0) return null;
   let pos = 0;
 
+  /** 比较运算（最低优先级）：支持 = <> < <= > >= ，结果为 1 / 0；任一侧出错返回 null */
+  const parseCompare = (): FormulaValue => {
+    const left = parseAdd();
+    const t = toks[pos];
+    if (!(t && t.type === 'cmp')) return left;
+    pos++;
+    const right = parseAdd();
+    if (left === null || right === null) return null;
+    return compareValues(left, right, t.val) ? 1 : 0;
+  };
   const parseAdd = (): FormulaValue => {
     let left = parseMul();
     while (pos < toks.length) {
@@ -477,7 +487,7 @@ function evalExpr(
     }
     if (t.type === 'lp') {
       pos++;
-      const v = parseAdd();
+      const v = parseCompare();
       if (toks[pos] && toks[pos]!.type === 'rp') {
         pos++;
       }
@@ -520,11 +530,11 @@ function evalExpr(
     return null;
   };
 
-  return parseAdd();
+  return parseCompare();
 }
 
 interface Tok {
-  type: 'num' | 'str' | 'ref' | 'func' | 'op' | 'lp' | 'rp' | 'comma';
+  type: 'num' | 'str' | 'ref' | 'func' | 'op' | 'cmp' | 'lp' | 'rp' | 'comma';
   val: string;
   start: number;
 }
@@ -630,6 +640,18 @@ function tokenize(s: string): Tok[] {
       i++;
       continue;
     }
+    // 比较运算符：<= >= <> 优先（双字符），其次 = < >
+    if (ch === '<' || ch === '>' || ch === '=') {
+      const two = s.slice(i, i + 2);
+      if (two === '<=' || two === '>=' || two === '<>') {
+        toks.push({ type: 'cmp', val: two, start: i });
+        i += 2;
+      } else {
+        toks.push({ type: 'cmp', val: ch, start: i });
+        i++;
+      }
+      continue;
+    }
     i++; // 跳过未知符号（如区域引用的 ":"）
   }
   return toks;
@@ -686,6 +708,31 @@ function dispatch(
         return sum / cnt;
       }
       return sum;
+    }
+
+    case 'AND':
+    case 'OR': {
+      const args = splitTopLevelArgs(inner);
+      if (args.length === 0) return null;
+      let result = name === 'AND';
+      for (const arg of args) {
+        const v = evalExpr(arg, cells, colCount, rowCount, depth);
+        if (v === null) return null; // 参数出错 → 整函数出错
+        if (name === 'AND') {
+          if (!truthy(v)) return 0;
+        } else if (truthy(v)) {
+          return 1;
+        }
+      }
+      return result ? 1 : 0;
+    }
+
+    case 'NOT': {
+      const args = splitTopLevelArgs(inner);
+      if (args.length !== 1) return null;
+      const v = evalExpr(args[0]!, cells, colCount, rowCount, depth);
+      if (v === null) return null;
+      return truthy(v) ? 0 : 1;
     }
 
     case 'IF': {

@@ -24,6 +24,8 @@
     "src/components/spreader/core/formula.ts",
     "src/components/spreader/core/types.ts",
     "src/components/spreader/core/utils.ts",
+    "src/components/spreader/core/constants.ts",
+    "src/components/spreader/core/data-validation.ts",
     "test/**/*.ts"
   ]
 }

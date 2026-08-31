@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, computed, type Ref, type UnwrapRef } from 'vue';
+import { ref, reactive, computed, nextTick, type Ref, type UnwrapRef } from 'vue';
 import { SB_SIZE, t } from '../core/constants';
 import Toolbar from './toolbar.vue';
 import Tabbar from './tabbar.vue';
@@ -10,7 +10,21 @@ import InsertFunctionDialog from './pickers/insertFunctionDialog.vue';
 import FilterPopup from './filter-popup.vue';
 import ConditionalFormatManager from './conditional-format-manager.vue';
 import ConditionalFormatRuleEditor from './conditional-format-rule-editor.vue';
-import type { SheetModelData, SheetState, ConditionalFormattingRule, ConditionalFormattingCondition, CellIsOperator } from '../core/types';
+import DataValidationDialog from './data-validation-dialog.vue';
+import DataValidationDropdown from './data-validation-dropdown.vue';
+import DataValidationAlert from './data-validation-alert.vue';
+import DataValidationInputMessage from './data-validation-input-message.vue';
+import type {
+  SheetModelData,
+  SheetState,
+  ConditionalFormattingRule,
+  ConditionalFormattingCondition,
+  CellIsOperator,
+  DataValidationRule,
+  DataValidationSeverity,
+  SelectionRange,
+} from '../core/types';
+import type { DataValidationAlertAction } from '../composables/core-state';
 import { colToLabel } from '../core/utils';
 
 import { createCoreState, type CoreState } from '../composables/core-state';
@@ -76,6 +90,7 @@ const sheetsCtx: {
     freeze: { rows: 0, cols: 0 },
     filter: null,
     conditionalFormats: [],
+    dataValidations: [],
   }),
 };
 
@@ -341,6 +356,129 @@ function onCfToggle(id: string, enabled: boolean) {
   coreState.updateConditionalFormatRule(id, { enabled });
 }
 
+// ============ 数据验证（Data Validation）============
+const dvDialogOpen = ref(false);
+const dvDialogRule = ref<DataValidationRule | null>(null);
+const dvDialogMode = ref<'create' | 'edit'>('create');
+
+/** 打开对话框时的默认「应用于」：优先选区，否则活动单元格 */
+const dvDefaultRangeText = computed(() => {
+  const sel = coreState.selection;
+  if (sel) {
+    const a = colToLabel(sel.startCol) + (sel.startRow + 1);
+    const b = colToLabel(sel.endCol) + (sel.endRow + 1);
+    if (sel.startCol === sel.endCol && sel.startRow === sel.endRow) return a;
+    return `${a}:${b}`;
+  }
+  const ac = coreState.activeCell;
+  return colToLabel(ac.col) + (ac.row + 1);
+});
+
+/** 出错警告弹窗：Promise 化，便于 core-state 的输入链路 await 用户决策 */
+const dvAlert = ref<{
+  severity: DataValidationSeverity;
+  title: string;
+  message: string;
+  col: number;
+  row: number;
+} | null>(null);
+let dvAlertResolve: ((v: DataValidationAlertAction) => void) | null = null;
+
+/** 由 core-state 注入：弹出出错警告并等待用户决策 */
+function showValidationAlert(payload: {
+  severity: DataValidationSeverity;
+  title: string;
+  message: string;
+  col: number;
+  row: number;
+}): Promise<DataValidationAlertAction> {
+  return new Promise((resolve) => {
+    dvAlertResolve = resolve;
+    dvAlert.value = { ...payload };
+  });
+}
+coreStateRaw.showValidationAlert = showValidationAlert;
+
+/** list 跨表引用：按 id 或名称定位工作表的 cells（当前表直接返回运行时 cells，保证读到最新值） */
+coreStateRaw.getSheetCellsById = (sheetId: string) => {
+  const idx = sheetsOpsRaw.sheets.value.findIndex((x) => x.id === sheetId || x.name === sheetId);
+  if (idx < 0) return null;
+  if (idx === sheetsOpsRaw.activeSheetIndex.value) return coreStateRaw.cells;
+  return sheetsOpsRaw.sheets.value[idx]!.cells;
+};
+
+/** 右键菜单 / 工具栏入口：打开数据验证对话框 */
+coreStateRaw.requestDataValidationDialog = () => openDataValidationDialog();
+
+function openDataValidationDialog() {
+  // 已有规则：按活动单元格命中加载，用户修改后更新原 Rule（不重复创建）
+  const ac = coreState.activeCell;
+  const existing = coreStateRaw.getDataValidationRule(ac.row, ac.col);
+  dvDialogRule.value = existing ? JSON.parse(JSON.stringify(existing)) as DataValidationRule : null;
+  dvDialogMode.value = existing ? 'edit' : 'create';
+  toolbarRef.value?.closeOverflow();
+  dvDialogOpen.value = true;
+}
+
+function onDvSave(rule: DataValidationRule) {
+  // 「任何值」：按对话框中填写的范围清除数据验证（与 Excel 一致），不创建/更新规则
+  if (rule.type === 'any') {
+    rule.ranges.forEach((r) => coreStateRaw.clearDataValidation(r));
+    dvDialogOpen.value = false;
+    interactionsRaw.scheduleRender();
+    return;
+  }
+  if (rule.id) {
+    coreStateRaw.updateDataValidation(rule.id, rule);
+  } else {
+    coreStateRaw.createDataValidation(rule);
+  }
+  dvDialogOpen.value = false;
+  interactionsRaw.scheduleRender();
+}
+
+function onDvClear() {
+  const sel = coreState.selection;
+  if (sel) coreStateRaw.clearDataValidation(sel);
+  dvDialogOpen.value = false;
+  interactionsRaw.scheduleRender();
+}
+
+function onDvAlertResolve(action: DataValidationAlertAction) {
+  dvAlert.value = null;
+  const resolve = dvAlertResolve;
+  dvAlertResolve = null;
+  // 编辑态被拦截：把焦点与选区交还给被编辑的单元格，便于用户直接修正
+  nextTick(() => {
+    const ec = coreState.editingCell;
+    if (ec) {
+      coreStateRaw.selectCell(ec.col, ec.row);
+      coreStateRaw.ensureVisible(ec.col, ec.row);
+      interactionsRaw.scheduleRender();
+      sheetsOpsRaw.focusEditInput();
+    }
+  });
+  resolve?.(action);
+}
+
+/** 输入信息提示：位置随活动单元格 / 滚动实时重算（复用 cellToScreenRect，兼容冻结与合并） */
+const dvInputTip = computed(() => {
+  const ac = coreState.activeCell;
+  const msg = coreStateRaw.getValidationInputMessage(ac.row, ac.col);
+  if (!msg) return null;
+  const rect = coreStateRaw.cellToScreenRect(ac.row, ac.col);
+  const wrapper = sheetsOpsRaw.wrapperRef.value;
+  const offset = wrapper ? wrapper.getBoundingClientRect() : { left: 0, top: 0 };
+  return {
+    title: msg.title,
+    message: msg.message,
+    x: offset.left + rect.x,
+    y: offset.top + rect.y,
+    width: rect.width,
+    height: rect.height,
+  };
+});
+
 // ============ 模板赋值辅助函数（用于 @update:xxx 事件）============
 function setFontSizeMenuOpen(v: boolean) {
   undoStylesRaw.fontSizeMenuOpen.value = v;
@@ -482,6 +620,7 @@ const setDimInputRef = (el: unknown) => {
       @cf-new-rule="onCfNew"
       @cf-manage="onCfManage"
       @cf-clear="onCfClear($event)"
+      @open-data-validation="openDataValidationDialog"
     />
 
     <!-- 查找和替换栏 -->
@@ -887,6 +1026,69 @@ const setDimInputRef = (el: unknown) => {
           :theme-vars="sheetsOps.toolbarThemeVars"
           @save="onCfSave"
           @cancel="cfEditorOpen = false"
+        />
+      </div>
+    </Teleport>
+
+    <!-- 数据验证下拉列表（List Validation） -->
+    <DataValidationDropdown
+      v-if="interactions.validationDropdown"
+      :key="`${interactions.validationDropdown.col},${interactions.validationDropdown.row}`"
+      :items="interactions.validationDropdown.items"
+      :current="interactions.validationDropdown.current"
+      :locale="coreState.locale"
+      :x="interactions.validationDropdown.x"
+      :y="interactions.validationDropdown.y"
+      :width="interactions.validationDropdown.width"
+      :height="interactions.validationDropdown.height"
+      @select="interactionsRaw.onValidationDropdownSelect($event)"
+      @close="interactionsRaw.closeValidationDropdown()"
+    />
+
+    <!-- 数据验证输入信息提示 -->
+    <DataValidationInputMessage
+      v-if="dvInputTip"
+      :title="dvInputTip.title"
+      :message="dvInputTip.message"
+      :x="dvInputTip.x"
+      :y="dvInputTip.y"
+      :width="dvInputTip.width"
+      :height="dvInputTip.height"
+    />
+
+    <!-- 数据验证对话框 -->
+    <Teleport to="body">
+      <div
+        v-if="dvDialogOpen"
+        class="cf-modal-mask"
+        @click.self="dvDialogOpen = false"
+      >
+        <DataValidationDialog
+          :locale="coreState.locale"
+          :mode="dvDialogMode"
+          :rule="dvDialogRule"
+          :default-range-text="dvDefaultRangeText"
+          :theme-vars="sheetsOps.toolbarThemeVars"
+          @save="onDvSave"
+          @clear="onDvClear"
+          @cancel="dvDialogOpen = false"
+        />
+      </div>
+    </Teleport>
+
+    <!-- 数据验证出错警告 -->
+    <Teleport to="body">
+      <div
+        v-if="dvAlert"
+        class="cf-modal-mask"
+      >
+        <DataValidationAlert
+          :locale="coreState.locale"
+          :severity="dvAlert.severity"
+          :title="dvAlert.title"
+          :message="dvAlert.message"
+          :theme-vars="sheetsOps.toolbarThemeVars"
+          @resolve="onDvAlertResolve"
         />
       </div>
     </Teleport>

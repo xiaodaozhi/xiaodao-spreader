@@ -1,9 +1,10 @@
 import { ref, reactive, computed, watch, nextTick, type Ref, type ComputedRef } from 'vue';
 import { DEFAULT_COL_WIDTH, lightTheme, darkTheme } from '../core/constants';
-import type { ThemeColors, SheetState, SheetModelData, CellData, SelectionRange, SheetFilter } from '../core/types';
+import type { ThemeColors, SheetState, SheetModelData, CellData, SelectionRange, SheetFilter, DataValidationRule } from '../core/types';
 import { resolveSize } from '../core/utils';
 import { buildOuterStyle } from '../core/theme';
 import { clearEvalCache } from '../core/formula';
+import { adjustDvRangeForDelete, adjustDvRangeForInsert } from '../core/data-validation';
 import { parseSortKeyByDisplay, buildSortedRowOrder, looksLikeHeader, type SortOrder, type SortKey } from '../core/sort-core';
 import type { CoreState } from './core-state';
 import type { UndoStylesState } from './undo-styles';
@@ -168,6 +169,38 @@ function adjustCFRangesForInsertCols(s: CoreState, cS: number, cE: number): void
   s.invalidateConditionalFormatCache?.();
 }
 
+// ============ 数据验证（Data Validation）在 插入/删除 行列时的范围变换 ============
+// 与条件格式同构：越过删除带整体平移、重叠则裁剪、整段命中则移除规则；插入带内则放大范围。
+
+function adjustDVRangesForDelete(
+  s: CoreState,
+  axis: 'row' | 'col',
+  idx: number,
+  count: number,
+): void {
+  for (let i = s.dataValidations.length - 1; i >= 0; i--) {
+    const rule = s.dataValidations[i]!;
+    const next = (rule.ranges ?? [])
+      .map((rg) => adjustDvRangeForDelete(rg, axis, idx, count))
+      .filter((rg): rg is SelectionRange => rg !== null);
+    if (next.length === 0) s.dataValidations.splice(i, 1);
+    else rule.ranges = next;
+  }
+  s.invalidateDataValidationCache?.();
+}
+
+function adjustDVRangesForInsert(
+  s: CoreState,
+  axis: 'row' | 'col',
+  idx: number,
+  count: number,
+): void {
+  for (const rule of s.dataValidations) {
+    rule.ranges = (rule.ranges ?? []).map((rg) => adjustDvRangeForInsert(rg, axis, idx, count));
+  }
+  s.invalidateDataValidationCache?.();
+}
+
 export interface SheetsOpsState {
   // 行列增删
   deleteRows: (rS: number, rE: number) => void;
@@ -293,6 +326,8 @@ export function createSheetsOps(
     s.setFilter(adjustFilterRows(s.getFilter(), rS, rE, false));
     // 条件格式范围跟随删除行收缩
     adjustCFRangesForDeleteRows(s, rS, rE);
+    // 数据验证范围跟随删除行收缩
+    adjustDVRangesForDelete(s, 'row', rS, dr);
   }
 
   function insertRows(rS: number, rE: number) {
@@ -348,6 +383,8 @@ export function createSheetsOps(
     s.setFilter(adjustFilterRows(s.getFilter(), rS, rE, true));
     // 条件格式范围跟随插入行扩展
     adjustCFRangesForInsertRows(s, rS, rE);
+    // 数据验证范围跟随插入行扩展（插入点在范围内部时自动继承验证）
+    adjustDVRangesForInsert(s, 'row', rS, n);
   }
 
   function insertCols(cS: number, cE: number) {
@@ -403,6 +440,8 @@ export function createSheetsOps(
     s.setFilter(adjustFilterCols(s.getFilter(), cS, cE, true));
     // 条件格式范围跟随插入列扩展
     adjustCFRangesForInsertCols(s, cS, cE);
+    // 数据验证范围跟随插入列扩展
+    adjustDVRangesForInsert(s, 'col', cS, n);
   }
 
   function deleteCols(cS: number, cE: number) {
@@ -450,6 +489,8 @@ export function createSheetsOps(
     s.setFilter(adjustFilterCols(s.getFilter(), cS, cE, false));
     // 条件格式范围跟随删除列收缩
     adjustCFRangesForDeleteCols(s, cS, cE);
+    // 数据验证范围跟随删除列收缩
+    adjustDVRangesForDelete(s, 'col', cS, dc);
   }
 
   // 同时找到最后一个有数据的行和列
@@ -900,7 +941,35 @@ export function createSheetsOps(
     sidN++;
     return `s_${sidN}`;
   }
-  function mkSheet(name: string, dims?: { colCount?: number; rowCount?: number }): SheetState {
+  /**
+ * 兼容/净化加载的数据验证规则：过滤缺 type / 缺 ranges / ranges 为空的非法规则，
+ * 并补齐稳定 ID，保证索引与编辑链路不会出现脏数据。
+ */
+function normalizeLoadedDataValidations(raw: unknown): DataValidationRule[] {
+  if (!Array.isArray(raw)) return [];
+  const out: DataValidationRule[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const r = item as Partial<DataValidationRule>;
+    if (!r.type) continue;
+    if (!Array.isArray(r.ranges) || r.ranges.length === 0) continue;
+    const ranges = r.ranges
+      .filter((rg): rg is SelectionRange => !!rg
+        && typeof rg.startCol === 'number' && typeof rg.startRow === 'number'
+        && typeof rg.endCol === 'number' && typeof rg.endRow === 'number')
+      .map((rg) => ({
+        startCol: Math.min(rg.startCol, rg.endCol),
+        endCol: Math.max(rg.startCol, rg.endCol),
+        startRow: Math.min(rg.startRow, rg.endRow),
+        endRow: Math.max(rg.startRow, rg.endRow),
+      }));
+    if (!ranges.length) continue;
+    out.push({ ...(r as DataValidationRule), id: r.id || `dv_${out.length}`, ranges });
+  }
+  return out;
+}
+
+function mkSheet(name: string, dims?: { colCount?: number; rowCount?: number }): SheetState {
     const colC = Math.max(1, dims?.colCount ?? s.colCount);
     const rowC = Math.max(1, dims?.rowCount ?? s.rowCount);
     const cw: number[] = new Array(colC).fill(DEFAULT_COL_WIDTH);
@@ -919,6 +988,7 @@ export function createSheetsOps(
       freeze: { rows: 0, cols: 0 },
       filter: null,
       conditionalFormats: [],
+      dataValidations: [],
     };
   }
   const sheets = ref<SheetState[]>([mkSheet('Sheet1')]);
@@ -945,6 +1015,8 @@ export function createSheetsOps(
     sh.filter = cloneFilter(s.getFilter());
     // 持久化条件格式规则
     sh.conditionalFormats = [...s.conditionalFormats];
+    // 持久化数据验证规则
+    sh.dataValidations = [...s.dataValidations];
   }
 
   function loadSheet(i: number) {
@@ -998,6 +1070,10 @@ export function createSheetsOps(
     const cf = sh.conditionalFormats ? sh.conditionalFormats.map((r) => ({ ...r, ranges: r.ranges.map((rg) => ({ ...rg })) })) : [];
     s.conditionalFormats.splice(0, s.conditionalFormats.length, ...cf);
     s.invalidateConditionalFormatCache?.();
+    // 恢复数据验证规则（深拷贝，独立于运行时响应式对象；旧数据缺省视为无验证）
+    const dv = normalizeLoadedDataValidations(sh.dataValidations);
+    s.dataValidations.splice(0, s.dataValidations.length, ...dv);
+    s.invalidateDataValidationCache?.();
     activeSheetIndex.value = i;
   }
 
@@ -1062,6 +1138,7 @@ export function createSheetsOps(
       freeze: { ...src.freeze },
       filter: cloneFilter(src.filter),
       conditionalFormats: src.conditionalFormats ? src.conditionalFormats.map((r) => ({ ...r })) : [],
+      dataValidations: normalizeLoadedDataValidations(src.dataValidations),
     };
     sheets.value.splice(i + 1, 0, cp);
     loadSheet(i + 1);
@@ -1131,6 +1208,13 @@ export function createSheetsOps(
       // 输出条件格式规则：仅在存在时输出，保持旧数据兼容
       if (sh.conditionalFormats && sh.conditionalFormats.length) {
         smd.conditionalFormats = sh.conditionalFormats.map((r)  => ({ ...r }));
+      }
+      // 输出数据验证规则：仅在存在时输出，保持旧数据兼容
+      if (sh.dataValidations && sh.dataValidations.length) {
+        smd.dataValidations = sh.dataValidations.map((r) => ({
+          ...r,
+          ranges: r.ranges.map((rg) => ({ ...rg })),
+        }));
       }
       return smd;
     });

@@ -85,7 +85,7 @@ const UNFREEZE_ICON = '<svg viewBox="0 0 1024 1024" fill="currentColor"><path fi
 const TOOL_KEYS = [
   'undo', 'redo', 'paint', 'clear', 'sep1', 'font', 'fontSize', 'sep2',
   'bold', 'italic', 'underline', 'strike', 'sep3', 'textColor', 'fillColor', 'border',
-  'sep4', 'hAlign', 'vAlign', 'wrap', 'merge', 'sep6', 'numFmt', 'sep7', 'calc', 'sort', 'filter', 'freeze', 'cf', 'find',
+  'sep4', 'hAlign', 'vAlign', 'wrap', 'merge', 'sep6', 'numFmt', 'sep7', 'calc', 'sort', 'filter', 'freeze', 'cf', 'dv', 'find',
 ] as const;
 
 const rootEl = ref<HTMLElement | null>(null);
@@ -253,6 +253,11 @@ function toggleOverflow() {
 
 // 点击溢出菜单中的「查找」项：触发查找后自动关闭溢出菜单
 // （其它菜单项多因状态变更触发 recompute 间接关闭，查找仅打开子面板不改动布局，需显式关闭）
+function onDataValidationClick() {
+  overflowOpen.value = false;
+  emit('open-data-validation');
+}
+
 function onFindClick() {
   overflowOpen.value = false;
   emit('find');
@@ -360,7 +365,7 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  (e: 'undo' | 'redo' | 'paint-format' | 'clear-format' | 'font-size-blur' | 'font-size-toggle' | 'font-size-step-up' | 'font-size-step-down' | 'bold-toggle' | 'italic-toggle' | 'underline-toggle' | 'strikethrough-toggle' | 'apply-text-color' | 'apply-fill-color' | 'apply-border' | 'apply-sort' | 'wrap-toggle' | 'apply-merge' | 'calc-sum' | 'calc-avg' | 'calc-count' | 'find' | 'increase-decimals' | 'decrease-decimals' | 'toggle-filter' | 'cf-new-rule' | 'cf-manage'): void;
+  (e: 'undo' | 'redo' | 'paint-format' | 'clear-format' | 'font-size-blur' | 'font-size-toggle' | 'font-size-step-up' | 'font-size-step-down' | 'bold-toggle' | 'italic-toggle' | 'underline-toggle' | 'strikethrough-toggle' | 'apply-text-color' | 'apply-fill-color' | 'apply-border' | 'apply-sort' | 'wrap-toggle' | 'apply-merge' | 'calc-sum' | 'calc-avg' | 'calc-count' | 'find' | 'increase-decimals' | 'decrease-decimals' | 'toggle-filter' | 'cf-new-rule' | 'cf-manage' | 'open-data-validation'): void;
   (e: 'font-family-change' | 'font-size-change' | 'h-align-change' | 'v-align-change', v: string | number): void;
   (e: 'font-size-input' | 'text-color-change' | 'fill-color-change' | 'number-format-change' | 'freeze-change' | 'cf-preset', v: string): void;
   (e: 'font-size-keydown', ev: KeyboardEvent): void;
@@ -1303,6 +1308,31 @@ const freezeOptions = computed<FontOption[]>(() => {
           @manage="emit('cf-manage')"
           @clear="emit('cf-clear', $event)"
         />
+      </div>
+    </Teleport>
+
+    <!-- 数据验证 -->
+    <Teleport
+      :disabled="teleportDisabled('dv')"
+      :to="overflowMenuTarget"
+    >
+      <div
+        class="tb-item"
+        data-key="dv"
+      >
+        <button
+          class="toolbar-btn"
+          :title="t(locale, 'dv')"
+          @click="onDataValidationClick"
+        >
+          <svg
+            viewBox="0 0 1024 1024"
+            fill="currentColor"
+          ><path d="M933.76 705.728l-74.112 74.048 74.88 74.944-58.88 58.88-74.88-75.008-74.88 74.88-58.88-58.752 74.88-74.88-74.048-74.112 58.88-58.88 74.112 74.048 74.048-74.048 58.88 58.88z" />
+<path d="M832.576 607.104H167.808v162.944h370.688v83.2H126.208a41.664 41.664 0 0 1-41.6-41.6V565.376a41.6 41.6 0 0 1 41.6-41.6h706.368v83.2zM908.608 241.856l30.848 27.904-158.08 174.08a41.664 41.664 0 0 1-60.224 1.408L605.824 329.856l58.816-58.88 84.48 84.48 128.768-141.568 30.72 27.968z" />
+<path d="M832.576 193.664H167.808v162.944h370.688v83.2H126.208a41.6 41.6 0 0 1-41.6-41.6V151.936a41.6 41.6 0 0 1 41.6-41.6h706.368v83.2z" /></svg>
+          <span class="toolbar-btn__label">{{ t(locale, 'dv') }}</span>
+        </button>
       </div>
     </Teleport>
 
