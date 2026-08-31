@@ -1681,7 +1681,7 @@ const freezeOptions = computed<FontOption[]>(() => {
 .overflow-menu .sp-dropdown .sp-dropdown__trigger { padding-left: 6px; gap: 6px; }
 .overflow-menu .cf-menu-root .cf-menu-trigger { padding-left: 6px; gap: 6px; }
 .overflow-menu .cf-menu-trigger__icon { width: 18px; height: 18px; }
-.overflow-menu .outline-trigger { padding-left: 6px; padding-right: 6px; }
+.overflow-menu .outline-trigger { padding-left: 6px; padding-right: 6px; gap: 0; }
 .overflow-menu .outline-trigger__icon { width: 18px; height: 18px; flex: none; }
 
 /* 统一弹出动画：fade + scale */
@@ -1709,7 +1709,7 @@ const freezeOptions = computed<FontOption[]>(() => {
 .overflow-menu .sp-dropdown .sp-dropdown__trigger { padding-left: 6px; gap: 6px; }
 .overflow-menu .cf-menu-root .cf-menu-trigger { padding-left: 6px; gap: 6px; }
 .overflow-menu .cf-menu-trigger__icon { width: 18px; height: 18px; }
-.overflow-menu .outline-trigger { padding-left: 6px; padding-right: 6px; }
+.overflow-menu .outline-trigger { padding-left: 6px; padding-right: 6px; gap: 0; }
 .overflow-menu .outline-trigger__icon { width: 18px; height: 18px; flex: none; }
 .overflow-menu .toolbar-font-size__input { flex: 1 1 auto; width: auto; min-width: 40px; }
 
