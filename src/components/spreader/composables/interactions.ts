@@ -2148,16 +2148,17 @@ export function createInteractions(
     // 子菜单弹出方向已在 showCtx 时由 predictCtxSubmenuDir() 按真实几何一次性确定并锁定，
     // 此处不再重算。否则 hover/触屏点中父项时方向被纠正，必然产生一帧陈旧值 → 闪动。
   }
-  // 菜单渲染后，按真实几何一次性确定子菜单弹出方向（左/右），并锁定到 ctxSubmenuLeft。
+  // 菜单渲染后，按真实几何一次性确定子菜单弹出方向：
+  //   - 水平：右/左（所有子菜单共享菜单右缘 → 取最大子菜单宽度判定 → 写入 ctxSubmenuLeft）
+  //   - 垂直：上/下（每个父项位置不同 → 逐项判定 → inline 写 top/bottom 到对应 .context-submenu）
   // 关键：方向只在此处算一次，onCtxItemEnter 不再改动，因此子菜单首帧绘制即正确，无任何纠正帧，
-  // 彻底消除「先右后左 / 先左后右」闪动。所有子菜单共享同一右缘（菜单右缘），故取最大子菜单宽度判定即可。
+  // 彻底消除「先右后左 / 先下后上」闪动。
   function predictCtxSubmenuDir() {
-    // 子菜单贴容器边缘时预留的间距：右弹时右缘距容器右边界不足该值即翻到左侧弹，避免贴边裁切
+    // 子菜单贴视口边缘时预留的间距：右弹时右缘距视口右边界不足该值即翻到左侧弹，避免贴边裁切
     const SUBMENU_EDGE_MARGIN = 8;
     const menuEl = document.querySelector('.context-menu') as HTMLElement | null;
     const cm = ctxMenu.value;
-    const wrapper = so.wrapperRef.value;
-    if (!menuEl || !cm || !wrapper) {
+    if (!menuEl || !cm) {
       ctxSubmenuLeft.value = false;
       return;
     }
@@ -2166,10 +2167,11 @@ export function createInteractions(
     // transform: scale(.9)，nextTick 测量时整棵菜单处于缩放态，getBoundingClientRect 会
     // 拿到被缩小的右缘 → 误判「右侧放得下」→ 选右弹 → 动画结束回到 scale(1) 时子菜单溢出。
     const menuRight = cm.x + 140;
-    // (menuLeft intentionally unused, retained for left-side probe if needed)
-    // 组件以 Vue template 形式嵌入其他页面时，子菜单必须夹在「表格容器」(wrapper) 的可视边界内，
-    // 而不是整个浏览器 window：表格只占宿主页面的一部分，用 window 宽判定会漏算两侧留白导致溢出。
-    const wr = wrapper.getBoundingClientRect();
+    // 边缘基准 = 「视口」而非表格容器 wrapper：菜单经 Teleport + position:fixed 挂载在视口坐标系，
+    // 视口才是「再往外就看不见」的硬边界；按容器判定会在容器小于视口时过早翻向，白丢可用空间。
+    // 与项目其他浮层（dropdown / 各 picker / conditional-format-menu 子菜单）的判据保持一致。
+    const vpW = window.innerWidth;
+    const vpH = window.innerHeight;
     // 子菜单宽度也用 getBoundingClientRect 实测，但测量前临时去掉菜单 transform，
     // 否则同样会吃到缩放态宽度（偏小约 10%），导致判定右弹后实溢出。
     const prevTransform = menuEl.style.transform;
@@ -2180,9 +2182,22 @@ export function createInteractions(
       if (!sub) return;
       const prev = sub.style.display;
       sub.style.display = 'block';
-      const w = sub.getBoundingClientRect().width;
+      const subRect = sub.getBoundingClientRect();
+      const w = subRect.width;
+      const subH = subRect.height;
       sub.style.display = prev;
       if (w > maxSubW) maxSubW = w;
+      // 垂直方向：父项 top + 子菜单高度（即 top:-4 对齐时的子菜单下缘）超过视口下边界 - 余量，
+      // 则改为向上弹出（bottom 对齐父项底部），避免子菜单向下溢出。inline style 覆盖 CSS 默认 top:-4px。
+      const itemRect = it.getBoundingClientRect();
+      if (itemRect.top + subH > vpH - SUBMENU_EDGE_MARGIN) {
+        sub.style.top = 'auto';
+        sub.style.bottom = '-4px';
+      } else {
+        // 不溢出时清掉 inline，让 CSS 默认 top:-4px 生效，避免上次菜单残留方向
+        sub.style.top = '';
+        sub.style.bottom = '';
+      }
     });
     menuEl.style.transform = prevTransform;
     // 测不到（字体/布局未稳）时默认左弹，宁左勿右（左弹不会裁切，右弹溢出才裁切）
@@ -2190,9 +2205,9 @@ export function createInteractions(
       ctxSubmenuLeft.value = true;
       return;
     }
-    // 右弹所需空间 = 容器右边界 - 菜单右缘；不足（含 8px 余量）则翻左弹。
-    // 左弹同样放不下时仍选左弹（宁左勿右兜底，左弹至多贴容器左缘、不会裁到不可见）。
-    const rightSpace = wr.right - menuRight;
+    // 右弹所需空间 = 视口右边界 - 菜单右缘；不足（含 8px 余量）则翻左弹。
+    // 左弹同样放不下时仍选左弹（宁左勿右兜底，左弹至多贴视口左缘、不会裁到不可见）。
+    const rightSpace = vpW - menuRight;
     ctxSubmenuLeft.value = rightSpace < maxSubW + SUBMENU_EDGE_MARGIN;
   }
 
