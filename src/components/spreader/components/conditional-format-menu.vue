@@ -23,7 +23,10 @@ const highlightSubRef = ref<HTMLElement | null>(null);
 const clearSubRef = ref<HTMLElement | null>(null);
 const open = ref(false);
 const submenu = ref<'highlight' | 'clear' | null>(null);
-const subDir = ref<'left' | 'right'>('right');
+// 各子菜单独立记录弹出方向：否则两者共用一个值时，快速在两项间切换会让
+// 正在退场的那个面板按新方向收拢，收拢角与弹出角对不上。
+const highlightDir = ref<'left' | 'right'>('right');
+const clearDir = ref<'left' | 'right'>('right');
 const pos = ref<{ right: number; top: number; up: boolean }>({ right: 0, top: 0, up: false });
 const canUp = ref(false);
 const canDown = ref(false);
@@ -171,7 +174,8 @@ function enterSub(name: 'highlight' | 'clear', e?: MouseEvent) {
     let dir: 'left' | 'right' = 'right';
     if (wantRight && !wantLeft) dir = 'left';
     else if (wantRight && wantLeft) dir = 'left';
-    subDir.value = dir;
+    if (name === 'highlight') highlightDir.value = dir;
+    else clearDir.value = dir;
     const top = Math.max(8, Math.min(window.innerHeight - 30, r.top - 4));
     const posObj = dir === 'right'
       ? { left: r.right + 4, top }
@@ -381,11 +385,11 @@ onBeforeUnmount(() => {
 
     <!-- 突出显示子菜单：独立 Teleport，避免被 cf-menu overflow 裁掉 -->
     <Teleport to="body">
-      <Transition name="cf-pop">
+      <Transition name="cf-sub-pop">
         <div
           v-if="open && submenu === 'highlight'"
           class="cf-submenu-wrap"
-          :class="{ 'cf-submenu-wrap--left': subDir === 'left' }"
+          :class="{ 'cf-submenu-wrap--left': highlightDir === 'left' }"
           :style="{
             ...themeVars,
             left: highlightSubPos.left !== undefined ? highlightSubPos.left + 'px' : undefined,
@@ -445,11 +449,11 @@ onBeforeUnmount(() => {
 
     <!-- 清除规则子菜单：独立 Teleport -->
     <Teleport to="body">
-      <Transition name="cf-pop">
+      <Transition name="cf-sub-pop">
         <div
           v-if="open && submenu === 'clear'"
           class="cf-submenu-wrap"
-          :class="{ 'cf-submenu-wrap--left': subDir === 'left' }"
+          :class="{ 'cf-submenu-wrap--left': clearDir === 'left' }"
           :style="{
             ...themeVars,
             left: clearSubPos.left !== undefined ? clearSubPos.left + 'px' : undefined,
@@ -612,7 +616,10 @@ onBeforeUnmount(() => {
   white-space: nowrap;
   display: flex;
   flex-direction: column;
+  /* 从「弹出的那个角」起展开/收拢：右弹→左上角，左弹→右上角 */
+  transform-origin: top left;
 }
+.cf-submenu-wrap--left { transform-origin: top right; }
 .cf-submenu {
   max-height: calc(100vh - 120px);
   overflow-y: auto;
@@ -653,4 +660,7 @@ onBeforeUnmount(() => {
 
 .cf-pop-enter-active, .cf-pop-leave-active { transition: opacity 0.12s ease-out, transform 0.12s ease-out; }
 .cf-pop-enter-from, .cf-pop-leave-to { opacity: 0; transform: scaleY(0.85); }
+/* 子菜单：以弹出的角为原点做二维缩放，向其余三个方向扩展 / 收拢 */
+.cf-sub-pop-enter-active, .cf-sub-pop-leave-active { transition: opacity 0.12s ease-out, transform 0.12s ease-out; }
+.cf-sub-pop-enter-from, .cf-sub-pop-leave-to { opacity: 0; transform: scale(0.85); }
 </style>
