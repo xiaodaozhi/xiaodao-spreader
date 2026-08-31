@@ -146,6 +146,8 @@ export function createUndoStyles(
         filter: sh.filter ? JSON.parse(JSON.stringify(sh.filter)) : null,
         conditionalFormats: sh.conditionalFormats ? sh.conditionalFormats.map((r) => ({ ...r, ranges: r.ranges.map((rg) => ({ ...rg })) })) : [],
         dataValidations: sh.dataValidations ? sh.dataValidations.map((r) => ({ ...r, ranges: (r.ranges ?? []).map((rg) => ({ ...rg })) })) : [],
+        rowOutlines: sh.rowOutlines ? sh.rowOutlines.map((o) => ({ ...o })) : [],
+        columnOutlines: sh.columnOutlines ? sh.columnOutlines.map((o) => ({ ...o })) : [],
       })),
       styles: [...s.styles],
       activeSheetIndex: sheetsCtx.activeSheetIndex.value,

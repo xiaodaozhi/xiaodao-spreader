@@ -7,6 +7,7 @@ import SpDropdown from './dropdown.vue';
 import ColorPicker from './pickers/color-picker.vue';
 import BorderPicker, { type BorderType } from './pickers/border-picker.vue';
 import SortPicker from './pickers/sort-picker.vue';
+import OutlinePicker from './pickers/outline-picker.vue';
 import MergePicker from './pickers/merge-picker.vue';
 import ConditionalFormatMenu from './pickers/conditional-format-menu.vue';
 import CalcPicker from './pickers/calc-picker.vue';
@@ -85,7 +86,7 @@ const UNFREEZE_ICON = '<svg viewBox="0 0 1024 1024" fill="currentColor"><path fi
 const TOOL_KEYS = [
   'undo', 'redo', 'paint', 'clear', 'sep1', 'font', 'fontSize', 'sep2',
   'bold', 'italic', 'underline', 'strike', 'sep3', 'textColor', 'fillColor', 'border',
-  'sep4', 'hAlign', 'vAlign', 'wrap', 'merge', 'sep6', 'numFmt', 'sep7', 'calc', 'sort', 'filter', 'freeze', 'cf', 'dv', 'find',
+  'sep4', 'hAlign', 'vAlign', 'wrap', 'merge', 'sep6', 'numFmt', 'sep7', 'calc', 'sort', 'filter', 'outline', 'freeze', 'cf', 'dv', 'find',
 ] as const;
 
 const rootEl = ref<HTMLElement | null>(null);
@@ -97,6 +98,7 @@ const borderArrowRef = ref<HTMLElement | null>(null);
 const sortArrowRef = ref<HTMLElement | null>(null);
 const mergeArrowRef = ref<HTMLElement | null>(null);
 const calcArrowRef = ref<HTMLElement | null>(null);
+const outlineArrowRef = ref<HTMLElement | null>(null);
 const fontSizeArrowRef = ref<HTMLElement | null>(null);
 const overflowKeys = ref<Set<string>>(new Set());
 const overflowOpen = ref(false);
@@ -340,6 +342,7 @@ const props = defineProps<{
   sortMenuOpen: boolean;
   cachedSortOrder: SortOrder;
   canSort: boolean;
+  outlineMenuOpen: boolean;
   /** 工具栏「筛选」按钮是否可用（单选合并单元格且无筛选态时禁用） */
   canFilter: boolean;
   /** 当前 worksheet 是否已启用筛选 */
@@ -367,9 +370,9 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'undo' | 'redo' | 'paint-format' | 'clear-format' | 'font-size-blur' | 'font-size-toggle' | 'font-size-step-up' | 'font-size-step-down' | 'bold-toggle' | 'italic-toggle' | 'underline-toggle' | 'strikethrough-toggle' | 'apply-text-color' | 'apply-fill-color' | 'apply-border' | 'apply-sort' | 'wrap-toggle' | 'apply-merge' | 'calc-sum' | 'calc-avg' | 'calc-count' | 'find' | 'increase-decimals' | 'decrease-decimals' | 'toggle-filter' | 'cf-new-rule' | 'cf-manage' | 'open-data-validation'): void;
   (e: 'font-family-change' | 'font-size-change' | 'h-align-change' | 'v-align-change', v: string | number): void;
-  (e: 'font-size-input' | 'text-color-change' | 'fill-color-change' | 'number-format-change' | 'freeze-change' | 'cf-preset', v: string): void;
+  (e: 'font-size-input' | 'text-color-change' | 'fill-color-change' | 'number-format-change' | 'freeze-change' | 'cf-preset' | 'outline-action', v: string): void;
   (e: 'font-size-keydown', ev: KeyboardEvent): void;
-  (e: 'update:font-size-menu-open' | 'update:text-color-menu-open' | 'update:fill-color-menu-open' | 'update:border-menu-open' | 'update:sort-menu-open' | 'update:merge-menu-open' | 'update:calc-menu-open', v: boolean): void;
+  (e: 'update:font-size-menu-open' | 'update:text-color-menu-open' | 'update:fill-color-menu-open' | 'update:border-menu-open' | 'update:sort-menu-open' | 'update:outline-menu-open' | 'update:merge-menu-open' | 'update:calc-menu-open', v: boolean): void;
   (e: 'border-change', v: BorderType): void;
   (e: 'sort-change', v: SortOrder): void;
   (e: 'merge-change', v: MergeType): void;
@@ -973,6 +976,13 @@ const freezeOptions = computed<FontOption[]>(() => {
           @change="emit('v-align-change', $event)"
         />
       </div>
+    </Teleport>
+
+    <!-- 自动换行 -->
+    <Teleport
+      :disabled="teleportDisabled('wrap')"
+      :to="overflowMenuTarget"
+    >
       <div
         class="tb-item"
         data-key="wrap"
@@ -1240,6 +1250,58 @@ const freezeOptions = computed<FontOption[]>(() => {
       </div>
     </Teleport>
 
+    <!-- 分组 / 折叠（Outline），位于排序之后 -->
+    <Teleport
+      :disabled="teleportDisabled('outline')"
+      :to="overflowMenuTarget"
+    >
+      <div
+        class="tb-item"
+        data-key="outline"
+      >
+        <div class="toolbar-split">
+          <button
+            class="toolbar-btn toolbar-split__main"
+            :title="t(locale, 'outlineGroup')"
+            @click="emit('update:outline-menu-open', !outlineMenuOpen)"
+          >
+            <span class="toolbar-btn__icon">
+              <svg
+                viewBox="0 0 1024 1024"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="56"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              ><path d="M160 224 H560 V800 H160 Z" /><path
+                stroke-width="44"
+                d="M664 640 H864 V384 H664"
+              /></svg>
+            </span>
+            <span class="toolbar-btn__label">{{ t(locale, 'outlineGroup') }}</span>
+          </button>
+          <button
+            ref="outlineArrowRef"
+            class="toolbar-btn toolbar-split__arrow"
+            :title="t(locale, 'outlineGroup')"
+            @click="emit('update:outline-menu-open', !outlineMenuOpen)"
+          >
+            <svg
+              viewBox="0 0 1024 1024"
+              fill="currentColor"
+            ><path d="M180.053 361.387a32 32 0 0 1 45.227 0L512 648.107l286.72-286.72a32 32 0 1 1 45.227 45.227l-309.334 309.333a32 32 0 0 1-45.226 0L180.053 406.613a32 32 0 0 1 0-45.226z" /></svg>
+          </button>
+          <OutlinePicker
+            :model-open="outlineMenuOpen"
+            :locale="locale"
+            :trigger-el="outlineArrowRef"
+            @update:model-open="emit('update:outline-menu-open', $event)"
+            @action="emit('outline-action', $event)"
+          />
+        </div>
+      </div>
+    </Teleport>
+
     <!-- 筛选（位于排序之后） -->
     <Teleport
       :disabled="teleportDisabled('filter')"
@@ -1329,8 +1391,8 @@ const freezeOptions = computed<FontOption[]>(() => {
             viewBox="0 0 1024 1024"
             fill="currentColor"
           ><path d="M933.76 705.728l-74.112 74.048 74.88 74.944-58.88 58.88-74.88-75.008-74.88 74.88-58.88-58.752 74.88-74.88-74.048-74.112 58.88-58.88 74.112 74.048 74.048-74.048 58.88 58.88z" />
-<path d="M832.576 607.104H167.808v162.944h370.688v83.2H126.208a41.664 41.664 0 0 1-41.6-41.6V565.376a41.6 41.6 0 0 1 41.6-41.6h706.368v83.2zM908.608 241.856l30.848 27.904-158.08 174.08a41.664 41.664 0 0 1-60.224 1.408L605.824 329.856l58.816-58.88 84.48 84.48 128.768-141.568 30.72 27.968z" />
-<path d="M832.576 193.664H167.808v162.944h370.688v83.2H126.208a41.6 41.6 0 0 1-41.6-41.6V151.936a41.6 41.6 0 0 1 41.6-41.6h706.368v83.2z" /></svg>
+            <path d="M832.576 607.104H167.808v162.944h370.688v83.2H126.208a41.664 41.664 0 0 1-41.6-41.6V565.376a41.6 41.6 0 0 1 41.6-41.6h706.368v83.2zM908.608 241.856l30.848 27.904-158.08 174.08a41.664 41.664 0 0 1-60.224 1.408L605.824 329.856l58.816-58.88 84.48 84.48 128.768-141.568 30.72 27.968z" />
+            <path d="M832.576 193.664H167.808v162.944h370.688v83.2H126.208a41.6 41.6 0 0 1-41.6-41.6V151.936a41.6 41.6 0 0 1 41.6-41.6h706.368v83.2z" /></svg>
           <span class="toolbar-btn__label">{{ t(locale, 'dv') }}</span>
         </button>
       </div>

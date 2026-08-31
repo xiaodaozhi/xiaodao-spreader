@@ -338,29 +338,50 @@ function contains(outer: SelectionRange, inner: SelectionRange): boolean {
   );
 }
 
+/** 合并兼容性校验结果：
+ * - 'ok'：兼容；
+ * - 'source-overlap'：源区域与某合并格部分相交（既非完全包含也非不相交）；
+ * - 'target-merge-size'：目标区域命中的合并格跨距不一致（对齐 Excel「要执行此操作，所有合并单元格必须大小相同」）。
+ */
+export type MergeCompatibilityResult = {
+  ok: boolean;
+  reason: 'ok' | 'source-overlap' | 'target-merge-size';
+};
+
 /**
  * 校验源/目标区域与已有合并的兼容性：
  * - 源区域不能与任何 merge 部分相交（要么完全包含，要么不相交）；
- * - 目标区域不能与任何已有 merge 相交（会破坏 merge）。
+ * - 目标区域与「未被源完全包含」的 merge 相交时，要求这些 merge 行/列跨距全部一致。
  */
 export function validateMergeCompatibility(
   sourceRange: SelectionRange,
   targetRange: SelectionRange,
   merges: Record<string, SelectionRange>,
-): boolean {
+): MergeCompatibilityResult {
   const keys = Object.keys(merges);
   for (const key of keys) {
     const m = merges[key]!;
-    if (intersects(sourceRange, m) && !contains(sourceRange, m)) return false;
+    if (intersects(sourceRange, m) && !contains(sourceRange, m)) {
+      return { ok: false, reason: 'source-overlap' };
+    }
   }
+  const hit: SelectionRange[] = [];
   for (const key of keys) {
     const m = merges[key]!;
     // 目标区域与「源已完全包含」的合并格相交属于合法场景（如整块合并格被整体选中再向外填充），
     // 不对其判为不兼容，否则选中单个合并格时填充柄会被误判为灰色 / 不可拖拽。
     if (contains(sourceRange, m)) continue;
-    if (intersects(targetRange, m)) return false;
+    if (intersects(targetRange, m)) hit.push(m);
   }
-  return true;
+  if (hit.length === 0) return { ok: true, reason: 'ok' };
+  const refH = hit[0]!.endRow - hit[0]!.startRow;
+  const refW = hit[0]!.endCol - hit[0]!.startCol;
+  for (const m of hit) {
+    if (m.endRow - m.startRow !== refH || m.endCol - m.startCol !== refW) {
+      return { ok: false, reason: 'target-merge-size' };
+    }
+  }
+  return { ok: true, reason: 'ok' };
 }
 
 /** 选取目标单元应继承的源 styleId */

@@ -12,6 +12,7 @@ import type { ContextMenuItem, BorderSide, ThemeColors, SelectionRange, FilterCo
 import { resolveSharedBorder } from '../core/border-resolve';
 import { computeTargetRange, validateMergeCompatibility } from '../core/autofill';
 import { isColumnFiltered } from '../core/filter-core';
+import type { OutlineValidationResult } from '../core/outline-core';
 
 /** 兼容旧版筛选数据：确保加载后的 AutoFilter 具备合法的 range。
  *  - 已有 range → 防御性扩展到覆盖所有 columns 列键；
@@ -119,6 +120,18 @@ export interface InteractionsState {
   applyDimPanel: () => void;
   closeDimPanel: () => void;
 
+  // 行列分组（Outline）：供工具栏触发的动作
+  outlineGroupRows: () => boolean;
+  outlineGroupCols: () => boolean;
+  outlineUngroupRows: () => boolean;
+  outlineUngroupCols: () => boolean;
+  outlineExpandRows: () => void;
+  outlineCollapseRows: () => void;
+  outlineExpandCols: () => void;
+  outlineCollapseCols: () => void;
+  /** 分组校验提示：由宿主注入的应用内对话框；未注入时回退 window.alert */
+  showOutlineAlert?: (message: string) => void;
+
   // 编辑输入框 CSS
   editInputStyle: ComputedRef<Record<string, string | number | undefined>>;
 
@@ -179,6 +192,8 @@ export function createInteractions(
   let rp = false;
   let rCtx: CanvasRenderingContext2D | null = null;
   let rDpr = 1;
+  /** 分组校验应用内对话框（由 host 通过 state.showOutlineAlert 注入） */
+  let outlineAlertApi: ((message: string) => void) | undefined;
   let drawCells: (rCtx: CanvasRenderingContext2D, sC2: number, eC2: number, sR2: number, eR2: number, rHs: number[]) => void = () => {};
   let drawBorders: (rCtx: CanvasRenderingContext2D, sC2: number, eC2: number, sR2: number, eR2: number, rHs: number[]) => void = () => {};
   let drawMergedCells: (ctx: CanvasRenderingContext2D, vx: number, vy: number, vw: number, vh: number) => void = () => {};
@@ -199,22 +214,87 @@ export function createInteractions(
   // 屏幕坐标 → 列/行（冻结感知：落在冻结列/行区时不减 scrollX/scrollY）
   function screenXToCol(x: number): number {
     const { frozenColumnsWidth } = s.getFrozenMetrics();
-    const logicalX = (frozenColumnsWidth > 0 && x < HEADER_WIDTH + frozenColumnsWidth)
-      ? (x - HEADER_WIDTH)
-      : (x - HEADER_WIDTH + s.scrollX.value);
+    const logicalX = (frozenColumnsWidth > 0 && x < hwOff() + frozenColumnsWidth)
+      ? (x - hwOff())
+      : (x - hwOff() + s.scrollX.value);
     return s.hitCol(logicalX);
   }
   function screenYToRow(y: number): number {
     const { frozenRowsHeight } = s.getFrozenMetrics();
-    const logicalY = (frozenRowsHeight > 0 && y < HEADER_HEIGHT + frozenRowsHeight)
-      ? (y - HEADER_HEIGHT)
-      : (y - HEADER_HEIGHT + s.scrollY.value);
+    const logicalY = (frozenRowsHeight > 0 && y < hhOff() + frozenRowsHeight)
+      ? (y - hhOff())
+      : (y - hhOff() + s.scrollY.value);
     return s.hitRow(logicalY);
   }
 
   const BORDER_COLOR = '#444';
   /** 单元格内下拉箭头的命中/绘制宽度 */
   const DV_DROPDOWN_W = 14;
+  // ---- 行列分组（Outline）绘制常量 ----
+  const OUTLINE_STEP = 9;      // 浮动显示时每个分组层级在行头/列头内占用的像素步长
+  const OUTLINE_PANEL = 16;    // 左上 Outline Level 控件条宽度像素（pinned 不滚动）
+  const OUTLINE_BTN = Math.min(OUTLINE_STEP - 1, 9); // ± 折叠按钮边长（浮动于表头内）
+  /** 行/列 gutter 总尺寸：浮动显示于行头/列头内，不再预留独立分区 → 恒为 0 */
+  function outlineGutterSize(_axis: 'row' | 'column'): number {
+    return 0;
+  }
+  /** 行分组 gutter 宽（整体网格/表头向右平移量）：浮动显示 → 0 */
+  const outlineGapX = () => outlineGutterSize('row');
+  /** 列分组 gutter 高（整体网格/表头向下平移量）：浮动显示 → 0 */
+  const outlineGapY = () => outlineGutterSize('column');
+  /** 含 Outline gutter 偏移后的表头左边界（网格起点 x） */
+  const hwOff = () => HEADER_WIDTH + outlineGapX();
+  /** 含 Outline gutter 偏移后的表头上边界（网格起点 y） */
+  const hhOff = () => HEADER_HEIGHT + outlineGapY();
+  /** 当前生效的 outline level（用于 Level 控件高亮）：
+   *  无折叠 → 最深等级；否则 = 处于折叠状态的最大层级。 */
+  function activeOutlineLevel(): number {
+    const rows = s.getRowOutlines();
+    const cols = s.getColumnOutlines();
+    if (!rows.length && !cols.length) return 0;
+    let maxL = 0;
+    let maxCollapsed = 0;
+    for (const o of rows) {
+      if (o.level > maxL) maxL = o.level;
+      if (o.collapsed && o.level > maxCollapsed) maxCollapsed = o.level;
+    }
+    for (const o of cols) {
+      if (o.level > maxL) maxL = o.level;
+      if (o.collapsed && o.level > maxCollapsed) maxCollapsed = o.level;
+    }
+    return maxCollapsed > 0 ? maxCollapsed : maxL;
+  }
+  /** 行分组折叠括号/±按钮的浮动锚点 x（行头带内，按层级从左往右排列，避开左上 Level 控件条）。 */
+  function rowOutlineAnchorX(o: { level: number }, maxRowL: number): number {
+    return OUTLINE_PANEL + 2 + (maxRowL - o.level) * OUTLINE_STEP;
+  }
+  /** 列分组折叠括号/±按钮的浮动锚点 y（列头带内，按层级从上往下排列）。 */
+  function colOutlineAnchorY(o: { level: number }, maxColL: number): number {
+    return 3 + (maxColL - o.level) * OUTLINE_STEP;
+  }
+  /**
+   * 为被分组覆盖的序号位分配交替背景色索引（0/1），相邻分组取不同色。
+   * 返回长度为 count 的数组，未分组位置为 -1。
+   * 规则：按 start 升序给分组排号并交替取色；某序号被多个分组覆盖时取 start 最小的外层分组色。
+   */
+  function buildOutlineColorMap(
+    outlines: Array<{ id: string; start: number; end: number }>,
+    count: number,
+  ): Int8Array {
+    const map = new Int8Array(count).fill(-1);
+    if (!outlines.length) return map;
+    const sorted = [...outlines].sort((a, b) => a.start - b.start);
+    const colorBy = new Map<string, number>();
+    sorted.forEach((o, i) => colorBy.set(o.id, i % 2));
+    for (const o of sorted) {
+      const c = colorBy.get(o.id)!;
+      const end = Math.min(o.end, count - 1);
+      for (let d = Math.max(0, o.start); d <= end; d++) {
+        if (map[d] === -1) map[d] = c;
+      }
+    }
+    return map;
+  }
 
   function render() {
     const wrapper = so.wrapperRef.value;
@@ -237,18 +317,24 @@ export function createInteractions(
     const sy = s.scrollY.value;
     const HW = HEADER_WIDTH;
     const HH = HEADER_HEIGHT;
+    const gX = outlineGapX();
+    const gY = outlineGapY();
+    const hw = HW + gX;
+    const hh = HH + gY;
     const cs = so.themeColors.value;
     const f = s.getFilter();
     const cP = s.colPositions.value;
     const rP = s.rowPositions.value;
-    const cW = s.colWidths.value;
+    // 分组交替背景色索引（-1 未分组；0/1 对应 outlineGroupBg1/2）
+    const rowGroupColor = buildOutlineColorMap(s.getRowOutlines(), s.rowCount);
+    const colGroupColor = buildOutlineColorMap(s.getColumnOutlines(), s.colCount);
 
     // ---- 冻结区域尺寸 & body 视口 ----
     const { frozenRowsHeight, frozenColumnsWidth } = s.getFrozenMetrics();
-    const bodyLeft = HW + frozenColumnsWidth;
-    const bodyTop = HH + frozenRowsHeight;
-    const bodyWidth = Math.max(0, W - HW - SB_SIZE - frozenColumnsWidth);
-    const bodyHeight = Math.max(0, H - HH - SB_SIZE - frozenRowsHeight);
+    const bodyLeft = hw + frozenColumnsWidth;
+    const bodyTop = hh + frozenRowsHeight;
+    const bodyWidth = Math.max(0, W - hw - SB_SIZE - frozenColumnsWidth);
+    const bodyHeight = Math.max(0, H - hh - SB_SIZE - frozenRowsHeight);
     const frozenEC = Math.max(0, s.freeze.cols - 1);
     const frozenER = Math.max(0, s.freeze.rows - 1);
 
@@ -256,13 +342,13 @@ export function createInteractions(
     const bodySC = Math.max(s.freeze.cols, s.hitCol(frozenColumnsWidth + sx));
     let bodyEC = bodySC;
     for (let c = bodySC; c < s.colCount; c++) {
-      if (HW + cP[c]! - sx >= W) break;
+      if (hw + cP[c]! - sx >= W) break;
       bodyEC = c;
     }
     const bodySR = Math.max(s.freeze.rows, s.hitRow(frozenRowsHeight + sy));
     let bodyER = bodySR;
     for (let r = bodySR; r < s.rowCount; r++) {
-      if (HH + rP[r]! - sy >= H) break;
+      if (hh + rP[r]! - sy >= H) break;
       bodyER = r;
     }
     // 并集区间（含冻结区域），供 drawCells/drawBorders 迭代后按区域裁剪
@@ -298,7 +384,7 @@ export function createInteractions(
     rCtx.fillStyle = cs.bg;
     rCtx.fillRect(0, 0, W, H);
     rCtx.fillStyle = cs.gridBg;
-    rCtx.fillRect(HW, HH, W - HW, H - HH);
+    rCtx.fillRect(hw, hh, W - hw, H - hh);
     const sel = s.selection.value;
     const ed = s.editingCell.value;
 
@@ -307,13 +393,15 @@ export function createInteractions(
       // 无任何数据验证规则时跳过全部判定（零开销快路径）
       const dvHasAny = s.dataValidations.length > 0;
       for (let row = sR2; row <= eR2; row++) {
+        if (s.isRowCollapsed(row)) continue; // 折叠行不绘制内容（避免 0 高度负 clip 的窄条残影）
         for (let col = sC2; col <= eC2; col++) {
+          if (s.isColumnCollapsed(col)) continue; // 折叠列不绘制内容（避免 0 宽度负 clip 的窄条残影）
           const mergeInfo = s.findMerge(col, row);
           // 合并单元格统一交由 drawMergedCells 按各 pane 视口相交绘制（支持跨冻结线拆分）
           if (mergeInfo) continue;
           const rect2 = s.cellToScreenRect(row, col);
           const x = rect2.x, y = rect2.y, cw = rect2.width, rh = rect2.height;
-          if (x + cw < HW || y + rh < HH || x > W || y > H) continue;
+          if (x + cw < hw || y + rh < hh || x > W || y > H) continue;
 
           // 查找高亮：整体填充（在背景色之后、选区/文本之前绘制）
           const hl = s.findHighlight ? s.findHighlight(col, row) : null;
@@ -339,7 +427,7 @@ export function createInteractions(
             // row/col 选择模式下按单个 cell 大小填色（Excel 风格「穿透合并单元格」）：
             // 即便 anchor 当前 cw/rh 是合并后的大小，也只填当前 cell(col,row) 对应的 cW[col]/rH[row]。
             if (s.selectionMode.value === 'row' || s.selectionMode.value === 'col') {
-              rCtx.fillRect(x, y, cW[col]!, rHs[row]!);
+              rCtx.fillRect(x, y, (cP[col + 1] ?? 0) - cP[col]!, rHs[row]!);
             } else {
               rCtx.fillRect(x, y, cw, rh);
             }
@@ -478,7 +566,9 @@ export function createInteractions(
     drawBorders = (rCtx: CanvasRenderingContext2D, sC2: number, eC2: number, sR2: number, eR2: number, _rHs: number[]): void => {
       rCtx.fillStyle = BORDER_COLOR;
       for (let row = sR2; row <= eR2; row++) {
+        if (s.isRowCollapsed(row)) continue; // 折叠行不绘制边框（避免 0 高度负宽残影）
         for (let col = sC2; col <= eC2; col++) {
+          if (s.isColumnCollapsed(col)) continue; // 折叠列不绘制边框（避免 0 宽度负宽残影）
           const mergeInfo = s.findMerge(col, row);
           // 合并单元格（含 anchor）统一交由 drawMergedCells / drawMergeBorder 绘制，
           // 避免旧坐标（anchor 不叠加 scrollX）导致 right 边/角方块钉在原位
@@ -486,7 +576,7 @@ export function createInteractions(
 
           const rect2 = s.cellToScreenRect(row, col);
           const x = rect2.x, y = rect2.y, cw = rect2.width, rh = rect2.height;
-          if (x + cw < HW || y + rh < HH || x > W || y > H) continue;
+          if (x + cw < hw || y + rh < hh || x > W || y > H) continue;
 
           const cell = s.cells[s.cellKey(col, row)];
           const ownBorder: Record<string, BorderSide | undefined> = {
@@ -561,6 +651,10 @@ export function createInteractions(
       const nf = typeof st?.numberFormat === 'string' ? st.numberFormat : '';
       const v = rawV ? formatNumber(rawV, nf, s.locale.value) : '';
       if (!v) return;
+      // 合并格落到折叠(0 尺寸)区域：无可绘制宽度/高度时直接返回，
+      // 避免 rect 负宽/负高产生的 ~10px 窄条残影
+      const availW0 = logicW - 10;
+      if (availW0 <= 0 || logicH - 2 <= 0) return;
       const fsz = s.cellFontSize(col, row);
       const ffa = typeof st?.fontFamily === 'string' && st.fontFamily ? st.fontFamily : DEFAULT_FONT_FAMILY;
       const cfMt = s.resolveConditionalFormat(col, row);
@@ -663,7 +757,7 @@ export function createInteractions(
         if (resolved && resolved.width && resolved.width > 0) {
           const sxSeg = cc < s.freeze.cols ? (HW + cP[cc]!) : (HW + cP[cc]! - sx);
           ctx.fillStyle = resolved.color || BORDER_COLOR;
-          ctx.fillRect(sxSeg, y, cW[cc]!, resolved.width);
+          ctx.fillRect(sxSeg, y, (cP[cc + 1] ?? 0) - cP[cc]!, resolved.width);
         }
       }
       if (!skipBottomAll) {
@@ -675,7 +769,7 @@ export function createInteractions(
           if (resolved && resolved.width && resolved.width > 0) {
             const sxSeg = cc < s.freeze.cols ? (HW + cP[cc]!) : (HW + cP[cc]! - sx);
             ctx.fillStyle = resolved.color || BORDER_COLOR;
-            ctx.fillRect(sxSeg, y + rh - resolved.width, cW[cc]!, resolved.width);
+            ctx.fillRect(sxSeg, y + rh - resolved.width, (cP[cc + 1] ?? 0) - cP[cc]!, resolved.width);
           }
         }
       }
@@ -880,147 +974,269 @@ export function createInteractions(
 
     // 列标题
     rCtx.fillStyle = cs.headerBg;
-    rCtx.fillRect(HW, 0, W - HW, HH);
+    rCtx.fillRect(hw, gY, W - hw, HH);
     for (let col = bodySC; col <= bodyEC; col++) {
-      const x = HW + cP[col]! - sx, cw = cW[col]!;
-      if (x + cw < HW || x > W) continue;
+      const x = hw + cP[col]! - sx;
+      if (s.isColumnCollapsed(col)) continue; // 折叠列不绘制表头字母，避免内容重叠
+      const cw = (cP[col + 1] ?? 0) - cP[col]!;
+      if (x + cw < hw || x > W) continue;
+      const gci = colGroupColor[col];
+      if (gci === 0) {
+        rCtx.fillStyle = cs.outlineGroupBg1;
+        rCtx.fillRect(x, gY, cw, HH);
+      } else if (gci === 1) {
+        rCtx.fillStyle = cs.outlineGroupBg2;
+        rCtx.fillRect(x, gY, cw, HH);
+      }
       if (sel && col >= sel.startCol && col <= sel.endCol) {
         rCtx.fillStyle = cs.selectionBg;
-        rCtx.fillRect(x, 0, cw, HH);
+        rCtx.fillRect(x, gY, cw, HH);
       }
       rCtx.strokeStyle = cs.headerBorder;
       rCtx.lineWidth = 0.5;
-      rCtx.strokeRect(x + 0.25, 0.25, cw - 0.5, HH - 0.5);
+      rCtx.strokeRect(x + 0.25, gY + 0.25, cw - 0.5, HH - 0.5);
       if (sel && col >= sel.startCol && col <= sel.endCol) {
         rCtx.strokeStyle = cs.activeCellBorder;
         rCtx.lineWidth = 2;
         rCtx.beginPath();
-        rCtx.moveTo(x, HH - 1);
-        rCtx.lineTo(x + cw, HH - 1);
+        rCtx.moveTo(x, gY + HH - 1);
+        rCtx.lineTo(x + cw, gY + HH - 1);
         rCtx.stroke();
       }
       rCtx.fillStyle = cs.headerText;
       rCtx.font = '11px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
       rCtx.textAlign = 'center';
       rCtx.textBaseline = 'middle';
-      rCtx.fillText(colToLabel(col), x + cw / 2, HH / 2);
+      rCtx.fillText(colToLabel(col), x + cw / 2, gY + HH / 2);
     }
     // 冻结列标题（不滚动，覆盖在 body 之上，防止 body 标题透过）
     if (frozenColumnsWidth > 0) {
       rCtx.fillStyle = cs.headerBg;
-      rCtx.fillRect(HW, 0, frozenColumnsWidth, HH);
+      rCtx.fillRect(hw, gY, frozenColumnsWidth, HH);
       for (let col = 0; col <= frozenEC; col++) {
-        const x = HW + cP[col]!, cw = cW[col]!;
-        if (x + cw < HW || x > W) continue;
+        const x = hw + cP[col]!;
+        if (s.isColumnCollapsed(col)) continue; // 折叠列不绘制表头字母
+        const cw = (cP[col + 1] ?? 0) - cP[col]!;
+        if (x + cw < hw || x > W) continue;
         if (sel && col >= sel.startCol && col <= sel.endCol) {
           rCtx.fillStyle = cs.selectionBg;
-          rCtx.fillRect(x, 0, cw, HH);
+          rCtx.fillRect(x, gY, cw, HH);
         }
         rCtx.strokeStyle = cs.headerBorder;
         rCtx.lineWidth = 0.5;
-        rCtx.strokeRect(x + 0.25, 0.25, cw - 0.5, HH - 0.5);
+        rCtx.strokeRect(x + 0.25, gY + 0.25, cw - 0.5, HH - 0.5);
         if (sel && col >= sel.startCol && col <= sel.endCol) {
           rCtx.strokeStyle = cs.activeCellBorder;
           rCtx.lineWidth = 2;
           rCtx.beginPath();
-          rCtx.moveTo(x, HH - 1);
-          rCtx.lineTo(x + cw, HH - 1);
+          rCtx.moveTo(x, gY + HH - 1);
+          rCtx.lineTo(x + cw, gY + HH - 1);
           rCtx.stroke();
         }
         rCtx.fillStyle = cs.headerText;
         rCtx.font = '11px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
         rCtx.textAlign = 'center';
         rCtx.textBaseline = 'middle';
-        rCtx.fillText(colToLabel(col), x + cw / 2, HH / 2);
+        rCtx.fillText(colToLabel(col), x + cw / 2, gY + HH / 2);
       }
     }
     rCtx.strokeStyle = cs.headerSep;
     rCtx.lineWidth = 1;
     rCtx.beginPath();
-    rCtx.moveTo(HW, HH + 0.5);
-    rCtx.lineTo(W, HH + 0.5);
+    rCtx.moveTo(hw, hh + 0.5);
+    rCtx.lineTo(W, hh + 0.5);
     rCtx.stroke();
 
-    // 行标题
+    // 行标题（背景含 Outline gutter，覆盖 [0, hw] 以与右移后的行号带对齐）
     rCtx.fillStyle = cs.headerBg;
-    rCtx.fillRect(0, HH, HW, H - HH);
+    rCtx.fillRect(0, hh, hw, H - hh);
     for (let row = bodySR; row <= bodyER; row++) {
       if (s.isRowHidden(row)) continue;
-      const y = HH + rP[row]! - sy, rh = rH[row]!;
-      if (y + rh < HH || y > H) continue;
+      const y = hh + rP[row]! - sy, rh = rH[row]!;
+      if (y + rh < hh || y > H) continue;
+      const gci = rowGroupColor[row];
+      if (gci === 0) {
+        rCtx.fillStyle = cs.outlineGroupBg1;
+        rCtx.fillRect(gX, y, HW, rh);
+      } else if (gci === 1) {
+        rCtx.fillStyle = cs.outlineGroupBg2;
+        rCtx.fillRect(gX, y, HW, rh);
+      }
       if (sel && row >= sel.startRow && row <= sel.endRow) {
         rCtx.fillStyle = cs.selectionBg;
-        rCtx.fillRect(0, y, HW, rh);
+        rCtx.fillRect(gX, y, HW, rh);
       }
       rCtx.strokeStyle = cs.headerBorder;
       rCtx.lineWidth = 0.5;
-      rCtx.strokeRect(0.25, y + 0.25, HW - 0.5, rh - 0.5);
+      rCtx.strokeRect(gX + 0.25, y + 0.25, HW - 0.5, rh - 0.5);
       if (sel && row >= sel.startRow && row <= sel.endRow) {
         rCtx.strokeStyle = cs.activeCellBorder;
         rCtx.lineWidth = 2;
         rCtx.beginPath();
-        rCtx.moveTo(HW - 1, y);
-        rCtx.lineTo(HW - 1, y + rh);
+        rCtx.moveTo(gX + HW - 1, y);
+        rCtx.lineTo(gX + HW - 1, y + rh);
         rCtx.stroke();
       }
       rCtx.fillStyle = cs.headerText;
       rCtx.font = '11px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
       rCtx.textAlign = 'center';
       rCtx.textBaseline = 'middle';
-      rCtx.fillText(String(row + 1), HW / 2, y + rh / 2 + 0.5);
+      rCtx.fillText(String(row + 1), gX + HW / 2, y + rh / 2 + 0.5);
     }
     // 冻结行标题（不滚动，覆盖在 body 之上）
     if (frozenRowsHeight > 0) {
       rCtx.fillStyle = cs.headerBg;
-      rCtx.fillRect(0, HH, HW, frozenRowsHeight);
+      rCtx.fillRect(0, hh, hw, frozenRowsHeight);
       for (let row = 0; row <= frozenER; row++) {
         if (s.isRowHidden(row)) continue;
-        const y = HH + rP[row]!, rh = rH[row]!;
-        if (y + rh < HH || y > H) continue;
+        const y = hh + rP[row]!, rh = rH[row]!;
+        if (y + rh < hh || y > H) continue;
         if (sel && row >= sel.startRow && row <= sel.endRow) {
           rCtx.fillStyle = cs.selectionBg;
-          rCtx.fillRect(0, y, HW, rh);
+          rCtx.fillRect(gX, y, HW, rh);
         }
         rCtx.strokeStyle = cs.headerBorder;
         rCtx.lineWidth = 0.5;
-        rCtx.strokeRect(0.25, y + 0.25, HW - 0.5, rh - 0.5);
+        rCtx.strokeRect(gX + 0.25, y + 0.25, HW - 0.5, rh - 0.5);
         if (sel && row >= sel.startRow && row <= sel.endRow) {
           rCtx.strokeStyle = cs.activeCellBorder;
           rCtx.lineWidth = 2;
           rCtx.beginPath();
-          rCtx.moveTo(HW - 1, y);
-          rCtx.lineTo(HW - 1, y + rh);
+          rCtx.moveTo(gX + HW - 1, y);
+          rCtx.lineTo(gX + HW - 1, y + rh);
           rCtx.stroke();
         }
         rCtx.fillStyle = cs.headerText;
         rCtx.font = '11px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
         rCtx.textAlign = 'center';
         rCtx.textBaseline = 'middle';
-        rCtx.fillText(String(row + 1), HW / 2, y + rh / 2 + 0.5);
+        rCtx.fillText(String(row + 1), gX + HW / 2, y + rh / 2 + 0.5);
       }
     }
     rCtx.strokeStyle = cs.headerSep;
     rCtx.lineWidth = 1;
     rCtx.beginPath();
-    rCtx.moveTo(HW + 0.5, HH);
-    rCtx.lineTo(HW + 0.5, H);
+    rCtx.moveTo(hw + 0.5, hh);
+    rCtx.lineTo(hw + 0.5, H);
     rCtx.stroke();
 
     // 左上角全选按钮区（行头 × 列头交汇）：用 headerBg 填充与表头统一，并绘制指向左上的全选三角。
     // 否则该区域仅被整屏清屏填充为 cs.bg，与列头/行头颜色不一致、且无按钮视觉，显得被遮盖。
     rCtx.fillStyle = cs.headerBg;
-    rCtx.fillRect(0, 0, HW, HH);
+    rCtx.fillRect(gX, gY, HW, HH);
     rCtx.strokeStyle = cs.headerSep;
     rCtx.lineWidth = 1;
-    rCtx.strokeRect(0.5, 0.5, HW - 1, HH - 1);
+    rCtx.strokeRect(gX + 0.5, gY + 0.5, HW - 1, HH - 1);
     const tSize = Math.min(HW, HH) * 0.32;
     rCtx.fillStyle = cs.activeCellBorder;
     rCtx.beginPath();
-    rCtx.moveTo(HW - 1, HH - 1 - tSize);
-    rCtx.lineTo(HW - 1 - tSize, HH - 1);
-    rCtx.lineTo(HW - 1, HH - 1);
+    rCtx.moveTo(gX + HW - 1, gY + HH - 1 - tSize);
+    rCtx.lineTo(gX + HW - 1 - tSize, gY + HH - 1);
+    rCtx.lineTo(gX + HW - 1, gY + HH - 1);
     rCtx.closePath();
     rCtx.fill();
+
+    // ---- 行列分组 Outline 控件：浮动于列头/行头带内的 ±/折叠括号 + 左上 Level 控件 ----
+    const maxRowL = s.getOutlineLevel('row');
+    const maxColL = s.getOutlineLevel('column');
+    // 行分组：竖向折叠括号 + ± 按钮，浮动于行号带内（x∈[OUTLINE_PANEL, HW]）
+    if (s.getRowOutlines().length) {
+      for (const o of s.getRowOutlines()) {
+        const xc = rowOutlineAnchorX(o, maxRowL);
+        const gyT = hh + rP[o.start]! - sy;
+        const eIdx = Math.min(o.end + 1, rP.length - 1);
+        const gyB = hh + rP[eIdx]! - sy;
+        // 竖向括号连线穿过 ± 按钮中心，用较淡的边框色降低与行号的重叠干扰
+        const bracketX = Math.round(xc);
+        if (gyB - gyT >= 1) {
+          rCtx.strokeStyle = cs.headerBorder;
+          rCtx.lineWidth = 1;
+          rCtx.beginPath();
+          rCtx.moveTo(bracketX, Math.round(gyT) + 2);
+          rCtx.lineTo(bracketX, Math.max(1, Math.round(gyB) - 2));
+          rCtx.stroke();
+        }
+        const bx = xc - OUTLINE_BTN / 2;
+        const by = gyT - OUTLINE_BTN / 2;
+        rCtx.fillStyle = cs.headerBg;
+        rCtx.strokeStyle = cs.headerText;
+        rCtx.lineWidth = 1;
+        roundRectPath(rCtx, Math.round(bx), Math.round(by), OUTLINE_BTN, OUTLINE_BTN, 2);
+        rCtx.fill();
+        rCtx.stroke();
+        rCtx.strokeStyle = cs.headerText;
+        rCtx.lineWidth = 1.4;
+        rCtx.beginPath();
+        rCtx.moveTo(xc - 2, gyT);
+        rCtx.lineTo(xc + 2, gyT);
+        rCtx.stroke();
+        if (o.collapsed) {
+          rCtx.beginPath();
+          rCtx.moveTo(xc, gyT - 2);
+          rCtx.lineTo(xc, gyT + 2);
+          rCtx.stroke();
+        }
+      }
+    }
+    // 列分组：横向折叠括号 + ± 按钮，浮动于列号带内（y∈[0, HH]）
+    if (s.getColumnOutlines().length) {
+      for (const o of s.getColumnOutlines()) {
+        const yc = colOutlineAnchorY(o, maxColL);
+        const gxL = hw + cP[o.start]! - sx;
+        const eIdx = Math.min(o.end + 1, cP.length - 1);
+        const gxR = hw + cP[eIdx]! - sx;
+        const bracketY = Math.round(yc);
+        if (gxR - gxL >= 1) {
+          rCtx.strokeStyle = cs.headerBorder;
+          rCtx.lineWidth = 1;
+          rCtx.beginPath();
+          rCtx.moveTo(Math.round(gxL) + 2, bracketY);
+          rCtx.lineTo(Math.max(1, Math.round(gxR) - 2), bracketY);
+          rCtx.stroke();
+        }
+        const bx = gxL - OUTLINE_BTN / 2;
+        const by = yc - OUTLINE_BTN / 2;
+        rCtx.fillStyle = cs.headerBg;
+        rCtx.strokeStyle = cs.headerText;
+        rCtx.lineWidth = 1;
+        roundRectPath(rCtx, Math.round(bx), Math.round(by), OUTLINE_BTN, OUTLINE_BTN, 2);
+        rCtx.fill();
+        rCtx.stroke();
+        rCtx.strokeStyle = cs.headerText;
+        rCtx.lineWidth = 1.4;
+        rCtx.beginPath();
+        rCtx.moveTo(gxL - 2, yc);
+        rCtx.lineTo(gxL + 2, yc);
+        rCtx.stroke();
+        if (o.collapsed) {
+          rCtx.beginPath();
+          rCtx.moveTo(gxL, yc - 2);
+          rCtx.lineTo(gxL, yc + 2);
+          rCtx.stroke();
+        }
+      }
+    }
+    // 左上 Outline Level 控件条（pinned 不滚动，控制整体显示深度）
+    const maxLvl = Math.max(maxRowL, maxColL);
+    if (maxLvl > 0) {
+      const aL = activeOutlineLevel();
+      rCtx.fillStyle = cs.headerBg;
+      rCtx.fillRect(0, 0, OUTLINE_PANEL, maxLvl * OUTLINE_PANEL);
+      for (let L = 1; L <= maxLvl; L++) {
+        const cy0 = (L - 1) * OUTLINE_PANEL;
+        rCtx.fillStyle = L === aL ? cs.selectionBg : cs.headerBg;
+        rCtx.strokeStyle = cs.headerBorder;
+        rCtx.lineWidth = 1;
+        roundRectPath(rCtx, 1, cy0 + 1, OUTLINE_PANEL - 2, OUTLINE_PANEL - 2, 2);
+        rCtx.fill();
+        rCtx.stroke();
+        rCtx.fillStyle = L === aL ? cs.activeCellBorder : cs.headerText;
+        rCtx.font = '9px -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif';
+        rCtx.textAlign = 'center';
+        rCtx.textBaseline = 'middle';
+        rCtx.fillText(String(L), OUTLINE_PANEL / 2 + 0.5, cy0 + OUTLINE_PANEL / 2 + 0.5);
+      }
+    }
 
     // 填充柄 + AutoFill 预览（绘制在 selection / active cell 之后、editor 之前）
     drawFillHandle(rCtx, cs);
@@ -1038,6 +1254,10 @@ export function createInteractions(
     const H = rect.height;
     const HW = HEADER_WIDTH;
     const HH = HEADER_HEIGHT;
+    const gX = outlineGapX();
+    const gY = outlineGapY();
+    const hw = HW + gX;
+    const hh = HH + gY;
     const cs = so.themeColors.value;
     const cP = s.colPositions.value;
     const rP = s.rowPositions.value;
@@ -1053,22 +1273,22 @@ export function createInteractions(
 
     const { frozenRowsHeight, frozenColumnsWidth } = s.getFrozenMetrics();
     if (frozenRowsHeight <= 0 && frozenColumnsWidth <= 0) return;
-    const bodyLeft = HW + frozenColumnsWidth;
-    const bodyTop = HH + frozenRowsHeight;
-    const bodyWidth = Math.max(0, W - HW - SB_SIZE - frozenColumnsWidth);
-    const bodyHeight = Math.max(0, H - HH - SB_SIZE - frozenRowsHeight);
+    const bodyLeft = hw + frozenColumnsWidth;
+    const bodyTop = hh + frozenRowsHeight;
+    const bodyWidth = Math.max(0, W - hw - SB_SIZE - frozenColumnsWidth);
+    const bodyHeight = Math.max(0, H - hh - SB_SIZE - frozenRowsHeight);
     const frozenEC = Math.max(0, s.freeze.cols - 1);
     const frozenER = Math.max(0, s.freeze.rows - 1);
     const bodySC = Math.max(s.freeze.cols, s.hitCol(frozenColumnsWidth + sx));
     let bodyEC = bodySC;
     for (let c = bodySC; c < s.colCount; c++) {
-      if (HW + cP[c]! - sx >= W) break;
+      if (hw + cP[c]! - sx >= W) break;
       bodyEC = c;
     }
     const bodySR = Math.max(s.freeze.rows, s.hitRow(frozenRowsHeight + sy));
     let bodyER = bodySR;
     for (let r = bodySR; r < s.rowCount; r++) {
-      if (HH + rP[r]! - sy >= H) break;
+      if (hh + rP[r]! - sy >= H) break;
       bodyER = r;
     }
     let sC = bodySC, eC = bodyEC, sR = bodySR, eR = bodyER;
@@ -1105,7 +1325,7 @@ export function createInteractions(
           if (mergeInfo && !(col === mergeInfo.range.startCol && row === mergeInfo.range.startRow)) continue;
           const rect2 = s.cellToScreenRect(row, col);
           const x = rect2.x, y = rect2.y, cw = rect2.width, rh = rect2.height;
-          if (x + cw < HW || y + rh < HH || x > W || y > H) continue;
+          if (x + cw < hw || y + rh < hh || x > W || y > H) continue;
           const cell = s.cells[s.cellKey(col, row)];
           const ownBorder: Record<string, BorderSide | undefined> = {
             top: s.getCellBorderSide(cell, 'top'),
@@ -1203,10 +1423,12 @@ export function createInteractions(
     const sel = s.selection.value;
     if (!sel || s.editingCell.value) return;
     const rect = s.cellToScreenRect(sel.endRow, sel.endCol);
-    // Merge 兼容：源区域与 merge 部分相交时填充柄变灰，不可拖拽
-    const mergeOk = validateMergeCompatibility(sel, sel, s.merges);
     const hx = rect.x + rect.width - FILL_HANDLE_SIZE / 2;
     const hy = rect.y + rect.height - FILL_HANDLE_SIZE / 2;
+    // 滚动后选中单元格可能被推出可视区：若填充柄进入表头（列头/行头）区域则不绘制，避免叠加错位
+    if (hx < hwOff() || hy < hhOff()) return;
+    // Merge 兼容：源区域与 merge 部分相交时填充柄变灰，不可拖拽
+    const mergeOk = validateMergeCompatibility(sel, sel, s.merges).ok;
     ctx.fillStyle = mergeOk ? cs.activeCellBorder : cs.scrollTrack;
     ctx.fillRect(hx, hy, FILL_HANDLE_SIZE, FILL_HANDLE_SIZE);
     ctx.strokeStyle = '#fff';
@@ -1224,6 +1446,8 @@ export function createInteractions(
     const x = r0.x, y = r0.y;
     const w = r1.x + r1.width - x;
     const h = r1.y + r1.height - y;
+    // 预览区域进入表头（列头/行头）时不再绘制，避免叠加错位
+    if (y < hhOff() || x < hwOff()) return;
     ctx.fillStyle = cs.selectionBg;
     ctx.fillRect(x, y, w, h);
     ctx.strokeStyle = cs.activeCellBorder;
@@ -1644,7 +1868,7 @@ export function createInteractions(
   /** 在 Header 单元格右侧绘制筛选按钮：带背景色块（2px 圆角、2px 外边距）+ toolbar 同款下箭头 caret。
    *  active=true（该列已应用筛选）→ 蓝色背景 + 白色箭头；否则浅灰背景 + 深灰箭头。
    *  (cellX, cellY, cellW, cellH) 为 Header 单元格的屏幕矩形。 */
-/**
+  /**
    * 绘制数据验证「单元格内下拉箭头」。
    * 该指示器是纯 UI 层装饰：不写入 cell style / styleId，也不进入 StylePool。
    * 仅在单元格存在 list 验证且 showDropdown !== false 时绘制（普通单元格不绘制）。
@@ -1828,6 +2052,148 @@ export function createInteractions(
       ctcHandler = null;
     }
   }
+
+  // ---- 行列分组（Outline）交互：命中测试 / 分组 / 取消分组 / 展开折叠 / Level ----
+  type OutlineHit = { kind: 'toggle'; outlineId: string } | { kind: 'level'; level: number };
+  /** 命中测试：返回命中的 ± 按钮或左上 Level 按钮；否则 null。坐标 = getCanvasXY 内的画板坐标。 */
+  function hitTestOutlineControl(x: number, y: number): OutlineHit | null {
+    const maxRowL = s.getOutlineLevel('row');
+    const maxColL = s.getOutlineLevel('column');
+    const maxLvl = Math.max(maxRowL, maxColL);
+    // 左上 pinned Level 控件条
+    if (x >= 0 && x < OUTLINE_PANEL && maxLvl > 0 && y >= 0 && y < maxLvl * OUTLINE_PANEL) {
+      const L = Math.floor(y / OUTLINE_PANEL) + 1;
+      if (L >= 1 && L <= maxLvl) return { kind: 'level', level: L };
+    }
+    const rP = s.rowPositions.value;
+    const cP = s.colPositions.value;
+    const sx = s.scrollX.value;
+    const sy = s.scrollY.value;
+    const tol = OUTLINE_BTN / 2 + 1;
+    // 行 ±：浮动于行号带内（y>=hh），按钮中心 = (rowOutlineAnchorX, 分组起始行顶边)
+    if (y >= hhOff()) {
+      for (const o of s.getRowOutlines()) {
+        const xc = rowOutlineAnchorX(o, maxRowL);
+        const gyT = hhOff() + rP[o.start]! - sy;
+        if (Math.abs(x - xc) <= tol && Math.abs(y - gyT) <= tol) {
+          return { kind: 'toggle', outlineId: o.id };
+        }
+      }
+    }
+    // 列 ±：浮动于列号带内（x>=hw），按钮中心 = (分组起始列左边, colOutlineAnchorY)
+    if (x >= hwOff()) {
+      for (const o of s.getColumnOutlines()) {
+        const yc = colOutlineAnchorY(o, maxColL);
+        const gxL = hwOff() + cP[o.start]! - sx;
+        if (Math.abs(y - yc) <= tol && Math.abs(x - gxL) <= tol) {
+          return { kind: 'toggle', outlineId: o.id };
+        }
+      }
+    }
+    return null;
+  }
+  /** 将 Level 控件设为 L：高于 L 的层级全部折叠、≤L 的全部展开（一次撤消） */
+  function applyOutlineLevel(level: number) {
+    const rows = s.getRowOutlines();
+    const cols = s.getColumnOutlines();
+    let changed = false;
+    for (const o of rows) if (o.collapsed !== (o.level > level)) changed = true;
+    for (const o of cols) if (o.collapsed !== (o.level > level)) changed = true;
+    if (!changed) return;
+    us.saveUndo();
+    for (const o of rows) if (o.collapsed !== (o.level > level)) s.setOutlineCollapsed(o.id, o.level > level, true);
+    for (const o of cols) if (o.collapsed !== (o.level > level)) s.setOutlineCollapsed(o.id, o.level > level, true);
+    so.emitModelData();
+    scheduleRender();
+  }
+  /** 取消分组：删除被选区完整覆盖的分组（每个分组由 removeOutline 内部保存一次 undo） */
+  function removeOutlinesBulk(ids: string[]) {
+    for (const id of ids) s.removeOutline(id);
+    so.emitModelData();
+    scheduleRender();
+  }
+  /** 根据当前选区按 axis 分组；返回 true 表示已创建 */
+  function groupSelection(axis: 'row' | 'column'): boolean {
+    const sel = s.selection.value;
+    if (!sel) {
+      alertOutline('outlineNeedRowsOrColumns');
+      return false;
+    }
+    let r: OutlineValidationResult;
+    if (axis === 'row') {
+      if (sel.startCol !== 0 || sel.endCol !== s.colCount - 1) {
+        alertOutline('outlineNeedRowsOrColumns');
+        return false;
+      }
+      if (sel.startRow === sel.endRow) {
+        alertOutline('outlineInvalidRange');
+        return false;
+      }
+      r = s.addRowGroup(sel.startRow, sel.endRow);
+    } else {
+      if (sel.startRow !== 0 || sel.endRow !== s.rowCount - 1) {
+        alertOutline('outlineNeedRowsOrColumns');
+        return false;
+      }
+      if (sel.startCol === sel.endCol) {
+        alertOutline('outlineInvalidRange');
+        return false;
+      }
+      r = s.addColumnGroup(sel.startCol, sel.endCol);
+    }
+    if (!r.ok) {
+      alertOutline(r.code === 'outlineCrossing' ? 'outlineCrossing' : r.code === 'outlineTooDeep' ? 'outlineTooDeep' : 'outlineInvalidRange');
+      return false;
+    }
+    // addRowGroup/addColumnGroup 内部已 saveUndo + render + emit
+    return true;
+  }
+  /** 取消分组：仅删除被选区完整覆盖的分组；否则提示 */
+  function ungroupSelection(axis: 'row' | 'column'): boolean {
+    const sel = s.selection.value;
+    if (!sel) {
+      alertOutline('outlineNeedRowsOrColumns');
+      return false;
+    }
+    if (axis === 'row' && (sel.startCol !== 0 || sel.endCol !== s.colCount - 1)) {
+      alertOutline('outlineNeedRowsOrColumns');
+      return false;
+    }
+    if (axis === 'column' && (sel.startRow !== 0 || sel.endRow !== s.rowCount - 1)) {
+      alertOutline('outlineNeedRowsOrColumns');
+      return false;
+    }
+    const outlines = axis === 'row' ? s.getRowOutlines() : s.getColumnOutlines();
+    const rs = axis === 'row' ? sel.startRow : sel.startCol;
+    const re = axis === 'row' ? sel.endRow : sel.endCol;
+    const toRemove = outlines.filter((o) => rs <= o.start && o.end <= re);
+    if (!toRemove.length) {
+      alertOutline('outlineUngroupPartial');
+      return false;
+    }
+    removeOutlinesBulk(toRemove.map((o) => o.id));
+    return true;
+  }
+  /** 将某方向全部分组折叠或展开（一次撤消） */
+  function setAxisCollapsed(axis: 'row' | 'column', collapsed: boolean) {
+    const os = axis === 'row' ? s.getRowOutlines() : s.getColumnOutlines();
+    if (!os.length) return;
+    if (os.every((o) => o.collapsed === collapsed)) return;
+    us.saveUndo();
+    for (const o of os) s.setOutlineCollapsed(o.id, collapsed, true);
+    so.emitModelData();
+    scheduleRender();
+  }
+  /** 分组校验失败提示：优先使用宿主注入的应用内对话框；未注入时回退 window.alert */
+  function alertOutline(key: string) {
+    const message = t(s.locale.value, key);
+    if (outlineAlertApi) {
+      outlineAlertApi(message);
+      return;
+    }
+    window.alert(message);
+  }
+
   function showCtx(x: number, y: number, items: ContextMenuItem[]) {
     rdl();
     const mw = 140;
@@ -2014,6 +2380,13 @@ export function createInteractions(
         s.setFreeze(row + 1, s.freeze.cols);
         scheduleRender();
       } },
+      { label: t(s.locale.value, 'outlineGroup'), children: [
+        { label: t(s.locale.value, 'outlineAddRowGroup'), action: () => groupSelection('row') },
+        { label: t(s.locale.value, 'outlineUngroupRows'), action: () => ungroupSelection('row') },
+        { label: t(s.locale.value, 'outlineClear'), action: () => s.clearRowGroups() },
+        { label: t(s.locale.value, 'outlineExpandAll'), action: () => setAxisCollapsed('row', false) },
+        { label: t(s.locale.value, 'outlineCollapseAll'), action: () => setAxisCollapsed('row', true) },
+      ] },
     ]);
   }
   function onColHdrCtx(e: MouseEvent, col: number) {
@@ -2070,6 +2443,13 @@ export function createInteractions(
         s.setFreeze(s.freeze.rows, col + 1);
         scheduleRender();
       } },
+      { label: t(s.locale.value, 'outlineGroup'), children: [
+        { label: t(s.locale.value, 'outlineAddColumnGroup'), action: () => groupSelection('column') },
+        { label: t(s.locale.value, 'outlineUngroupColumns'), action: () => ungroupSelection('column') },
+        { label: t(s.locale.value, 'outlineClear'), action: () => s.clearColumnGroups() },
+        { label: t(s.locale.value, 'outlineExpandAll'), action: () => setAxisCollapsed('column', false) },
+        { label: t(s.locale.value, 'outlineCollapseAll'), action: () => setAxisCollapsed('column', true) },
+      ] },
     ]);
   }
   function onCellCtx(e: MouseEvent, c: number, r: number) {
@@ -2306,16 +2686,16 @@ export function createInteractions(
 
   // ============ 滚动条 ============
   function gridVW() {
-    return Math.max(0, so.viewSize.w - HEADER_WIDTH - SB_SIZE);
+    return Math.max(0, so.viewSize.w - hwOff() - SB_SIZE);
   }
   function gridVH() {
-    return Math.max(0, so.viewSize.h - HEADER_HEIGHT - SB_SIZE);
+    return Math.max(0, so.viewSize.h - hhOff() - SB_SIZE);
   }
   const hScrollbarW = computed(() => Math.max(0, gridVW() - s.getFrozenMetrics().frozenColumnsWidth));
   const vScrollbarH = computed(() => Math.max(0, gridVH() - s.getFrozenMetrics().frozenRowsHeight));
   // 滚动条容器偏移：水平条左端、垂直条顶端需避开冻结区域
-  const hScrollbarLeft = computed(() => HEADER_WIDTH + s.getFrozenMetrics().frozenColumnsWidth);
-  const vScrollbarTop = computed(() => HEADER_HEIGHT + s.getFrozenMetrics().frozenRowsHeight);
+  const hScrollbarLeft = computed(() => hwOff() + s.getFrozenMetrics().frozenColumnsWidth);
+  const vScrollbarTop = computed(() => hhOff() + s.getFrozenMetrics().frozenRowsHeight);
   const hTrackW = computed(() => Math.max(0, hScrollbarW.value - 11 * 2));
   const vTrackH = computed(() => Math.max(0, vScrollbarH.value - 11 * 2));
   const hThumbW = computed(() => {
@@ -2422,7 +2802,7 @@ export function createInteractions(
     const sel = s.selection.value;
     if (!sel || s.editingCell.value) return false;
     // Merge 部分相交时禁用填充柄
-    if (!validateMergeCompatibility(sel, sel, s.merges)) return false;
+    if (!validateMergeCompatibility(sel, sel, s.merges).ok) return false;
     const rect = s.cellToScreenRect(sel.endRow, sel.endCol);
     const hx = rect.x + rect.width - FILL_HANDLE_SIZE;
     const hy = rect.y + rect.height - FILL_HANDLE_SIZE;
@@ -2488,9 +2868,9 @@ export function createInteractions(
     const EDGE = 30;
     const vw = so.viewSize.w, vh = so.viewSize.h;
     let dx = 0, dy = 0;
-    if (x < HEADER_WIDTH + EDGE) dx = -(HEADER_WIDTH + EDGE - x);
+    if (x < hwOff() + EDGE) dx = -(hwOff() + EDGE - x);
     else if (x > vw - SB_SIZE - EDGE) dx = x - (vw - SB_SIZE - EDGE);
-    if (y < HEADER_HEIGHT + EDGE) dy = -(HEADER_HEIGHT + EDGE - y);
+    if (y < hhOff() + EDGE) dy = -(hhOff() + EDGE - y);
     else if (y > vh - SB_SIZE - EDGE) dy = y - (vh - SB_SIZE - EDGE);
     if (dx !== 0 || dy !== 0) {
       autoScrollDir = { x: dx, y: dy };
@@ -2540,8 +2920,20 @@ export function createInteractions(
       openFilterPopup(hitFilter);
       return;
     }
-    if (p.y < HEADER_HEIGHT && p.x >= HEADER_WIDTH) {
-      const gx = p.x - HEADER_WIDTH + s.scrollX.value;
+    // 行列分组 Outline 控件命中（± 展开折叠 / Level 控件）
+    const hitOl = hitTestOutlineControl(p.x, p.y);
+    if (hitOl) {
+      if (hitOl.kind === 'toggle') {
+        s.toggleOutline(hitOl.outlineId);
+        scheduleRender();
+        so.emitModelData();
+      } else if (hitOl.kind === 'level') {
+        applyOutlineLevel(hitOl.level);
+      }
+      return;
+    }
+    if (p.y < hhOff() && p.x >= hwOff()) {
+      const gx = p.x - hwOff() + s.scrollX.value;
       const c = screenXToCol(p.x);
       const cRight = c >= 0 ? (s.cellToScreenRect(0, c).x + s.colWidths.value[c]!) : -1;
       if (c >= 0 && Math.abs(p.x - cRight) <= 4) {
@@ -2554,8 +2946,8 @@ export function createInteractions(
         return;
       }
     }
-    if (p.x < HEADER_WIDTH && p.y >= HEADER_HEIGHT) {
-      const gy = p.y - HEADER_HEIGHT + s.scrollY.value;
+    if (p.x < hwOff() && p.y >= hhOff()) {
+      const gy = p.y - hhOff() + s.scrollY.value;
       const r = screenYToRow(p.y);
       const rBottom = r >= 0 ? (s.cellToScreenRect(r, 0).y + s.getRowHeight(r)) : -1;
       if (r >= 0 && Math.abs(p.y - rBottom) <= 4) {
@@ -2583,14 +2975,14 @@ export function createInteractions(
       }
       return;
     }
-    if (p.x < HEADER_WIDTH || p.y < HEADER_HEIGHT) {
+    if (p.x < hwOff() || p.y < hhOff()) {
       // 点击行列头/全选区：只有"在编辑中 / 公式栏正在 focus / 用户改过公式栏"才先提交，否则纯选区切换跳过（避免误清空原 activeCell）
       {
         const fbRef = so.formulaBarRef.value;
         const focusOnFb = !!(fbRef && typeof document !== 'undefined' && document.activeElement === fbRef);
         if (s.editingCell.value || focusOnFb || fbDirty) acceptFormulaBarEdit();
       }
-      if (p.y < HEADER_HEIGHT && p.x >= HEADER_WIDTH) {
+      if (p.y < hhOff() && p.x >= hwOff()) {
         const c = screenXToCol(p.x);
         if (c >= 0) {
           s.selectRange(c, 0, c, s.rowCount - 1, 'col');
@@ -2598,7 +2990,7 @@ export function createInteractions(
           drgSC = c;
           drgSR = 0;
         }
-      } else if (p.x < HEADER_WIDTH && p.y >= HEADER_HEIGHT) {
+      } else if (p.x < hwOff() && p.y >= hhOff()) {
         const r = screenYToRow(p.y);
         if (r >= 0) {
           s.selectRange(0, r, s.colCount - 1, r, 'row');
@@ -2606,7 +2998,7 @@ export function createInteractions(
           drgSC = 0;
           drgSR = r;
         }
-      } else if (p.x < HEADER_WIDTH && p.y < HEADER_HEIGHT) {
+      } else if (p.x < hwOff() && p.y < hhOff()) {
         s.selectAll();
       }
       scheduleRender();
@@ -2637,7 +3029,7 @@ export function createInteractions(
   function onMouseMove(e: MouseEvent) {
     if (isResizingC) {
       const x = getCanvasXY(e, so.canvasRef.value).x;
-      const d = (x - HEADER_WIDTH + s.scrollX.value) - rszSG;
+      const d = (x - hwOff() + s.scrollX.value) - rszSG;
       const newW = rszSS + d;
       if (newW >= MIN_COL_WIDTH && newW <= MAX_COL_WIDTH) s.colWidths.value[rszTC] = newW;
       else if (newW < MIN_COL_WIDTH) s.colWidths.value[rszTC] = MIN_COL_WIDTH;
@@ -2647,7 +3039,7 @@ export function createInteractions(
     }
     if (isResizingR) {
       const y = getCanvasXY(e, so.canvasRef.value).y;
-      const d = (y - HEADER_HEIGHT + s.scrollY.value) - rszSG;
+      const d = (y - hhOff() + s.scrollY.value) - rszSG;
       const newH = rszSS + d;
       if (newH >= MIN_ROW_HEIGHT && newH <= MAX_ROW_HEIGHT) s.rowHeights.value[rszTR] = newH;
       else if (newH < MIN_ROW_HEIGHT) s.rowHeights.value[rszTR] = MIN_ROW_HEIGHT;
@@ -2669,6 +3061,10 @@ export function createInteractions(
         return;
       }
       const p = getCanvasXY(e, cvs);
+      if (hitTestOutlineControl(p.x, p.y)) {
+        cvs.style.cursor = 'pointer';
+        return;
+      }
       if (isFilterButtonHit(p.x, p.y) >= 0) {
         cvs.style.cursor = 'pointer';
         return;
@@ -2677,7 +3073,7 @@ export function createInteractions(
         cvs.style.cursor = 'pointer';
         return;
       }
-      if (p.y < HEADER_HEIGHT && p.x >= HEADER_WIDTH) {
+      if (p.y < hhOff() && p.x >= hwOff()) {
         const c = screenXToCol(p.x);
         const cRight = c >= 0 ? (s.cellToScreenRect(0, c).x + s.colWidths.value[c]!) : -1;
         if (c >= 0 && Math.abs(p.x - cRight) <= 4) {
@@ -2685,7 +3081,7 @@ export function createInteractions(
           return;
         }
       }
-      if (p.x < HEADER_WIDTH && p.y >= HEADER_HEIGHT) {
+      if (p.x < hwOff() && p.y >= hhOff()) {
         const r = screenYToRow(p.y);
         const rBottom = r >= 0 ? (s.cellToScreenRect(r, 0).y + s.getRowHeight(r)) : -1;
         if (r >= 0 && Math.abs(p.y - rBottom) <= 4) {
@@ -2703,11 +3099,11 @@ export function createInteractions(
     }
     const p = getCanvasXY(e, so.canvasRef.value);
     if (drgSC < 0 || drgSR < 0) return;
-    if (p.x < HEADER_WIDTH || p.y < HEADER_HEIGHT) {
-      if (p.y < HEADER_HEIGHT && p.x >= HEADER_WIDTH) {
+    if (p.x < hwOff() || p.y < hhOff()) {
+      if (p.y < hhOff() && p.x >= hwOff()) {
         const c = screenXToCol(p.x);
         if (c >= 0) s.selectRange(Math.min(drgSC, c), 0, Math.max(drgSC, c), s.rowCount - 1, 'col');
-      } else if (p.x < HEADER_WIDTH && p.y >= HEADER_HEIGHT) {
+      } else if (p.x < hwOff() && p.y >= hhOff()) {
         const r = screenYToRow(p.y);
         if (r >= 0) s.selectRange(0, Math.min(drgSR, r), s.colCount - 1, Math.max(drgSR, r), 'row');
       }
@@ -2753,28 +3149,28 @@ export function createInteractions(
   function onCanvasCtx(e: MouseEvent) {
     e.preventDefault();
     const p = getCanvasXY(e, so.canvasRef.value);
-    if (p.x < HEADER_WIDTH && p.y < HEADER_HEIGHT) {
+    if (p.x < hwOff() && p.y < hhOff()) {
       onCornerCtx(e);
       return;
     }
-    if (p.y < HEADER_HEIGHT && p.x >= HEADER_WIDTH) {
+    if (p.y < hhOff() && p.x >= hwOff()) {
       const c = screenXToCol(p.x);
       if (c >= 0) onColHdrCtx(e, c);
       return;
     }
-    if (p.x < HEADER_WIDTH && p.y >= HEADER_HEIGHT) {
+    if (p.x < hwOff() && p.y >= hhOff()) {
       const r = screenYToRow(p.y);
       if (r >= 0) onRowHdrCtx(e, r);
       return;
     }
-    if (p.x >= HEADER_WIDTH && p.y >= HEADER_HEIGHT) {
+    if (p.x >= hwOff() && p.y >= hhOff()) {
       const hit = s.screenToCell(p.x, p.y);
       if (hit) onCellCtx(e, hit.col, hit.row);
     }
   }
   function onDblClick(e: MouseEvent) {
     const p = getCanvasXY(e, so.canvasRef.value);
-    if (p.x < HEADER_WIDTH || p.y < HEADER_HEIGHT) return;
+    if (p.x < hwOff() || p.y < hhOff()) return;
     const hit = s.screenToCell(p.x, p.y);
     if (!hit) return;
     const c = hit.col, r = hit.row;
@@ -2860,7 +3256,7 @@ export function createInteractions(
       return;
     }
     // 列宽 resize 热区（列头右缘）：与鼠标一致，命中即进入 resize 而非滚动（触屏放宽到 8px 易命中）
-    if (y < HEADER_HEIGHT && x >= HEADER_WIDTH) {
+    if (y < hhOff() && x >= hwOff()) {
       const c = screenXToCol(x);
       if (c >= 0) {
         const cRight = s.cellToScreenRect(0, c).x + s.colWidths.value[c]!;
@@ -2870,7 +3266,7 @@ export function createInteractions(
           isResizingC = true;
           rszTC = c;
           rszSS = s.colWidths.value[c]!;
-          rszSG = (x - HEADER_WIDTH) + s.scrollX.value;
+          rszSG = (x - hwOff()) + s.scrollX.value;
           isTouch = true;
           tMoved = false;
           return;
@@ -2878,7 +3274,7 @@ export function createInteractions(
       }
     }
     // 行高 resize 热区（行头下缘）
-    if (x < HEADER_WIDTH && y >= HEADER_HEIGHT) {
+    if (x < hwOff() && y >= hhOff()) {
       const r = screenYToRow(y);
       if (r >= 0) {
         const rBottom = s.cellToScreenRect(r, 0).y + s.getRowHeight(r);
@@ -2888,14 +3284,14 @@ export function createInteractions(
           isResizingR = true;
           rszTR = r;
           rszSS = s.getRowHeight(r);
-          rszSG = (y - HEADER_HEIGHT) + s.scrollY.value;
+          rszSG = (y - hhOff()) + s.scrollY.value;
           isTouch = true;
           tMoved = false;
           return;
         }
       }
     }
-    if (x >= HEADER_WIDTH && y >= HEADER_HEIGHT) {
+    if (x >= hwOff() && y >= hhOff()) {
       // 单元格区域：记录起点；默认拖动为滚动，长按进入框选模式（锚定起点后拖动扩展矩形选区）
       e.preventDefault();
       isTouch = true;
@@ -2927,7 +3323,7 @@ export function createInteractions(
           scheduleRender();
         }
       }, 450);
-    } else if (x >= 0 && y >= 0 && (x < HEADER_WIDTH || y < HEADER_HEIGHT)) {
+    } else if (x >= 0 && y >= 0 && (x < hwOff() || y < hhOff())) {
       // 列表头 / 行表头 / 左上角全选按钮：同样支持平移滚动与点按选择
       e.preventDefault();
       isTouch = true;
@@ -2937,11 +3333,11 @@ export function createInteractions(
       tSY = y;
       tSSX = s.scrollX.value;
       tSSY = s.scrollY.value;
-      if (y < HEADER_HEIGHT && x >= HEADER_WIDTH) {
+      if (y < hhOff() && x >= hwOff()) {
         tZone = 'col';
         tSC = screenXToCol(x);
         tSR = -1;
-      } else if (x < HEADER_WIDTH && y >= HEADER_HEIGHT) {
+      } else if (x < hwOff() && y >= hhOff()) {
         tZone = 'row';
         tSR = screenYToRow(y);
         tSC = -1;
@@ -3008,7 +3404,7 @@ export function createInteractions(
     }
     // 列宽 / 行高 resize 拖拽（与鼠标一致）
     if (isResizingC) {
-      const d = ((x - HEADER_WIDTH) + s.scrollX.value) - rszSG;
+      const d = ((x - hwOff()) + s.scrollX.value) - rszSG;
       let newW = rszSS + d;
       newW = newW < MIN_COL_WIDTH ? MIN_COL_WIDTH : (newW > MAX_COL_WIDTH ? MAX_COL_WIDTH : newW);
       s.colWidths.value[rszTC] = newW;
@@ -3017,7 +3413,7 @@ export function createInteractions(
       return;
     }
     if (isResizingR) {
-      const d = ((y - HEADER_HEIGHT) + s.scrollY.value) - rszSG;
+      const d = ((y - hhOff()) + s.scrollY.value) - rszSG;
       let newH = rszSS + d;
       newH = newH < MIN_ROW_HEIGHT ? MIN_ROW_HEIGHT : (newH > MAX_ROW_HEIGHT ? MAX_ROW_HEIGHT : newH);
       s.rowHeights.value[rszTR] = newH;
@@ -3546,6 +3942,9 @@ export function createInteractions(
         sh.filter = normalizeLoadedFilter(smd.filter, sh.cells);
         // 恢复数据验证规则（旧数据无该字段视为无验证）
         sh.dataValidations = Array.isArray(smd.dataValidations) ? [...smd.dataValidations] : [];
+        // 恢复行列分组（旧数据无该字段视为无分组）
+        sh.rowOutlines = Array.isArray(smd.rowOutlines) ? smd.rowOutlines.map((o) => ({ ...o })) : [];
+        sh.columnOutlines = Array.isArray(smd.columnOutlines) ? smd.columnOutlines.map((o) => ({ ...o })) : [];
         return sh;
       });
       if (so.sheets.value.length > 0) so.loadSheet(0);
@@ -3620,6 +4019,23 @@ export function createInteractions(
     onDimBlur,
     applyDimPanel,
     closeDimPanel,
+
+    outlineGroupRows: () => groupSelection('row'),
+    outlineGroupCols: () => groupSelection('column'),
+    outlineUngroupRows: () => ungroupSelection('row'),
+    outlineUngroupCols: () => ungroupSelection('column'),
+    outlineExpandRows: () => setAxisCollapsed('row', false),
+    outlineCollapseRows: () => setAxisCollapsed('row', true),
+    outlineExpandCols: () => setAxisCollapsed('column', false),
+    outlineCollapseCols: () => setAxisCollapsed('column', true),
+
+    // 由宿主注入的应用内分组校验对话框（见 spreader.vue）
+    get showOutlineAlert() {
+      return outlineAlertApi;
+    },
+    set showOutlineAlert(fn) {
+      outlineAlertApi = fn;
+    },
 
     editInputStyle,
 

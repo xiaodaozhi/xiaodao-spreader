@@ -22,12 +22,10 @@ import type {
   CellIsOperator,
   DataValidationRule,
   DataValidationSeverity,
-  SelectionRange,
 } from '../core/types';
-import type { DataValidationAlertAction } from '../composables/core-state';
+import { createCoreState, type DataValidationAlertAction, type CoreState } from '../composables/core-state';
 import { colToLabel } from '../core/utils';
 
-import { createCoreState, type CoreState } from '../composables/core-state';
 import { createUndoStyles, bindMenuRefs, type UndoStylesState } from '../composables/undo-styles';
 import { createBordersMerge, type BordersMergeState } from '../composables/borders-merge';
 import { createSheetsOps, type SheetsOpsState } from '../composables/sheets-ops';
@@ -91,6 +89,8 @@ const sheetsCtx: {
     filter: null,
     conditionalFormats: [],
     dataValidations: [],
+    rowOutlines: [],
+    columnOutlines: [],
   }),
 };
 
@@ -148,6 +148,7 @@ const sheets = sheetsOpsRaw.sheets;
 const activeSheetIndex = sheetsOpsRaw.activeSheetIndex;
 const sortMenuOpen = sheetsOpsRaw.sortMenuOpen;
 const cachedSortOrder = sheetsOpsRaw.cachedSortOrder;
+const outlineMenuOpen = ref(false);
 const interactions = reactive(interactionsRaw) as unknown as UnwrapRef<InteractionsState>;
 const findReplace = reactive(findReplaceRaw) as unknown as UnwrapRef<FindReplaceState>;
 
@@ -399,6 +400,16 @@ function showValidationAlert(payload: {
 }
 coreStateRaw.showValidationAlert = showValidationAlert;
 
+/** 分组校验提示（应用内对话框，与数据验证警告同一套视觉组件，替代 window.alert） */
+const outlineAlert = ref<string | null>(null);
+function showOutlineAlert(message: string) {
+  outlineAlert.value = message;
+}
+function onOutlineAlertResolve() {
+  outlineAlert.value = null;
+}
+interactionsRaw.showOutlineAlert = showOutlineAlert;
+
 /** list 跨表引用：按 id 或名称定位工作表的 cells（当前表直接返回运行时 cells，保证读到最新值） */
 coreStateRaw.getSheetCellsById = (sheetId: string) => {
   const idx = sheetsOpsRaw.sheets.value.findIndex((x) => x.id === sheetId || x.name === sheetId);
@@ -489,6 +500,34 @@ function setTextColorMenuOpen(v: boolean) {
 function setFillColorMenuOpen(v: boolean) {
   undoStylesRaw.fillColorMenuOpen.value = v;
 }
+/** 工具栏「分组」菜单动作 → 交互层 分组/取消分组/展开折叠/清除 */
+function onOutlineAction(action: string) {
+  switch (action) {
+    case 'group-rows':
+      interactionsRaw.outlineGroupRows();
+      break;
+    case 'group-cols':
+      interactionsRaw.outlineGroupCols();
+      break;
+    case 'ungroup-rows':
+      interactionsRaw.outlineUngroupRows();
+      break;
+    case 'ungroup-cols':
+      interactionsRaw.outlineUngroupCols();
+      break;
+    case 'expand-all':
+      interactionsRaw.outlineExpandRows();
+      interactionsRaw.outlineExpandCols();
+      break;
+    case 'collapse-all':
+      interactionsRaw.outlineCollapseRows();
+      interactionsRaw.outlineCollapseCols();
+      break;
+    case 'clear':
+      coreStateRaw.clearAllOutlines();
+      break;
+  }
+}
 function setRenTabVal(v: string) {
   interactionsRaw.renTabVal.value = v;
 }
@@ -554,6 +593,7 @@ const setDimInputRef = (el: unknown) => {
       :sort-menu-open="sortMenuOpen"
       :cached-sort-order="cachedSortOrder"
       :can-sort="canSort"
+      :outline-menu-open="outlineMenuOpen"
       :can-filter="canFilter"
       :filter-active="coreState.getFilter() !== null"
       :h-align-options="undoStyles.hAlignOptions"
@@ -603,6 +643,8 @@ const setDimInputRef = (el: unknown) => {
       @update:sort-menu-open="sheetsOps.onSortMenuToggle($event)"
       @sort-change="sheetsOps.onSortChange($event)"
       @apply-sort="sheetsOps.applyCachedSort"
+      @update:outline-menu-open="outlineMenuOpen = $event"
+      @outline-action="onOutlineAction($event)"
       @toggle-filter="onToggleFilter"
       @freeze-change="onFreezeChange($event)"
       @h-align-change="undoStyles.onHAlignChange($event)"
@@ -1089,6 +1131,23 @@ const setDimInputRef = (el: unknown) => {
           :message="dvAlert.message"
           :theme-vars="sheetsOps.toolbarThemeVars"
           @resolve="onDvAlertResolve"
+        />
+      </div>
+    </Teleport>
+
+    <!-- 分组校验提示（应用内对话框，替代 window.alert） -->
+    <Teleport to="body">
+      <div
+        v-if="outlineAlert"
+        class="cf-modal-mask"
+      >
+        <DataValidationAlert
+          :locale="coreState.locale"
+          severity="information"
+          :title="t(coreState.locale, 'outlineAlertTitle')"
+          :message="outlineAlert"
+          :theme-vars="sheetsOps.toolbarThemeVars"
+          @resolve="onOutlineAlertResolve"
         />
       </div>
     </Teleport>

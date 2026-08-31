@@ -714,7 +714,7 @@ function dispatch(
     case 'OR': {
       const args = splitTopLevelArgs(inner);
       if (args.length === 0) return null;
-      let result = name === 'AND';
+      const result = name === 'AND';
       for (const arg of args) {
         const v = evalExpr(arg, cells, colCount, rowCount, depth);
         if (v === null) return null; // 参数出错 → 整函数出错

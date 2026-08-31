@@ -1,25 +1,36 @@
 import { ref, reactive, computed, watchEffect, shallowRef, type ComputedRef, type Ref } from 'vue';
-import { HEADER_HEIGHT, HEADER_WIDTH, SB_SIZE, DEFAULT_COL_WIDTH, DEFAULT_ROW_HEIGHT, MAX_ROW_HEIGHT, DEFAULT_FONT_FAMILY, DEFAULT_FONT_SIZE } from '../core/constants';
+import { HEADER_HEIGHT, HEADER_WIDTH, SB_SIZE, DEFAULT_COL_WIDTH, DEFAULT_ROW_HEIGHT, MAX_ROW_HEIGHT, DEFAULT_FONT_FAMILY, DEFAULT_FONT_SIZE, t } from '../core/constants';
 import { FormulaDeps, clearEvalCache, computeCellValue, parseFormulaRefs } from '../core/formula';
 import { formatNumber, isGeneralFormat, parseDateTimeInput, parseNumericText } from '../core/number-format';
 import { applyAutoFillPlan, validateMergeCompatibility } from '../core/autofill';
 import { colToLabel } from '../core/utils';
-import type { CellCoord, CellData, CellStyle, SelectionRange, BorderStyle, BorderSide, FreezePane, ViewportRegion, SheetFilter, FilterColumn, ConditionalFormattingRule, ConditionalFormattingFormat, DataValidationRule, DataValidationResult, DataValidationSeverity } from '../core/types';
+import type { CellCoord, CellData, CellStyle, SelectionRange, BorderStyle, BorderSide, FreezePane, ViewportRegion, SheetFilter, FilterColumn, ConditionalFormattingRule, ConditionalFormattingFormat, DataValidationRule, DataValidationResult, DataValidationSeverity, DimensionOutline } from '../core/types';
 import { resolveConditionalFormatting, CfValueCache, genRuleId, type CFContext } from '../core/conditional-formatting';
 import {
   DataValidationIndex,
-  dvCellInRanges,
   dvSeverityOf,
   genDataValidationId,
   hasDropdownIndicator,
   intersectDvRange,
   resolveListItems,
   subtractDvRange,
-  translateDvRange,
   validateCellValue as _validateCellValue,
   type DataValidationContext,
 } from '../core/data-validation';
 import { isRowVisible as _isRowVisible, getColumnCandidates as _getColumnCandidates, isColumnFiltered, type FilterCellAccessor, type FilterCandidates } from '../core/filter-core';
+import {
+  addOutline,
+  addOutlineForDelete,
+  addOutlineForInsert,
+  clearOutlines,
+  genOutlineId,
+  outlineLevelAt,
+  recomputeOutlineLevels,
+  removeOutline as removeOutlineCore,
+  setOutlineCollapsed as setOutlineCollapsedCore,
+  validateGroup,
+  type OutlineValidationResult,
+} from '../core/outline-core';
 import { resolveStyle as _resolveStyle } from '../core/style-pool';
 import type { BorderPool } from '../core/border-pool';
 import { getCellBorderSide as _getCellBorderSide } from '../core/border-pool';
@@ -137,6 +148,47 @@ export interface CoreState {
   getVisibleRowCount: () => number;
   getVisibleRowAt: (index: number) => number;
   getVisibleRowIndex: (row: number) => number;
+
+  // ============ 行列分组 / 折叠（Outline）============
+  /** 当前工作表行分组集合（稳定 ID，展开/折叠状态） */
+  getRowOutlines: () => DimensionOutline[];
+  /** 当前工作表列分组集合 */
+  getColumnOutlines: () => DimensionOutline[];
+  /** 在某组上创建分组；返回是否成功（失败给出提示码） */
+  addRowGroup: (start: number, end: number) => OutlineValidationResult;
+  addColumnGroup: (start: number, end: number) => OutlineValidationResult;
+  /** 取消组合：完整覆盖某个分组才允许 Ungroup，返回是否成功 */
+  removeOutline: (id: string) => boolean;
+  clearRowGroups: () => void;
+  clearColumnGroups: () => void;
+  clearAllOutlines: () => void;
+  /** 设置分组折叠状态（一次一个视图状态操作，不影响结构） */
+  setOutlineCollapsed: (id: string, collapsed: boolean, silent?: boolean) => void;
+  toggleOutline: (id: string) => void;
+  /** 当前最大分组层级（0 = 无分组） */
+  getOutlineLevel: (axis: 'row' | 'column') => number;
+  /** Outline gutter 总尺寸：无分组为 0；否则 = 等级控件条 + 层级数×单级宽度。axis='row' → 左侧 gutter 宽，axis='column' → 顶部 gutter 高 */
+  getOutlineGutterSize: (axis: 'row' | 'column') => number;
+  /** 逻辑行/列当前所处的分组层级（0 = 不在任何分组内） */
+  getRowOutlineLevel: (row: number) => number;
+  getColumnOutlineLevel: (col: number) => number;
+  /** 逻辑行/列当前是否被折叠分组隐藏 */
+  isRowCollapsed: (row: number) => boolean;
+  isColumnCollapsed: (col: number) => boolean;
+  /** 逻辑行列是否可见（Filter + Outline 组合） */
+  isRowVisible: (row: number) => boolean;
+  isColumnVisible: (col: number) => boolean;
+  /** 列是否隐藏（当前仅由列分组折叠决定） */
+  isColHidden: (col: number) => boolean;
+  /** 逻辑列宽（折叠列返回 0，供布局/命中测试使用） */
+  getColWidth: (c: number) => number;
+  /** outline 引擎注入：行列增删后的结构调整（由 sheets-ops 调用） */
+  adjustOutlinesForInsertRows: (index: number, count: number) => void;
+  adjustOutlinesForDeleteRows: (index: number, count: number) => void;
+  adjustOutlinesForInsertCols: (index: number, count: number) => void;
+  adjustOutlinesForDeleteCols: (index: number, count: number) => void;
+  /** 设置当前工作表的分组集合（加载/撤销恢复等受控场景；同时重算层级） */
+  syncOutlines: (rowOutlines: DimensionOutline[] | undefined, columnOutlines: DimensionOutline[] | undefined) => void;
   /** 基于真实行高/列宽计算冻结区域尺寸 */
   getFrozenMetrics: () => { frozenRowsHeight: number; frozenColumnsWidth: number };
   /** 返回四个 viewport 区域（未冻结时 corner/rows/columns 尺寸为 0） */
@@ -496,6 +548,10 @@ export function createCoreState(
   // 数据筛选状态（默认 null = 未启用）
   const filter = ref<SheetFilter | null>(null);
 
+  // 行列分组（当前工作表，随 saveSheet 持久化；每个 Sheet 独立）
+  const rowOutlines = ref<DimensionOutline[]>([]);
+  const columnOutlines = ref<DimensionOutline[]>([]);
+
   // AutoFill 拖拽状态（shallowRef：整体替换，避免深层响应式开销）
   const autoFillState = shallowRef<AutoFillState>({
     active: false,
@@ -615,7 +671,8 @@ export function createCoreState(
   // ============ 列位置/行位置计算 ============
   const colPositions = computed(() => {
     const p = [0];
-    for (let i = 0; i < dims.colCount; i++) p.push(p[i]! + colWidths.value[i]!);
+    // 使用 getColWidth（感知分组折叠返回 0），使列折叠时坐标同步收敛
+    for (let i = 0; i < dims.colCount; i++) p.push(p[i]! + getColWidth(i));
     return p;
   });
   colPositionsRef = colPositions;
@@ -646,8 +703,8 @@ export function createCoreState(
   });
 
   function getRowHeight(r: number): number {
-    // 被筛选隐藏的行：视觉高度为 0（原始 rowHeight 不变，恢复筛选后高度复原）
-    if (filter.value && filteredOutRows.value.has(r)) return 0;
+    // 被筛选隐藏或分组折叠隐藏的行：视觉高度为 0（原始 rowHeight 不变，恢复后高度复原）
+    if (isRowHidden(r)) return 0;
     const h = rowHeights.value[r];
     if (h !== undefined && h !== null && h > 0) return h;
     if (!rowsWithData.value.has(r)) return DEFAULT_ROW_HEIGHT;
@@ -735,13 +792,18 @@ export function createCoreState(
   }
 
   function isRowHidden(r: number): boolean {
+    // Filter 与 Outline 折叠的可见性合并：二者独立，逻辑行始终存在
+    if (isOutlineRowCollapsed(r)) return true;
     return filter.value ? filteredOutRows.value.has(r) : false;
   }
 
-  /** 可见行总数（排除被筛选隐藏的行） */
+  /** 可见行总数（排除被筛选隐藏或分组折叠隐藏的行；统一可见性映射） */
   function getVisibleRowCount(): number {
-    if (!filter.value) return dims.rowCount;
-    return dims.rowCount - filteredOutRows.value.size;
+    let n = 0;
+    for (let r = 0; r < dims.rowCount; r++) {
+      if (!isRowHidden(r)) n++;
+    }
+    return n;
   }
 
   /** 第 index 个可见行对应的逻辑行索引（index 从 0 开始，仅计可见行） */
@@ -764,6 +826,193 @@ export function createCoreState(
       if (!isRowHidden(r)) idx++;
     }
     return idx;
+  }
+
+  // ============ 行列分组 / 折叠（Outline） ============
+  /** 被某已折叠行分组隐藏的行集合（缓存，依赖 rowOutlines 变化重算） */
+  const outlineCollapsedRows = computed<Set<number>>(() => {
+    const set = new Set<number>();
+    const outlines = rowOutlines.value;
+    for (let i = 0; i < outlines.length; i++) {
+      const o = outlines[i]!;
+      if (!o.collapsed) continue;
+      for (let d = Math.max(0, o.start); d <= o.end && d < dims.rowCount; d++) set.add(d);
+    }
+    return set;
+  });
+  /** 被某已折叠列分组隐藏的列集合 */
+  const outlineCollapsedCols = computed<Set<number>>(() => {
+    const set = new Set<number>();
+    const outlines = columnOutlines.value;
+    for (let i = 0; i < outlines.length; i++) {
+      const o = outlines[i]!;
+      if (!o.collapsed) continue;
+      for (let d = Math.max(0, o.start); d <= o.end && d < dims.colCount; d++) set.add(d);
+    }
+    return set;
+  });
+
+  /** 行是否被某已折叠分组隐藏（纯结构状态，不含 Filter） */
+  function isOutlineRowCollapsed(row: number): boolean {
+    return outlineCollapsedRows.value.has(row);
+  }
+  function isOutlineColCollapsed(col: number): boolean {
+    return outlineCollapsedCols.value.has(col);
+  }
+
+  function isRowCollapsed(row: number): boolean {
+    return isOutlineRowCollapsed(row);
+  }
+  function isColumnCollapsed(col: number): boolean {
+    return isOutlineColCollapsed(col);
+  }
+  function isRowVisible(row: number): boolean {
+    return !isRowHidden(row);
+  }
+  function isColumnVisible(col: number): boolean {
+    return !isOutlineColCollapsed(col);
+  }
+  function isColHidden(col: number): boolean {
+    return isOutlineColCollapsed(col);
+  }
+  function getColWidth(c: number): number {
+    return isColHidden(c) ? 0 : colWidths.value[c] ?? DEFAULT_COL_WIDTH;
+  }
+
+  function getRowOutlineLevel(row: number): number {
+    return outlineLevelAt(rowOutlines.value, row);
+  }
+  function getColumnOutlineLevel(col: number): number {
+    return outlineLevelAt(columnOutlines.value, col);
+  }
+  function getOutlineLevel(axis: 'row' | 'column'): number {
+    const outlines = axis === 'row' ? rowOutlines.value : columnOutlines.value;
+    let max = 0;
+    for (let i = 0; i < outlines.length; i++) {
+      const lv = outlines[i]!.level;
+      if (lv > max) max = lv;
+    }
+    return max;
+  }
+
+  /** Outline gutter 总尺寸：改为浮动显示后不再预留独立分区，恒为 0。 */
+  function getOutlineGutterSize(_axis: 'row' | 'column'): number {
+    return 0;
+  }
+  /** 行分组 gutter 宽：浮动显示，不预留分区 → 0 */
+  const outlineGapX = () => getOutlineGutterSize('row');
+  /** 列分组 gutter 高：浮动显示，不预留分区 → 0 */
+  const outlineGapY = () => getOutlineGutterSize('column');
+
+  function getRowOutlines(): DimensionOutline[] {
+    return rowOutlines.value.map((o) => ({ ...o }));
+  }
+  function getColumnOutlines(): DimensionOutline[] {
+    return columnOutlines.value.map((o) => ({ ...o }));
+  }
+
+  /** 分组结构/折叠变化后的统一收尾：重clamp滚动、重绘、持久化 */
+  function afterOutlineChange(silent = false) {
+    if (silent) return;
+    clampScrollFn(scrollX.value, scrollY.value);
+    state.scheduleRender?.();
+    state.emitModelData?.();
+  }
+
+  function addRowGroup(start: number, end: number): OutlineValidationResult {
+    const v = validateGroup(rowOutlines.value, start, end);
+    if (!v.ok || v.level === undefined) return v;
+    state.saveUndo?.();
+    rowOutlines.value = recomputeOutlineLevels(
+      addOutline(rowOutlines.value, 'row', start, end, genOutlineId(rowOutlines.value, 'row')).outlines,
+    );
+    afterOutlineChange();
+    return { ok: true, level: v.level };
+  }
+
+  function addColumnGroup(start: number, end: number): OutlineValidationResult {
+    const v = validateGroup(columnOutlines.value, start, end);
+    if (!v.ok || v.level === undefined) return v;
+    state.saveUndo?.();
+    columnOutlines.value = recomputeOutlineLevels(
+      addOutline(columnOutlines.value, 'column', start, end, genOutlineId(columnOutlines.value, 'column')).outlines,
+    );
+    afterOutlineChange();
+    return { ok: true, level: v.level };
+  }
+
+  function removeOutline(id: string): boolean {
+    const inRows = rowOutlines.value.some((o) => o.id === id);
+    const inCols = !inRows && columnOutlines.value.some((o) => o.id === id);
+    if (!inRows && !inCols) return false;
+    state.saveUndo?.();
+    if (inRows) rowOutlines.value = recomputeOutlineLevels(removeOutlineCore(rowOutlines.value, id));
+    else columnOutlines.value = recomputeOutlineLevels(removeOutlineCore(columnOutlines.value, id));
+    afterOutlineChange();
+    return true;
+  }
+
+  function clearRowGroups() {
+    if (!rowOutlines.value.length) return;
+    state.saveUndo?.();
+    rowOutlines.value = clearOutlines();
+    afterOutlineChange();
+  }
+  function clearColumnGroups() {
+    if (!columnOutlines.value.length) return;
+    state.saveUndo?.();
+    columnOutlines.value = clearOutlines();
+    afterOutlineChange();
+  }
+  function clearAllOutlines() {
+    if (!rowOutlines.value.length && !columnOutlines.value.length) return;
+    state.saveUndo?.();
+    rowOutlines.value = clearOutlines();
+    columnOutlines.value = clearOutlines();
+    afterOutlineChange();
+  }
+
+  function setOutlineCollapsed(id: string, collapsed: boolean, silent = false) {
+    const nextR = setOutlineCollapsedCore(rowOutlines.value, id, collapsed);
+    const nextC = setOutlineCollapsedCore(columnOutlines.value, id, collapsed);
+    if (nextR === rowOutlines.value && nextC === columnOutlines.value) return;
+    if (!silent) state.saveUndo?.();
+    rowOutlines.value = nextR;
+    columnOutlines.value = nextC;
+    afterOutlineChange(silent);
+  }
+
+  function toggleOutline(id: string) {
+    const o = rowOutlines.value.find((x) => x.id === id) ?? columnOutlines.value.find((x) => x.id === id);
+    if (!o) return;
+    setOutlineCollapsed(id, !o.collapsed);
+  }
+
+  function adjustOutlinesForInsertRows(index: number, count: number) {
+    if (!rowOutlines.value.length) return;
+    rowOutlines.value = recomputeOutlineLevels(addOutlineForInsert(rowOutlines.value, index, count));
+    afterOutlineChange();
+  }
+  function adjustOutlinesForDeleteRows(index: number, count: number) {
+    if (!rowOutlines.value.length) return;
+    rowOutlines.value = recomputeOutlineLevels(addOutlineForDelete(rowOutlines.value, index, count));
+    afterOutlineChange();
+  }
+  function adjustOutlinesForInsertCols(index: number, count: number) {
+    if (!columnOutlines.value.length) return;
+    columnOutlines.value = recomputeOutlineLevels(addOutlineForInsert(columnOutlines.value, index, count));
+    afterOutlineChange();
+  }
+  function adjustOutlinesForDeleteCols(index: number, count: number) {
+    if (!columnOutlines.value.length) return;
+    columnOutlines.value = recomputeOutlineLevels(addOutlineForDelete(columnOutlines.value, index, count));
+    afterOutlineChange();
+  }
+
+  function syncOutlines(rows: DimensionOutline[] | undefined, columns: DimensionOutline[] | undefined) {
+    if (rows) rowOutlines.value = recomputeOutlineLevels([...rows]);
+    if (columns) columnOutlines.value = recomputeOutlineLevels([...columns]);
+    afterOutlineChange(true);
   }
 
   function getFilter(): SheetFilter | null {
@@ -1073,7 +1322,7 @@ export function createCoreState(
       const h = rowPositions.value[m.range.endRow + 1]! - rowPositions.value[r]!;
       return { w, h };
     }
-    return { w: colWidths.value[c]!, h: getRowHeightFn(r) };
+    return { w: getColWidth(c), h: getRowHeightFn(r) };
   }
 
   function expandSelectionForMerges(sC: number, sR: number, eC: number, eR: number): SelectionRange {
@@ -1718,26 +1967,28 @@ export function createCoreState(
 
   function getViewportRegions() {
     const { frozenColumnsWidth, frozenRowsHeight } = getFrozenMetrics();
-    const bodyLeft = HEADER_WIDTH + frozenColumnsWidth;
-    const bodyTop = HEADER_HEIGHT + frozenRowsHeight;
-    const bodyWidth = Math.max(0, viewSizeProxy.w - HEADER_WIDTH - SB_SIZE - frozenColumnsWidth);
-    const bodyHeight = Math.max(0, viewSizeProxy.h - HEADER_HEIGHT - SB_SIZE - frozenRowsHeight);
+    const gX = outlineGapX();
+    const gY = outlineGapY();
+    const bodyLeft = HEADER_WIDTH + gX + frozenColumnsWidth;
+    const bodyTop = HEADER_HEIGHT + gY + frozenRowsHeight;
+    const bodyWidth = Math.max(0, viewSizeProxy.w - HEADER_WIDTH - gX - SB_SIZE - frozenColumnsWidth);
+    const bodyHeight = Math.max(0, viewSizeProxy.h - HEADER_HEIGHT - gY - SB_SIZE - frozenRowsHeight);
     const regions: ViewportRegion[] = [];
     if (frozenRowsHeight > 0 && frozenColumnsWidth > 0) {
       regions.push({
-        kind: 'corner', x: HEADER_WIDTH, y: HEADER_HEIGHT,
+        kind: 'corner', x: HEADER_WIDTH + gX, y: HEADER_HEIGHT + gY,
         width: frozenColumnsWidth, height: frozenRowsHeight, scrollLeft: 0, scrollTop: 0,
       });
     }
     if (frozenRowsHeight > 0) {
       regions.push({
-        kind: 'rows', x: bodyLeft, y: HEADER_HEIGHT,
+        kind: 'rows', x: bodyLeft, y: HEADER_HEIGHT + gY,
         width: bodyWidth, height: frozenRowsHeight, scrollLeft: scrollX.value, scrollTop: 0,
       });
     }
     if (frozenColumnsWidth > 0) {
       regions.push({
-        kind: 'columns', x: HEADER_WIDTH, y: bodyTop,
+        kind: 'columns', x: HEADER_WIDTH + gX, y: bodyTop,
         width: frozenColumnsWidth, height: bodyHeight, scrollLeft: 0, scrollTop: scrollY.value,
       });
     }
@@ -1751,27 +2002,30 @@ export function createCoreState(
   function cellToScreenRect(row: number, col: number) {
     const cP = colPositions.value;
     const rP = rowPositions.value;
-    const cW = colWidths.value;
     const logicalX = cP[col] ?? 0;
     const logicalY = rP[row] ?? 0;
     const m = findMergeFn(col, row);
-    const cw = m ? (cP[m.range.endCol + 1] ?? logicalX) - logicalX : (cW[col] ?? 0);
+    // 非合并格宽高：用折叠感知的位置差（折叠列 → 0），避免折叠后仍按原始列宽绘制导致内容重叠
+    const cw = m ? (cP[m.range.endCol + 1] ?? logicalX) - logicalX : ((cP[col + 1] ?? logicalX) - logicalX);
     const rh = m ? (rP[m.range.endRow + 1] ?? logicalY) - logicalY : getRowHeightFn(row);
     const colFrozen = col < freeze.cols;
     const rowFrozen = row < freeze.rows;
     // 冻结方向不参与滚动偏移；body 方向使用 body-relative scrollX/scrollY
-    const screenX = colFrozen ? (HEADER_WIDTH + logicalX) : (HEADER_WIDTH + logicalX - scrollX.value);
-    const screenY = rowFrozen ? (HEADER_HEIGHT + logicalY) : (HEADER_HEIGHT + logicalY - scrollY.value);
+    // 整体网格向右/下平移 Outline gutter 尺寸，保证与拓展后的表头对齐
+    const screenX = (colFrozen ? 0 : -scrollX.value) + HEADER_WIDTH + outlineGapX() + logicalX;
+    const screenY = (rowFrozen ? 0 : -scrollY.value) + HEADER_HEIGHT + outlineGapY() + logicalY;
     return { x: screenX, y: screenY, width: cw, height: rh };
   }
 
   function screenToCell(x: number, y: number) {
     const { frozenColumnsWidth, frozenRowsHeight } = getFrozenMetrics();
-    if (x < HEADER_WIDTH || y < HEADER_HEIGHT) return null;
-    const colFrozen = frozenColumnsWidth > 0 && x < HEADER_WIDTH + frozenColumnsWidth;
-    const rowFrozen = frozenRowsHeight > 0 && y < HEADER_HEIGHT + frozenRowsHeight;
-    const logicalX = colFrozen ? (x - HEADER_WIDTH) : (x - HEADER_WIDTH + scrollX.value);
-    const logicalY = rowFrozen ? (y - HEADER_HEIGHT) : (y - HEADER_HEIGHT + scrollY.value);
+    const gX = outlineGapX();
+    const gY = outlineGapY();
+    if (x < HEADER_WIDTH + gX || y < HEADER_HEIGHT + gY) return null;
+    const colFrozen = frozenColumnsWidth > 0 && x < HEADER_WIDTH + gX + frozenColumnsWidth;
+    const rowFrozen = frozenRowsHeight > 0 && y < HEADER_HEIGHT + gY + frozenRowsHeight;
+    const logicalX = colFrozen ? (x - HEADER_WIDTH - gX) : (x - HEADER_WIDTH - gX + scrollX.value);
+    const logicalY = rowFrozen ? (y - HEADER_HEIGHT - gY) : (y - HEADER_HEIGHT - gY + scrollY.value);
     const col = hitCol(logicalX);
     const row = hitRow(logicalY);
     if (col < 0 || row < 0) return null;
@@ -1785,8 +2039,8 @@ export function createCoreState(
   function scrollCellIntoView(row: number, col: number) {
     if (isCellFrozen(row, col)) return;
     const { frozenColumnsWidth, frozenRowsHeight } = getFrozenMetrics();
-    const gw = Math.max(0, viewSizeProxy.w - HEADER_WIDTH - SB_SIZE - frozenColumnsWidth);
-    const gh = Math.max(0, viewSizeProxy.h - HEADER_HEIGHT - SB_SIZE - frozenRowsHeight);
+    const gw = Math.max(0, viewSizeProxy.w - HEADER_WIDTH - outlineGapX() - SB_SIZE - frozenColumnsWidth);
+    const gh = Math.max(0, viewSizeProxy.h - HEADER_HEIGHT - outlineGapY() - SB_SIZE - frozenRowsHeight);
     const cP = colPositions.value;
     const rP = rowPositions.value;
     // body-relative 逻辑坐标：扣掉冻结区域尺寸
@@ -1842,7 +2096,13 @@ export function createCoreState(
     direction: 'up' | 'down' | 'left' | 'right',
   ) {
     // Merge 兼容性校验（双保险）
-    if (!validateMergeCompatibility(sourceRange, targetRange, merges)) return;
+    const mergeRes = validateMergeCompatibility(sourceRange, targetRange, merges);
+    if (!mergeRes.ok) {
+      if (mergeRes.reason === 'target-merge-size') {
+        window.alert(t(locale.value, 'autofillMergeSizeError'));
+      }
+      return;
+    }
 
     // 1. 先纯函数计算目标 cells 增量（不落盘），供数据验证整体校验
     const draftPlan = applyAutoFillPlan(
@@ -1906,6 +2166,12 @@ export function createCoreState(
     // 4. 写入 cells + formulaDeps 更新
     clearEvalCache();
     for (const [k, cell] of Object.entries(plan.cells)) {
+      // 仅写合并格 anchor：跳过非 anchor 的合并格成员（其值由 anchor 统一展示）
+      const comma = k.indexOf(',');
+      const col = parseInt(k.substring(0, comma), 10);
+      const row = parseInt(k.substring(comma + 1), 10);
+      const m = findMerge(col, row);
+      if (m && !(col === m.range.startCol && row === m.range.startRow)) continue;
       const val = cell.value;
       if (val === '' && (cell.styleId === undefined || cell.styleId === 0)) {
         // 空值无样式：删除 cell（与 setCellValue 语义一致）
@@ -2082,6 +2348,33 @@ export function createCoreState(
     // Merge 边框辅助
     getMergeOwner,
     isSameMergeInternal,
+
+    // ============ 行列分组 / 折叠（Outline）============
+    getRowOutlines,
+    getColumnOutlines,
+    addRowGroup,
+    addColumnGroup,
+    removeOutline,
+    clearRowGroups,
+    clearColumnGroups,
+    clearAllOutlines,
+    setOutlineCollapsed,
+    toggleOutline,
+    getOutlineLevel,
+    getOutlineGutterSize,
+    getRowOutlineLevel,
+    getColumnOutlineLevel,
+    isRowCollapsed,
+    isColumnCollapsed,
+    isRowVisible,
+    isColumnVisible,
+    isColHidden,
+    getColWidth,
+    adjustOutlinesForInsertRows,
+    adjustOutlinesForDeleteRows,
+    adjustOutlinesForInsertCols,
+    adjustOutlinesForDeleteCols,
+    syncOutlines,
 
     // viewSize 引用
     viewSize: viewSizeProxy,

@@ -230,9 +230,9 @@ export function resolveListItems(
   rule: DataValidationRule,
   ctx: DataValidationContext,
 ): string[] {
-  const src: DataValidationListSource | undefined =
-    rule.listSource
-    ?? (rule.values ? { type: 'values', values: rule.values } : undefined);
+  const src: DataValidationListSource | undefined
+    = rule.listSource
+      ?? (rule.values ? { type: 'values', values: rule.values } : undefined);
   if (!src) return [];
 
   const out: string[] = [];
@@ -463,7 +463,7 @@ export function validateCellValue(
   for (const rule of rules) {
     if (rule.enabled === false) continue;
     if (!dvCellInRanges(rule.ranges, col, row)) continue;
-    let ok = false;
+    let ok: boolean;
     try {
       ok = evaluateDataValidationRule(rule, value, col, row, ctx);
     } catch {
@@ -797,4 +797,3 @@ export function intersectDvRange(a: SelectionRange, b: SelectionRange): Selectio
     endRow: Math.min(a.endRow, b.endRow),
   };
 }
-

@@ -22,6 +22,10 @@ export const FILL_HANDLE_HIT_PADDING = 4;  // 填充柄命中区扩展（总命�
 // ============ 撤销/重做 ============
 export const UNDO_MAX = 50;
 
+// ============ 行列分组 / 折叠（Outline）============
+export const OUTLINE_PANEL = 16;   // 左上 Outline Level 控件条宽度 / 高度像素
+export const OUTLINE_GUTTER = 15;  // 每个分组层级占用的 gutter 宽 / 高像素
+
 // ============ 国际化文本 ============
 export const i18n: Record<string, Record<string, string>> = {
   'zh-CN': {
@@ -249,6 +253,34 @@ export const i18n: Record<string, Record<string, string>> = {
     filterActive: '筛选中',
     filterByValue: '按此值筛选',
     filterByThisColumn: '筛选此列',
+    // ---- 行列分组 / 折叠（Outline / Grouping）----
+    outlineGroup: '分组',
+    outlineRows: '行分组',
+    outlineColumns: '列分组',
+    outlineAddRowGroup: '添加行分组',
+    outlineAddColumnGroup: '添加列分组',
+    outlineUngroup: '取消分组',
+    outlineUngroupRows: '取消行分组',
+    outlineUngroupColumns: '取消列分组',
+    outlineClear: '清除分组',
+    outlineClearAll: '清除全部分组',
+    outlineExpand: '展开',
+    outlineCollapse: '折叠',
+    outlineExpandAll: '全部展开',
+    outlineCollapseAll: '全部折叠',
+    outlineRowsLabel: '行',
+    outlineColumnsLabel: '列',
+    outlineLevel: '级别',
+    outlineLevelLabel: '等级',
+    outlineNeedRowsOrColumns: '请选择整行或整列后分组',
+    outlineInvalidRange: '无效的分组范围：分组至少需要连续 2 个行或列',
+    outlineCrossing: '分组范围与现有分组交叉，请调整',
+    outlineTooDeep: '最多支持 8 级分组',
+    outlineUngroupPartial: '选区未完整覆盖某个分组，无法取消分组',
+    autofillMergeSizeError: '要执行此操作，所有合并单元格必须大小相同。',
+    outlineSelectAxisTitle: '创建分组',
+    outlineSelectAxisPrompt: '请选择按行分组还是按列分组',
+    outlineAlertTitle: '分组提示',
     // 条件格式（Conditional Formatting）
     conditionalFormat: '条件格式',
     cfHighlightRules: '突出显示单元格规则',
@@ -604,6 +636,34 @@ export const i18n: Record<string, Record<string, string>> = {
     filterActive: 'Filtering',
     filterByValue: 'Filter by This Value',
     filterByThisColumn: 'Filter This Column',
+    // ---- Outline / Grouping ----
+    outlineGroup: 'Group',
+    outlineRows: 'Group Rows',
+    outlineColumns: 'Group Columns',
+    outlineAddRowGroup: 'Add Row Group',
+    outlineAddColumnGroup: 'Add Column Group',
+    outlineUngroup: 'Ungroup',
+    outlineUngroupRows: 'Ungroup Rows',
+    outlineUngroupColumns: 'Ungroup Columns',
+    outlineClear: 'Clear Outline',
+    outlineClearAll: 'Clear All Outlines',
+    outlineExpand: 'Expand',
+    outlineCollapse: 'Collapse',
+    outlineExpandAll: 'Expand All',
+    outlineCollapseAll: 'Collapse All',
+    outlineRowsLabel: 'Rows',
+    outlineColumnsLabel: 'Columns',
+    outlineLevel: 'Level',
+    outlineLevelLabel: 'Level',
+    outlineNeedRowsOrColumns: 'Select entire rows or columns to group',
+    outlineInvalidRange: 'Invalid group range: a group needs at least 2 consecutive rows or columns',
+    outlineCrossing: 'Group range crosses an existing group, please adjust',
+    outlineTooDeep: 'Maximum of 8 outline levels supported',
+    outlineUngroupPartial: 'The selection does not fully cover a group, cannot ungroup',
+    autofillMergeSizeError: 'To do this, all the merged cells need to be the same size.',
+    outlineSelectAxisTitle: 'Create Group',
+    outlineSelectAxisPrompt: 'Choose to group by rows or by columns',
+    outlineAlertTitle: 'Grouping Notice',
     // Conditional Formatting
     conditionalFormat: 'Conditional Formatting',
     cfHighlightRules: 'Highlight Cell Rules',
@@ -857,6 +917,8 @@ export const lightTheme: ThemeColors = {
   gridLine: '#e0e0e0',
   selectionBg: 'rgba(0, 120, 215, 0.12)',
   activeCellBorder: '#0078d7',
+  outlineGroupBg1: '#d5e2f8',
+  outlineGroupBg2: '#f0e2f6',
   cellText: '#1a1a1a',
   scrollTrack: 'rgba(0,0,0,0.08)',
   scrollThumb: 'rgba(0,0,0,0.25)',
@@ -916,6 +978,8 @@ export const darkTheme: ThemeColors = {
   gridLine: '#3e3e3e',
   selectionBg: 'rgba(0, 120, 215, 0.25)',
   activeCellBorder: '#0078d7',
+  outlineGroupBg1: '#33405f',
+  outlineGroupBg2: '#47335f',
   cellText: '#d4d4d4',
   scrollTrack: 'rgba(255,255,255,0.06)',
   scrollThumb: 'rgba(255,255,255,0.2)',

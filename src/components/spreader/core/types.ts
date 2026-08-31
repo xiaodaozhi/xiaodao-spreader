@@ -337,6 +337,23 @@ export interface DataValidationResult {
   message?: string;
 }
 
+// ============ 行列分组 / 折叠（Outline / Grouping）============
+/** 单个行列分组的最大支持层级（与 Excel 一致，最多 8 级） */
+export const MAX_OUTLINE_LEVEL = 8;
+
+/** 维度分组：属于 Sheet 的结构元数据。start/end 为 0-based 闭区间，且 start <= end */
+export interface DimensionOutline {
+  /** 稳定唯一 ID（禁止数组 index） */
+  id: string;
+  axis: 'row' | 'column';
+  start: number;
+  end: number;
+  /** 由嵌套关系计算得到的层级（1 起），非用户手工输入 */
+  level: number;
+  /** 是否折叠（折叠时隐藏组内 Detail，逻辑行列仍存在） */
+  collapsed: boolean;
+}
+
 export interface SheetModelData {
   name: string;
   /** 表格级样式池：styles[0] 始终为默认空样式 {} */
@@ -359,6 +376,10 @@ export interface SheetModelData {
   conditionalFormats?: ConditionalFormattingRule[];
   /** 数据验证规则集合；旧数据缺省视为无数据验证 */
   dataValidations?: DataValidationRule[];
+  /** 行分组集合；旧数据缺省视为无分组 */
+  rowOutlines?: DimensionOutline[];
+  /** 列分组集合；旧数据缺省视为无分组 */
+  columnOutlines?: DimensionOutline[];
 }
 
 export interface SheetState {
@@ -388,6 +409,10 @@ export interface SheetState {
   conditionalFormats: ConditionalFormattingRule[];
   /** 数据验证规则集合；缺省为空数组 */
   dataValidations: DataValidationRule[];
+  /** 行分组集合；缺省为空数组 */
+  rowOutlines: DimensionOutline[];
+  /** 列分组集合；缺省为空数组 */
+  columnOutlines: DimensionOutline[];
 }
 
 /** 视口区域：冻结窗格将画布划分为四个独立滚动区域 */
@@ -427,6 +452,8 @@ export interface ThemeColors {
   gridLine: string;
   selectionBg: string;
   activeCellBorder: string;
+  outlineGroupBg1: string;
+  outlineGroupBg2: string;
   cellText: string;
   scrollTrack: string;
   scrollThumb: string;

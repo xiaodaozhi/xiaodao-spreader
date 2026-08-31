@@ -258,6 +258,19 @@ function buildSheet(classIdx: number) {
     },
     colWidths: { 0: 110, 1: 80, 2: 50, 3: 50, 4: 60, 5: 90, 6: 130, 7: 80 },
     rowHeights: { 0: 36, 1: 28 },
+    // ===== DEBUG: 预置分组以便观察浮动控件与折叠行为 =====
+    rowOutlines:
+      classIdx === 0
+        ? [
+            { id: 'gR1', axis: 'row' as const, start: 2, end: 11, level: 1, collapsed: false },
+          ]
+        : [],
+    columnOutlines:
+      classIdx === 0
+        ? [
+            { id: 'gC1', axis: 'column' as const, start: 1, end: 4, level: 1, collapsed: false },
+          ]
+        : [],
   };
 }
 

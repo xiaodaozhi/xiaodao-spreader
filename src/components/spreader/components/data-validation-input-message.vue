@@ -5,12 +5,12 @@
  * 位置由调用方通过 cellToScreenRect 计算后传入（兼容冻结窗格与合并单元格）。
  */
 withDefaults(defineProps<{
-  title: string;
-  message: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
+  title?: string;
+  message?: string;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
 }>(), {
   title: '',
   message: '',

@@ -37,8 +37,7 @@ const props = withDefaults(defineProps<{
 
 const emit = defineEmits<{
   (e: 'save', rule: DataValidationRule): void;
-  (e: 'cancel'): void;
-  (e: 'clear'): void;
+  (e: 'cancel' | 'clear'): void;
 }>();
 
 const typeOptions = [

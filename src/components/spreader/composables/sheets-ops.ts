@@ -328,6 +328,8 @@ export function createSheetsOps(
     adjustCFRangesForDeleteRows(s, rS, rE);
     // 数据验证范围跟随删除行收缩
     adjustDVRangesForDelete(s, 'row', rS, dr);
+    // 行分组跟随删除行收缩（空组自动移除）
+    s.adjustOutlinesForDeleteRows(rS, dr);
   }
 
   function insertRows(rS: number, rE: number) {
@@ -385,6 +387,8 @@ export function createSheetsOps(
     adjustCFRangesForInsertRows(s, rS, rE);
     // 数据验证范围跟随插入行扩展（插入点在范围内部时自动继承验证）
     adjustDVRangesForInsert(s, 'row', rS, n);
+    // 行分组跟随插入行调整（插入点落在组内则扩展该组）
+    s.adjustOutlinesForInsertRows(rS, n);
   }
 
   function insertCols(cS: number, cE: number) {
@@ -442,6 +446,8 @@ export function createSheetsOps(
     adjustCFRangesForInsertCols(s, cS, cE);
     // 数据验证范围跟随插入列扩展
     adjustDVRangesForInsert(s, 'col', cS, n);
+    // 列分组跟随插入列调整（插入点落在组内则扩展该组）
+    s.adjustOutlinesForInsertCols(cS, n);
   }
 
   function deleteCols(cS: number, cE: number) {
@@ -491,6 +497,8 @@ export function createSheetsOps(
     adjustCFRangesForDeleteCols(s, cS, cE);
     // 数据验证范围跟随删除列收缩
     adjustDVRangesForDelete(s, 'col', cS, dc);
+    // 列分组跟随删除列收缩（空组自动移除）
+    s.adjustOutlinesForDeleteCols(cS, dc);
   }
 
   // 同时找到最后一个有数据的行和列
@@ -942,34 +950,34 @@ export function createSheetsOps(
     return `s_${sidN}`;
   }
   /**
- * 兼容/净化加载的数据验证规则：过滤缺 type / 缺 ranges / ranges 为空的非法规则，
- * 并补齐稳定 ID，保证索引与编辑链路不会出现脏数据。
- */
-function normalizeLoadedDataValidations(raw: unknown): DataValidationRule[] {
-  if (!Array.isArray(raw)) return [];
-  const out: DataValidationRule[] = [];
-  for (const item of raw) {
-    if (!item || typeof item !== 'object') continue;
-    const r = item as Partial<DataValidationRule>;
-    if (!r.type) continue;
-    if (!Array.isArray(r.ranges) || r.ranges.length === 0) continue;
-    const ranges = r.ranges
-      .filter((rg): rg is SelectionRange => !!rg
-        && typeof rg.startCol === 'number' && typeof rg.startRow === 'number'
-        && typeof rg.endCol === 'number' && typeof rg.endRow === 'number')
-      .map((rg) => ({
-        startCol: Math.min(rg.startCol, rg.endCol),
-        endCol: Math.max(rg.startCol, rg.endCol),
-        startRow: Math.min(rg.startRow, rg.endRow),
-        endRow: Math.max(rg.startRow, rg.endRow),
-      }));
-    if (!ranges.length) continue;
-    out.push({ ...(r as DataValidationRule), id: r.id || `dv_${out.length}`, ranges });
+   * 兼容/净化加载的数据验证规则：过滤缺 type / 缺 ranges / ranges 为空的非法规则，
+   * 并补齐稳定 ID，保证索引与编辑链路不会出现脏数据。
+   */
+  function normalizeLoadedDataValidations(raw: unknown): DataValidationRule[] {
+    if (!Array.isArray(raw)) return [];
+    const out: DataValidationRule[] = [];
+    for (const item of raw) {
+      if (!item || typeof item !== 'object') continue;
+      const r = item as Partial<DataValidationRule>;
+      if (!r.type) continue;
+      if (!Array.isArray(r.ranges) || r.ranges.length === 0) continue;
+      const ranges = r.ranges
+        .filter((rg): rg is SelectionRange => !!rg
+          && typeof rg.startCol === 'number' && typeof rg.startRow === 'number'
+          && typeof rg.endCol === 'number' && typeof rg.endRow === 'number')
+        .map((rg) => ({
+          startCol: Math.min(rg.startCol, rg.endCol),
+          endCol: Math.max(rg.startCol, rg.endCol),
+          startRow: Math.min(rg.startRow, rg.endRow),
+          endRow: Math.max(rg.startRow, rg.endRow),
+        }));
+      if (!ranges.length) continue;
+      out.push({ ...(r as DataValidationRule), id: r.id || `dv_${out.length}`, ranges });
+    }
+    return out;
   }
-  return out;
-}
 
-function mkSheet(name: string, dims?: { colCount?: number; rowCount?: number }): SheetState {
+  function mkSheet(name: string, dims?: { colCount?: number; rowCount?: number }): SheetState {
     const colC = Math.max(1, dims?.colCount ?? s.colCount);
     const rowC = Math.max(1, dims?.rowCount ?? s.rowCount);
     const cw: number[] = new Array(colC).fill(DEFAULT_COL_WIDTH);
@@ -989,6 +997,8 @@ function mkSheet(name: string, dims?: { colCount?: number; rowCount?: number }):
       filter: null,
       conditionalFormats: [],
       dataValidations: [],
+      rowOutlines: [],
+      columnOutlines: [],
     };
   }
   const sheets = ref<SheetState[]>([mkSheet('Sheet1')]);
@@ -1017,6 +1027,9 @@ function mkSheet(name: string, dims?: { colCount?: number; rowCount?: number }):
     sh.conditionalFormats = [...s.conditionalFormats];
     // 持久化数据验证规则
     sh.dataValidations = [...s.dataValidations];
+    // 持久化行列分组（结构 + 折叠状态）
+    sh.rowOutlines = s.getRowOutlines();
+    sh.columnOutlines = s.getColumnOutlines();
   }
 
   function loadSheet(i: number) {
@@ -1074,6 +1087,8 @@ function mkSheet(name: string, dims?: { colCount?: number; rowCount?: number }):
     const dv = normalizeLoadedDataValidations(sh.dataValidations);
     s.dataValidations.splice(0, s.dataValidations.length, ...dv);
     s.invalidateDataValidationCache?.();
+    // 恢复行列分组（旧数据缺省视为无分组）
+    s.syncOutlines(sh.rowOutlines, sh.columnOutlines);
     activeSheetIndex.value = i;
   }
 
@@ -1139,6 +1154,8 @@ function mkSheet(name: string, dims?: { colCount?: number; rowCount?: number }):
       filter: cloneFilter(src.filter),
       conditionalFormats: src.conditionalFormats ? src.conditionalFormats.map((r) => ({ ...r })) : [],
       dataValidations: normalizeLoadedDataValidations(src.dataValidations),
+      rowOutlines: src.rowOutlines ? src.rowOutlines.map((o) => ({ ...o })) : [],
+      columnOutlines: src.columnOutlines ? src.columnOutlines.map((o) => ({ ...o })) : [],
     };
     sheets.value.splice(i + 1, 0, cp);
     loadSheet(i + 1);
@@ -1216,6 +1233,13 @@ function mkSheet(name: string, dims?: { colCount?: number; rowCount?: number }):
           ranges: r.ranges.map((rg) => ({ ...rg })),
         }));
       }
+      // 输出行列分组：仅在存在时输出，保持旧数据兼容
+      if (sh.rowOutlines && sh.rowOutlines.length) {
+        smd.rowOutlines = sh.rowOutlines.map((o) => ({ ...o }));
+      }
+      if (sh.columnOutlines && sh.columnOutlines.length) {
+        smd.columnOutlines = sh.columnOutlines.map((o) => ({ ...o }));
+      }
       return smd;
     });
     const js = JSON.stringify(out);
@@ -1270,17 +1294,20 @@ function mkSheet(name: string, dims?: { colCount?: number; rowCount?: number }):
   const HEADER_WIDTH = 48;
   const HEADER_HEIGHT = 28;
   const SB_SIZE = 11;
+  // 含 Outline gutter 偏移后的表头尺寸（网格起点偏移），保证滚动范围与拓展后的表头一致
+  const headerX = () => HEADER_WIDTH + s.getOutlineGutterSize('row');
+  const headerY = () => HEADER_HEIGHT + s.getOutlineGutterSize('column');
 
   // 冻结窗格下 maxScroll 公式不变：scrollX/scrollY 是 body-relative 偏移，
   // body 可视宽 = viewSize - HEADER - SB - frozenW，max body 偏移 = totalWidth - frozenW - body可视宽
   //              = totalWidth - frozenW - (viewSize - HEADER - SB - frozenW) = totalWidth - viewSize + HEADER + SB
   // frozenW 在推导中抵消，与未冻结时一致；clampScroll 同理，故此处无需减去冻结尺寸。
-  const maxScrollX = computed(() => Math.max(0, s.totalWidth.value - Math.max(0, viewSize.w - HEADER_WIDTH - SB_SIZE)));
-  const maxScrollY = computed(() => Math.max(0, s.totalHeight.value - Math.max(0, viewSize.h - HEADER_HEIGHT - SB_SIZE)));
+  const maxScrollX = computed(() => Math.max(0, s.totalWidth.value - Math.max(0, viewSize.w - headerX() - SB_SIZE)));
+  const maxScrollY = computed(() => Math.max(0, s.totalHeight.value - Math.max(0, viewSize.h - headerY() - SB_SIZE)));
 
   function clampScroll(sx: number | null, sy: number | null) {
-    const gw = Math.max(0, viewSize.w - HEADER_WIDTH - SB_SIZE);
-    const gh = Math.max(0, viewSize.h - HEADER_HEIGHT - SB_SIZE);
+    const gw = Math.max(0, viewSize.w - headerX() - SB_SIZE);
+    const gh = Math.max(0, viewSize.h - headerY() - SB_SIZE);
     const newX = sx ?? s.scrollX.value;
     const newY = sy ?? s.scrollY.value;
 

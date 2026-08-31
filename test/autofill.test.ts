@@ -471,28 +471,64 @@ test('translateFormulaForTarget: 混合引用行绝对列相对', () => {
 test('validateMergeCompatibility: 无 merge → true', () => {
   const src = range(0, 0, 1, 1);
   const tgt = range(0, 2, 1, 3);
-  assert.equal(validateMergeCompatibility(src, tgt, {}), true);
+  assert.equal(validateMergeCompatibility(src, tgt, {}).ok, true);
 });
 
 test('validateMergeCompatibility: 源完全包含 merge → true', () => {
   const merges = { '0,0': range(0, 0, 0, 0) };
   const src = range(0, 0, 1, 1);
   const tgt = range(0, 2, 1, 3);
-  assert.equal(validateMergeCompatibility(src, tgt, merges), true);
+  assert.equal(validateMergeCompatibility(src, tgt, merges).ok, true);
 });
 
 test('validateMergeCompatibility: 源与 merge 部分相交 → false', () => {
   const merges = { '0,0': range(0, 0, 1, 1) };
   const src = range(0, 0, 0, 0); // 只包含 merge 左上角，不完全包含
   const tgt = range(0, 2, 0, 3);
-  assert.equal(validateMergeCompatibility(src, tgt, merges), false);
+  const result = validateMergeCompatibility(src, tgt, merges);
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'source-overlap');
 });
 
-test('validateMergeCompatibility: 目标与已有 merge 相交 → false', () => {
+test('validateMergeCompatibility: 目标与已有 merge 相交 → true', () => {
+  // 单个 1×1 合并格，新语义下合并格尺寸一致视为兼容
   const merges = { '0,5': range(0, 5, 0, 5) };
   const src = range(0, 0, 0, 2);
   const tgt = range(0, 3, 0, 6); // target 覆盖 0,5
-  assert.equal(validateMergeCompatibility(src, tgt, merges), false);
+  assert.equal(validateMergeCompatibility(src, tgt, merges).ok, true);
+});
+
+test('validateMergeCompatibility: 目标区域合并格尺寸一致 → ok', () => {
+  const src = range(0, 0, 1, 1);
+  const tgt = range(0, 2, 1, 5);
+  // 两个 1×2 合并格（key 为 anchor 的 "col,row" 字符串，range 参数为 (startCol,startRow,endCol,endRow)）
+  const merges = {
+    '0,2': range(0, 2, 0, 3),
+    '1,2': range(1, 2, 1, 3),
+  };
+  assert.equal(validateMergeCompatibility(src, tgt, merges).ok, true);
+});
+
+test('validateMergeCompatibility: 目标区域合并格尺寸不一致 → false', () => {
+  const src = range(0, 0, 1, 1);
+  const tgt = range(0, 2, 1, 5);
+  // 一个 1×2、一个 2×2，跨距不同
+  const merges = {
+    '0,2': range(0, 2, 0, 3),
+    '1,2': range(1, 2, 2, 3),
+  };
+  const result = validateMergeCompatibility(src, tgt, merges);
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'target-merge-size');
+});
+
+test('validateMergeCompatibility: 源区域与 merge 部分相交 → source-overlap', () => {
+  const src = range(0, 0, 0, 0); // 2×2 merge 只含其左上角，不完全包含
+  const tgt = range(0, 2, 0, 3);
+  const merges = { '0,0': range(0, 0, 1, 1) };
+  const result = validateMergeCompatibility(src, tgt, merges);
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'source-overlap');
 });
 
 // ============ 额外：反向填充（up/left） ============

@@ -10,15 +10,15 @@ import { ref, computed, nextTick, onMounted, onBeforeUnmount, watch } from 'vue'
 import { t } from '../../core/constants';
 
 const props = withDefaults(defineProps<{
-  items: string[];
+  items?: string[];
   /** 当前单元格原始值（用于标记已选项） */
-  current: string;
-  locale: string;
+  current?: string;
+  locale?: string;
   /** 锚点单元格在视口中的位置与尺寸（client 坐标） */
-  x: number;
-  y: number;
-  width: number;
-  height: number;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
 }>(), {
   items: () => [],
   current: '',

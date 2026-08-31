@@ -14,8 +14,8 @@ import type { DataValidationSeverity } from '../../core/types';
 const props = withDefaults(defineProps<{
   locale: string;
   severity: DataValidationSeverity;
-  title: string;
-  message: string;
+  title?: string;
+  message?: string;
   themeVars?: Record<string, string>;
 }>(), {
   title: '',
