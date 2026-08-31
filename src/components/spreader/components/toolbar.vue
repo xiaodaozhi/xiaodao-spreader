@@ -281,6 +281,8 @@ function onOverflowScroll() {
   if (!el) return;
   overflowCanUp.value = el.scrollTop > 1;
   overflowCanDown.value = el.scrollTop + el.clientHeight < el.scrollHeight - 1;
+  // 溢出菜单内滚动时收起已弹出的 picker 下拉，避免其悬在溢出菜单之上错位
+  closeAllToolbarMenus();
 }
 function scrollOverflowBy(d: number) {
   const el = overflowMenuEl.value;
@@ -407,6 +409,20 @@ function coordToolbarMenu(key: ToolbarMenuKey, v: boolean) {
     }
   }
   emit(MENU_EMIT[key], v);
+}
+
+/** 关闭所有工具栏 picker 下拉（fontSize/textColor/fillColor/border/merge/calc/sort/outline）。
+ *  用于溢出菜单中滚动或点击普通按钮时，收起已弹出的下拉，避免其悬在溢出菜单之上。 */
+function closeAllToolbarMenus() {
+  for (const k of TOOLBAR_MENU_KEYS) emit(MENU_EMIT[k], false);
+}
+
+// 溢出菜单内点击按钮：除「负责开关 picker 的箭头/触发器」自身外，一律收起已弹出的 picker 下拉。
+// （箭头/触发器由 coordToolbarMenu 处理互斥与开关，这里不能重复关闭，否则刚点开的会被立刻收起。）
+function onOverflowMenuClick(e: MouseEvent) {
+  const target = e.target as HTMLElement;
+  if (target.closest?.('.toolbar-split__arrow, .outline-trigger, .toolbar-font-size__btn')) return;
+  closeAllToolbarMenus();
 }
 
 // 数字格式：选区格式不一致时触发器显示「混合」
@@ -1518,6 +1534,7 @@ const freezeOptions = computed<FontOption[]>(() => {
           :key="overflowKeyVersion"
           class="overflow-menu"
           @scroll="onOverflowScroll"
+          @click="onOverflowMenuClick"
         />
         <button
           v-if="overflowCanUp || overflowCanDown"
