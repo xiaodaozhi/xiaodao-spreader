@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue';
 import type { FontOption } from '../core/constants';
+import { getFloatBounds, cssRightFromX } from '../core/utils';
 
 const props = withDefaults(defineProps<{
   modelValue: string | number;
@@ -23,6 +24,8 @@ const props = withDefaults(defineProps<{
   triggerIcon?: string;
   /** 触发器左侧图标旁的固定文本标签（溢出菜单中显示） */
   triggerLabel?: string;
+  /** 边界基准元素（通常是表格容器 wrapper）：菜单不得越出其可视区，见 getFloatBounds */
+  boundaryEl?: HTMLElement | null;
 }>(), {
   width: 'auto',
   menuWidth: undefined,
@@ -37,6 +40,7 @@ const props = withDefaults(defineProps<{
   searchPlaceholder: '',
   triggerIcon: '',
   triggerLabel: '',
+  boundaryEl: null,
 });
 
 const emit = defineEmits<{
@@ -91,9 +95,10 @@ function openMenu() {
   }
   // 先给一个临时位置向下弹，下一帧测量实际高度再决定方向
   const tmpTop = r.bottom + 4;
+  const b = getFloatBounds(props.boundaryEl);
   if (props.align === 'right') {
     pos.value = {
-      right: window.innerWidth - r.right,
+      right: cssRightFromX(r.right),
       top: tmpTop,
       up: false,
     };
@@ -115,15 +120,15 @@ function openMenu() {
     const menuEl = menuRef.value;
     if (!menuEl) return;
     const h = menuEl.offsetHeight;
-    const spaceBelow = window.innerHeight - r2.bottom - 8;
-    const spaceAbove = r2.top - 8;
-    // 下方能放就向下；下方放不下但上方够就向上；两边都不够→优先向上（尽量避开视口底部）
+    const spaceBelow = b.bottom - r2.bottom - 8;
+    const spaceAbove = r2.top - b.top - 8;
+    // 下方能放就向下；下方放不下但上方够就向上；两边都不够→优先向上（尽量避开底部）
     const up = spaceBelow < h && spaceAbove > 0;
     let top = up ? r2.top - h - 4 : r2.bottom + 4;
-    top = Math.max(8, Math.min(window.innerHeight - h - 8, top)); // 兜底贴边界
+    top = Math.max(b.top + 8, Math.min(b.bottom - h - 8, top)); // 兜底贴边界
     if (props.align === 'right') {
       pos.value = {
-        right: window.innerWidth - r2.right,
+        right: cssRightFromX(r2.right),
         top,
         up,
       };

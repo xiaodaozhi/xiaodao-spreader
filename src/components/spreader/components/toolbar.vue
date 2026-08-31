@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue';
 import { t } from '../core/constants';
 import type { FontOption, MergeType } from '../core/constants';
+import { getFloatBounds, cssRightFromX } from '../core/utils';
 import { NF_MIXED, type NFOption } from '../core/number-format';
 import SpDropdown from './dropdown.vue';
 import ColorPicker from './pickers/color-picker.vue';
@@ -218,11 +219,12 @@ const menuStyle = computed(() => {
   }
   void menuPosVersion.value;
   const rect = btn.getBoundingClientRect();
+  const b = getFloatBounds(props.boundaryEl);
   return {
     ...props.themeVars,
     position: 'fixed' as const,
     top: `${rect.bottom + 4}px`,
-    right: `${window.innerWidth - rect.right}px`,
+    right: `${cssRightFromX(Math.min(rect.right, b.right))}px`,
   };
 });
 
@@ -806,6 +808,7 @@ const freezeOptions = computed<FontOption[]>(() => {
             :trigger-el="textColorArrowRef"
             @update:model-open="emit('update:text-color-menu-open', $event)"
             @change="emit('text-color-change', $event)"
+            :boundary-el="boundaryEl"
           />
         </div>
       </div>
@@ -859,6 +862,7 @@ const freezeOptions = computed<FontOption[]>(() => {
             :trigger-el="fillColorArrowRef"
             @update:model-open="emit('update:fill-color-menu-open', $event)"
             @change="emit('fill-color-change', $event)"
+            :boundary-el="boundaryEl"
           />
         </div>
       </div>
@@ -918,6 +922,7 @@ const freezeOptions = computed<FontOption[]>(() => {
             :trigger-el="borderArrowRef"
             @update:model-open="emit('update:border-menu-open', $event)"
             @change="emit('border-change', $event)"
+            :boundary-el="boundaryEl"
           />
         </div>
       </div>
@@ -1046,6 +1051,7 @@ const freezeOptions = computed<FontOption[]>(() => {
             :trigger-el="mergeArrowRef"
             @update:model-open="emit('update:merge-menu-open', $event)"
             @change="emit('merge-change', $event)"
+            :boundary-el="boundaryEl"
           />
         </div>
       </div>
@@ -1188,6 +1194,7 @@ const freezeOptions = computed<FontOption[]>(() => {
             :disabled="isSingleCell"
             @update:model-open="emit('update:calc-menu-open', $event)"
             @change="emit(`calc-${$event}`)"
+            :boundary-el="boundaryEl"
           />
         </div>
       </div>
@@ -1248,6 +1255,7 @@ const freezeOptions = computed<FontOption[]>(() => {
             :trigger-el="sortArrowRef"
             @update:model-open="emit('update:sort-menu-open', $event)"
             @change="emit('sort-change', $event)"
+            :boundary-el="boundaryEl"
           />
         </div>
       </div>
@@ -1373,6 +1381,7 @@ const freezeOptions = computed<FontOption[]>(() => {
           @new-rule="emit('cf-new-rule')"
           @manage="emit('cf-manage')"
           @clear="emit('cf-clear', $event)"
+          :boundary-el="boundaryEl"
         />
       </div>
     </Teleport>

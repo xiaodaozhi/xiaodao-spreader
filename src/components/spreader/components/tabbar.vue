@@ -2,6 +2,7 @@
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue';
 import { t } from '../core/constants';
 import type { SheetState } from '../core/types';
+import { getFloatBounds } from '../core/utils';
 
 const props = defineProps<{
   locale: string;
@@ -9,6 +10,8 @@ const props = defineProps<{
   activeSheetIndex: number;
   renTab: number | null;
   renTabVal: string;
+  /** 边界基准元素（通常是表格容器 wrapper）：列表菜单不得越出其可视区，见 getFloatBounds */
+  boundaryEl?: HTMLElement | null;
 }>();
 
 const emit = defineEmits<{
@@ -56,9 +59,10 @@ function toggleListMenu() {
   const el = listBtnRef.value;
   if (!el) return;
   const r = el.getBoundingClientRect();
+  const b = getFloatBounds(props.boundaryEl);
   listMenuPos.value = {
     left: r.left,
-    bottom: window.innerHeight - r.top + 4,
+    bottom: b.bottom - r.top + 4,
   };
   // 活动项居中显示
   const idx = props.activeSheetIndex;

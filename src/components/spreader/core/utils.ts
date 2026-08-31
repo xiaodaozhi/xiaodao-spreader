@@ -107,3 +107,41 @@ export function gridViewW(viewW: number, sbSize: number): number {
 export function gridViewH(viewH: number, sbSize: number): number {
   return Math.max(0, viewH - HEADER_HEIGHT - sbSize);
 }
+
+// ============ 浮层边界 ============
+
+/** 浮层可用的有效边界（视口坐标系）。
+ *
+ * 取「组件容器(boundaryEl)」∩「浏览器视口」的交集，两者都不能单独作为判据：
+ *   - 浏览器视口：浮层 Teleport 到 body + position:fixed，挂在视口坐标系，越出视口一定看不见（硬边界）。
+ *     但组件作为子组件嵌入宿主页面时只占页面一部分，纯视口判定会漏算两侧留白 → 越界盖住宿主内容。
+ *   - 组件容器：嵌入场景下把浮层夹在表格可视区内。但容器可能大于视口（页面滚动、边缘在视口外），
+ *     纯容器判定会把「其实已在视口外」当成有空间 → 浮层照样看不见。
+ *
+ * 取交集后：组件全屏时容器≈视口，自然退化为纯视口判定；boundaryEl 为空时同样退化为纯视口。
+ */
+export interface FloatBounds {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
+
+export function getFloatBounds(boundaryEl?: HTMLElement | null): FloatBounds {
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const r = boundaryEl?.getBoundingClientRect() ?? null;
+  if (!r) return { left: 0, right: vw, top: 0, bottom: vh };
+  return {
+    left: Math.max(0, Math.min(vw, r.left)),
+    right: Math.max(0, Math.min(vw, r.right)),
+    top: Math.max(0, Math.min(vh, r.top)),
+    bottom: Math.max(0, Math.min(vh, r.bottom)),
+  };
+}
+
+/** 把「视口坐标 x」换算成 fixed 定位的 CSS `right` 值（相对视口右缘的偏移）。
+ *  浮层以 position:fixed 挂在视口坐标系，故换算基准恒为 window.innerWidth，与有效边界无关。 */
+export function cssRightFromX(x: number): number {
+  return window.innerWidth - x;
+}

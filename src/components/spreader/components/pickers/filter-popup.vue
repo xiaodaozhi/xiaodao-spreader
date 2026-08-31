@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue';
 import { t } from '../../core/constants';
-import { colToLabel } from '../../core/utils';
+import { colToLabel, getFloatBounds } from '../../core/utils';
 import { FILTER_BLANK } from '../../core/filter-core';
 import type { SheetFilter, FilterColumn, FilterCondition, FilterOperator } from '../../core/types';
 
@@ -19,6 +19,8 @@ const props = withDefaults(defineProps<{
   clearFilterColumn: (col: number) => void;
   getColumnCandidates: (col: number) => { values: string[]; hasBlank: boolean };
   close: () => void;
+  /** 边界基准元素（通常是表格容器 wrapper）：弹窗不得越出其可视区，见 getFloatBounds */
+  boundaryEl?: HTMLElement | null;
 }>(), {
   locale: 'zh-CN',
 });
@@ -222,9 +224,10 @@ onMounted(async () => {
   const estH = rootRef.value?.offsetHeight ?? 400;
   let x = props.anchor.x + 15 - POPUP_W;
   let y = props.anchor.y + 24;
-  if (x < 4) x = Math.max(4, props.anchor.x);
-  if (x + POPUP_W > window.innerWidth - 4) x = Math.max(4, window.innerWidth - POPUP_W - 4);
-  if (y + estH > window.innerHeight - 4) y = Math.max(4, props.anchor.y - estH - 4);
+  const b = getFloatBounds(props.boundaryEl);
+  if (x < b.left + 4) x = Math.max(b.left + 4, props.anchor.x);
+  if (x + POPUP_W > b.right - 4) x = Math.max(b.left + 4, b.right - POPUP_W - 4);
+  if (y + estH > b.bottom - 4) y = Math.max(b.top + 4, props.anchor.y - estH - 4);
   pos.value = { left: x, top: y };
   searchInputRef.value?.focus();
   document.addEventListener('pointerdown', onPointerDown, true);

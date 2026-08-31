@@ -957,6 +957,7 @@ const setDimInputRef = (el: unknown) => {
       @tab-rename-keydown="interactions.onTabRenameKd($event)"
       @tab-rename-commit="interactions.commitTabRename"
       @tabbar-contextmenu="interactions.onTabBarCtx($event)"
+      :boundary-el="wrapperEl"
       @delete-sheet="
         sheetsOps.removeSheet($event);
         interactions.scheduleRender();
@@ -1035,6 +1036,7 @@ const setDimInputRef = (el: unknown) => {
       :clear-filter-column="coreState.clearFilterColumn"
       :get-column-candidates="coreState.getColumnCandidates"
       :close="interactions.closeFilterPopup"
+      :boundary-el="wrapperEl"
     />
 
     <!-- 条件格式管理器 -->
@@ -1090,6 +1092,7 @@ const setDimInputRef = (el: unknown) => {
       :height="interactions.validationDropdown.height"
       @select="interactionsRaw.onValidationDropdownSelect($event)"
       @close="interactionsRaw.closeValidationDropdown()"
+      :boundary-el="wrapperEl"
     />
 
     <!-- 数据验证输入信息提示 -->

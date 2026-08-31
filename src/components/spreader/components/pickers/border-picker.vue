@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, nextTick, onBeforeUnmount } from 'vue';
 import { t } from '../../core/constants';
+import { getFloatBounds, cssRightFromX } from '../../core/utils';
 
 export type BorderType = 'none' | 'bottom' | 'top' | 'left' | 'right' | 'all' | 'outer' | 'thickOuter';
 
@@ -9,11 +10,14 @@ const props = withDefaults(defineProps<{
   locale?: string;
   currentBorder?: BorderType;
   triggerEl?: HTMLElement | null;
+  /** 边界基准元素（通常是表格容器 wrapper）：菜单不得越出其可视区，见 getFloatBounds */
+  boundaryEl?: HTMLElement | null;
 }>(), {
   modelOpen: undefined,
   locale: 'zh-CN',
   currentBorder: 'none',
   triggerEl: null,
+  boundaryEl: null,
 });
 
 const emit = defineEmits<{
@@ -98,13 +102,15 @@ function openMenu() {
   if (!el) return;
   open.value = true;
   if (props.modelOpen !== undefined) emit('update:modelOpen', true);
+  const b = getFloatBounds(props.boundaryEl);
   const r = el.getBoundingClientRect();
-  let right: number | undefined = window.innerWidth - r.right;
+  // 菜单右缘目标位置：贴 trigger 右缘，但若越出有效右边界则夹回边界内
+  let right: number | undefined = cssRightFromX(Math.min(r.right, b.right));
   const estMenuW = 160;
   let posLeft: number | undefined;
-  if (r.left - estMenuW < 4) {
+  if (r.left - estMenuW < b.left + 4) {
     right = undefined;
-    posLeft = Math.max(4, r.left);
+    posLeft = Math.max(b.left + 4, r.left);
   }
   pos.value = right !== undefined
     ? { right, top: r.bottom + 4 }
@@ -116,13 +122,13 @@ function openMenu() {
     const menuEl = menuRef.value;
     if (!menuEl) return;
     const h = menuEl.offsetHeight;
-    const spaceBelow = window.innerHeight - r2.bottom - 8;
-    const spaceAbove = r2.top - 8;
+    const spaceBelow = b.bottom - r2.bottom - 8;
+    const spaceAbove = r2.top - b.top - 8;
     const up = spaceBelow < h && spaceAbove > 0;
     let top = up ? r2.top - h - 4 : r2.bottom + 4;
-    top = Math.max(4, Math.min(window.innerHeight - h - 4, top));
+    top = Math.max(b.top + 4, Math.min(b.bottom - h - 4, top));
     pos.value = right !== undefined
-      ? { right: window.innerWidth - r2.right, top }
+      ? { right: cssRightFromX(Math.min(r2.right, b.right)), top }
       : { left: posLeft!, top };
     document.addEventListener('pointerdown', onClickOutside);
   });

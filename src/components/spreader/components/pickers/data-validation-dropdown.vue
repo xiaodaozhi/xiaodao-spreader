@@ -8,6 +8,7 @@
  */
 import { ref, computed, nextTick, onMounted, onBeforeUnmount, watch } from 'vue';
 import { t } from '../../core/constants';
+import { getFloatBounds } from '../../core/utils';
 
 const props = withDefaults(defineProps<{
   items?: string[];
@@ -19,6 +20,8 @@ const props = withDefaults(defineProps<{
   y?: number;
   width?: number;
   height?: number;
+  /** 边界基准元素（通常是表格容器 wrapper）：下拉不得越出其可视区，见 getFloatBounds */
+  boundaryEl?: HTMLElement | null;
 }>(), {
   items: () => [],
   current: '',
@@ -72,12 +75,13 @@ function isChecked(item: string): boolean {
 /** 定位：优先向下弹，空间不足时向上；最后贴边界兜底 */
 function layout() {
   const h = viewH.value + (searchWrapHeight());
-  const spaceBelow = window.innerHeight - (props.y + props.height) - 8;
-  const spaceAbove = props.y - 8;
+  const b = getFloatBounds(props.boundaryEl);
+  const spaceBelow = b.bottom - (props.y + props.height) - 8;
+  const spaceAbove = props.y - b.top - 8;
   const up = spaceBelow < h && spaceAbove > spaceBelow;
   let top = up ? props.y - h - 2 : props.y + props.height + 2;
-  top = Math.max(8, Math.min(window.innerHeight - h - 8, top));
-  const left = Math.max(8, Math.min(window.innerWidth - menuW.value - 8, props.x));
+  top = Math.max(b.top + 8, Math.min(b.bottom - h - 8, top));
+  const left = Math.max(b.left + 8, Math.min(b.right - menuW.value - 8, props.x));
   pos.value = { left, top, up };
 }
 

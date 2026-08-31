@@ -1,13 +1,17 @@
 <script setup lang="ts">
 import { ref, nextTick, onMounted, onBeforeUnmount } from 'vue';
 import { t } from '../../core/constants';
+import { getFloatBounds, cssRightFromX } from '../../core/utils';
 
-withDefaults(defineProps<{
+const props = withDefaults(defineProps<{
   locale: string;
   hasSelection: boolean;
   themeVars?: Record<string, string>;
+  /** 边界基准元素（通常是表格容器 wrapper）：菜单不得越出其可视区，见 getFloatBounds */
+  boundaryEl?: HTMLElement | null;
 }>(), {
   themeVars: () => ({}),
+  boundaryEl: null,
 });
 
 const emit = defineEmits<{
@@ -67,8 +71,9 @@ function openMenu() {
   const r = el.getBoundingClientRect();
   open.value = true;
   submenu.value = null;
+  const b = getFloatBounds(props.boundaryEl);
   pos.value = {
-    right: window.innerWidth - r.right,
+    right: cssRightFromX(Math.min(r.right, b.right)),
     top: r.bottom + 4,
     up: false,
   };
@@ -77,14 +82,14 @@ function openMenu() {
     const menu = menuRef.value?.closest('.cf-menu') as HTMLElement | null;
     if (!menu) return;
     const h = menu.offsetHeight;
-    const spaceBelow = window.innerHeight - r.bottom - 8;
-    const spaceAbove = r.top - 8;
+    const spaceBelow = b.bottom - r.bottom - 8;
+    const spaceAbove = r.top - b.top - 8;
     // 下方放得下就向下；下方放不下但上方有空间（哪怕不够完整）就向上；两边都不够→兜底贴顶
     const up = spaceBelow < h && spaceAbove > 0;
     let top = up ? r.top - h - 4 : r.bottom + 4;
-    top = Math.max(8, Math.min(window.innerHeight - h - 8, top));
+    top = Math.max(b.top + 8, Math.min(b.bottom - h - 8, top));
     pos.value = {
-      right: window.innerWidth - r.right,
+      right: cssRightFromX(Math.min(r.right, b.right)),
       top,
       up,
     };
@@ -168,18 +173,19 @@ function enterSub(name: 'highlight' | 'clear', e?: MouseEvent) {
       ? highlightSubRef.value?.closest('.cf-submenu-wrap') as HTMLElement | null
       : clearSubRef.value?.closest('.cf-submenu-wrap') as HTMLElement | null;
     if (!subEl) return;
+    const b = getFloatBounds(props.boundaryEl);
     const subW = subEl.offsetWidth;
-    const wantRight = r.right + subW + 8 > window.innerWidth;
-    const wantLeft = r.left - subW - 8 < 0;
+    const wantRight = r.right + subW + 8 > b.right;
+    const wantLeft = r.left - subW - 8 < b.left;
     let dir: 'left' | 'right' = 'right';
     if (wantRight && !wantLeft) dir = 'left';
     else if (wantRight && wantLeft) dir = 'left';
     if (name === 'highlight') highlightDir.value = dir;
     else clearDir.value = dir;
-    const top = Math.max(8, Math.min(window.innerHeight - 30, r.top - 4));
+    const top = Math.max(b.top + 8, Math.min(b.bottom - 30, r.top - 4));
     const posObj = dir === 'right'
       ? { left: r.right + 4, top }
-      : { right: window.innerWidth - r.left + 4, top };
+      : { right: cssRightFromX(r.left - 4), top };
     if (name === 'highlight') highlightSubPos.value = posObj;
     else clearSubPos.value = posObj;
     onSubScroll(name);

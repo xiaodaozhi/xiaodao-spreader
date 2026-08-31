@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, nextTick, onBeforeUnmount } from 'vue';
 import { t } from '../../core/constants';
+import { getFloatBounds, cssRightFromX } from '../../core/utils';
 
 const props = withDefaults(defineProps<{
   modelOpen?: boolean;
@@ -69,35 +70,17 @@ function onClickOutside(e: PointerEvent) {
   close();
 }
 
-/** 有效边界 = 「组件容器(boundaryEl)」∩「浏览器视口」，两者取交集，谁都不能单独作为判据：
- *   - 浏览器视口：菜单 Teleport 到 body + position:fixed，挂在视口坐标系，越出视口一定看不见（硬边界）。
- *     但组件嵌入宿主 Vue 页面时只占页面一部分，纯视口判定会漏算两侧留白 → 越界盖住宿主内容。
- *   - 组件容器：嵌入场景下把菜单夹在表格可视区内。但容器可能大于视口（页面滚动、边缘在视口外），
- *     纯容器判定会把「其实已在视口外」当成有空间 → 菜单照样看不见。
- *  取交集后：组件全屏时容器≈视口，自然退化为纯视口判定；boundaryEl 缺失时同样退化为纯视口。 */
-function bounds() {
-  const vw = window.innerWidth;
-  const vh = window.innerHeight;
-  const r = props.boundaryEl?.getBoundingClientRect() ?? null;
-  return {
-    left: r ? Math.max(0, Math.min(vw, r.left)) : 0,
-    right: r ? Math.max(0, Math.min(vw, r.right)) : vw,
-    top: r ? Math.max(0, Math.min(vh, r.top)) : 0,
-    bottom: r ? Math.max(0, Math.min(vh, r.bottom)) : vh,
-  };
-}
-
 function openMenu() {
   const el = props.triggerEl ?? rootRef.value;
   if (!el) return;
   open.value = true;
   subKey.value = null;
   if (props.modelOpen !== undefined) emit('update:modelOpen', true);
-  const b = bounds();
+  const b = getFloatBounds(props.boundaryEl);
   const r = el.getBoundingClientRect();
   // 菜单右缘目标位置：贴 trigger 右缘，但若 trigger 右缘越出有效右边界则夹回边界内
   const menuTargetRight = Math.min(r.right, b.right);
-  let right: number | undefined = window.innerWidth - menuTargetRight;
+  let right: number | undefined = cssRightFromX(menuTargetRight);
   const estMenuW = 168;
   let posLeft: number | undefined;
   if (r.left - estMenuW < b.left + 4) {
@@ -120,7 +103,7 @@ function openMenu() {
     let top = up ? r2.top - h - 4 : r2.bottom + 4;
     top = Math.max(b.top + 4, Math.min(b.bottom - h - 4, top));
     pos.value = right !== undefined
-      ? { right: window.innerWidth - Math.min(r2.right, b.right), top }
+      ? { right: cssRightFromX(Math.min(r2.right, b.right)), top }
       : { left: posLeft!, top };
     document.addEventListener('pointerdown', onClickOutside);
   });

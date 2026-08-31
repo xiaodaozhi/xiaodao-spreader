@@ -1,6 +1,6 @@
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount, type Ref, type ComputedRef } from 'vue';
 import { HEADER_HEIGHT, HEADER_WIDTH, SB_SIZE, DEFAULT_COL_WIDTH, MIN_COL_WIDTH, MIN_ROW_HEIGHT, MAX_COL_WIDTH, MAX_ROW_HEIGHT, DEFAULT_FONT_FAMILY, FILL_HANDLE_SIZE, FILL_HANDLE_HIT_PADDING, t } from '../core/constants';
-import { colToLabel, resolveSize, getCanvasXY } from '../core/utils';
+import { colToLabel, resolveSize, getCanvasXY, getFloatBounds } from '../core/utils';
 import type { CoreState } from './core-state';
 import type { UndoStylesState } from './undo-styles';
 import { formatNumber, shouldAlignRightByDefault, NF_INVALID_VALUE, isFormatOverflowsToHashes, isInvalidDisplayValue } from '../core/number-format';
@@ -2116,8 +2116,10 @@ export function createInteractions(
     rdl();
     const mw = 140;
     const mh = items.length * 28 + 8;
-    const sw = window.innerWidth;
-    const sh = window.innerHeight;
+    // 右键主菜单边界 = 容器(wrapper) ∩ 视口：组件嵌入宿主页面时不得越出容器，容器大于视口时不把视口外当空间
+    const b = getFloatBounds(so.wrapperRef.value);
+    const sw = b.right;
+    const sh = b.bottom;
     if (x + mw > sw) x -= mw;
     if (y + mh > sh) y -= mh;
     // 初始方向先置右（多数情况下右侧有空间）；菜单渲染后由 predictCtxSubmenuDir()
@@ -2460,10 +2462,10 @@ export function createInteractions(
     const ph = 118;
     let px = x;
     let py = y;
-    if (px + pw > window.innerWidth) px = window.innerWidth - pw - 8;
-    if (py + ph > window.innerHeight) py = window.innerHeight - ph - 8;
-    if (px < 8) px = 8;
-    if (py < 8) py = 8;
+    // 边界 = 容器(wrapper) ∩ 视口：嵌入宿主页面时不越出容器，容器大于视口时不把视口外当可用空间
+    const b = getFloatBounds(so.wrapperRef.value);
+    px = Math.max(b.left + 8, Math.min(b.right - pw - 8, px));
+    py = Math.max(b.top + 8, Math.min(b.bottom - ph - 8, py));
     dimPanel.value = { type, x: px, y: py, value: cur, error: '' };
     dimCloseHandler = () => {
       dimPanel.value = null;
