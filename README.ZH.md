@@ -423,6 +423,62 @@ CF 引擎的 `shiftFormulaRefsSafe` 复用公式引擎的 `shiftFormulaRefs` 函
 
 ---
 
+## 数据验证
+
+类 Excel 数据验证，按工作表存储在 `SheetState.dataValidations`（`DataValidationRule[]`）。引擎位于 `spreader/core/data-validation.ts`，纯逻辑实现、零 Vue/Canvas 依赖，单元测试见 `test/data-validation.test.ts` 与 `test/data-validation-integration.test.ts`。
+
+### 规则结构
+
+每条规则拥有稳定 `id`、`type`（类型）、`operator`（运算符）、条件值 `formula1`/`formula2`、一个或多个 `ranges`（应用范围）、`allowBlank`（忽略空值）、`showDropdown`（显示下拉）、输入信息字段（`showInputMessage`、`inputTitle`、`inputMessage`）、出错警告字段（`showErrorMessage`、`errorStyle`、`errorTitle`、`errorMessage`）与 `enabled`（启用开关）。
+
+### 支持的类型与运算符
+
+| 类型 | 说明 |
+|------|------|
+| `any` | 无约束——在对话框选中「任何值」并确定即清除该范围验证 |
+| `list` | 单元格内下拉，来源于固定值或单元格范围 |
+| `wholeNumber` / `decimal` | 数值约束 |
+| `date` / `time` | 日期 / 时间约束（ISO、`YYYY年M月D日`、美式 `m/d/yyyy` 或 Excel 序列号） |
+| `textLength` | 文本长度约束 |
+| `custom` | 相对于候选单元格求值的公式，如 `=AND(B2>=0,B2<=100)` |
+
+所有值类型支持 8 种运算符：`between`（介于）、`notBetween`（不介于）、`equal`（等于）、`notEqual`（不等于）、`greaterThan`（大于）、`greaterThanOrEqual`（大于等于）、`lessThan`（小于）、`lessThanOrEqual`（小于等于）。`between`/`notBetween` 需要同时填 `formula1`（最小值）与 `formula2`（最大值）；其余运算符只用 `formula1`。
+
+### 列表来源
+
+列表验证的数据来自固定 `values`（`{ type: 'values', values: [...] }`）或范围引用（`{ type: 'range', range, sheetId }`）；后者在源单元格变化时动态更新。
+
+### 验证流程
+
+验证发生在值写入**之前**。`commitEdit` 返回 `Promise<boolean>`——`false` 表示停止级违规拒绝了录入、编辑器状态保留。警告/信息级会调用 `showValidationAlert` 并等待用户确认后再继续。同一范围有多条规则时**必须全部通过**（`rules.every()`）。
+
+### 范围索引
+
+空间行分带索引（`DvIndex`）将 (row, col) 查询映射到候选规则，O(1) 且零每次输入分配，因此单条覆盖 A1:A100000 的规则依然轻量。
+
+### 原子粘贴 / 自动填充
+
+复制/粘贴与自动填充先算出全部候选值、跑 `validateCells`，只要出现一条停止级违规就整次取消——不会出现部分提交。
+
+### 插入 / 删除传播
+
+`adjustDvRangeForInsert/Delete` 与 `translateDvRange` 复用公式引擎的 `shiftFormulaRefs`，因此绝对引用固定不动、相对引用正确平移；范围随之扩展/收缩，完全被移除的规则自动删除。
+
+### UI 组件
+
+| 文件 | 职责 |
+|------|------|
+| `data-validation-dialog.vue` | 工具栏「数据验证」对话框：类型/运算符/值、列表来源、输入信息、出错警告、应用范围；保存时校验最小值/最大值字面量 |
+| `data-validation-dropdown.vue` | 单元格内列表下拉：虚拟列表、搜索框、完整键盘操作（↑ ↓ / Home / End / PageUp / PageDown / Enter / Esc） |
+| `data-validation-alert.vue` | 停止 / 警告 / 信息 警告框 |
+| `data-validation-input-message.vue` | 悬停提示气泡，显示规则的输入信息（位于 `components/`，不在 `pickers/`） |
+
+### 持久化与撤销
+
+规则随工作表 v-model（`dataValidations` 字段）持久化，在保存/加载/复制工作表中往返，并像其他工作表改动一样接入撤销/重做栈。
+
+---
+
 ## 自动填充
 
 一套类 Excel 的填充柄机制（`spreader/core/autofill.ts` 纯引擎 + `composables/interactions.ts` 画布/交互层）。拖动活动选区右下角的小方块即可填充单元格，无 DOM 句柄，全部在 Canvas 上绘制。

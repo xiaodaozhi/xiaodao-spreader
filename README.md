@@ -420,6 +420,62 @@ Duplicate / unique / top-bottom / above-below rules need a value-frequency stati
 
 ---
 
+## Data Validation
+
+Excel-style data validation stored per-sheet in `SheetState.dataValidations` (array of `DataValidationRule`). The engine lives in `spreader/core/data-validation.ts` — pure-logic, zero Vue/Canvas deps, with unit tests in `test/data-validation.test.ts` and `test/data-validation-integration.test.ts`.
+
+### Rule Structure
+
+Each rule has a stable `id`, a `type`, an `operator`, criterion values `formula1`/`formula2`, one or more `ranges`, `allowBlank` (ignore blanks), `showDropdown`, input-message fields (`showInputMessage`, `inputTitle`, `inputMessage`), error-alert fields (`showErrorMessage`, `errorStyle`, `errorTitle`, `errorMessage`), and `enabled`.
+
+### Supported Types & Operators
+
+| Type | Description |
+|------|-------------|
+| `any` | No constraint — selecting it on save clears validation for the range |
+| `list` | In-cell dropdown from fixed values or a cell range |
+| `wholeNumber` / `decimal` | Numeric constraint |
+| `date` / `time` | Date / time constraint (ISO, `YYYY年M月D日`, US `m/d/yyyy`, or Excel serial) |
+| `textLength` | String length constraint |
+| `custom` | Formula evaluated relative to the candidate cell, e.g. `=AND(B2>=0,B2<=100)` |
+
+All value types support 8 operators: `between`, `notBetween`, `equal`, `notEqual`, `greaterThan`, `greaterThanOrEqual`, `lessThan`, `lessThanOrEqual`. `between`/`notBetween` require both `formula1` (min) and `formula2` (max); the other operators use only `formula1`.
+
+### List Source
+
+List validation resolves its items from either fixed `values` (`{ type: 'values', values: [...] }`) or a `range` reference (`{ type: 'range', range, sheetId }`) that updates dynamically when the source cells change.
+
+### Validation Flow
+
+Validation runs **before** the value is committed. `commitEdit` returns `Promise<boolean>` — `false` means a Stop-level violation rejected the edit and the editor state is preserved. Warning/Information alerts call `showValidationAlert` and await user confirmation before proceeding. When multiple rules target the same range, **all** must pass (`rules.every()`).
+
+### Range Index
+
+A spatial row-band index (`DvIndex`) maps a (row, col) lookup to candidate rules in O(1) with zero per-input allocation, so a single rule covering A1:A100000 stays cheap.
+
+### Atomic Paste / Auto Fill
+
+Copy/paste and Auto Fill compute every candidate first, run `validateCells`, and cancel the whole operation if any Stop-level violation occurs — no partial commit.
+
+### Insert / Delete Propagation
+
+`adjustDvRangeForInsert/Delete` and `translateDvRange` reuse the formula engine's `shiftFormulaRefs`, so absolute references stay fixed while relative refs shift; ranges expand/shrink and fully-removed rules auto-delete.
+
+### UI Components
+
+| File | Role |
+|------|------|
+| `data-validation-dialog.vue` | Toolbar "Data Validation" dialog: type/operator/value, list source, input message, error alert, apply range; validates min/max literals on save |
+| `data-validation-dropdown.vue` | In-cell list dropdown: virtual list, search box, full keyboard nav (↑ ↓ / Home / End / PageUp / PageDown / Enter / Esc) |
+| `data-validation-alert.vue` | Stop / Warning / Information alert box |
+| `data-validation-input-message.vue` | Hover tooltip showing the rule's input message (lives in `components/`, not `pickers/`) |
+
+### Persistence & Undo
+
+Rules persist through the sheet v-model (`dataValidations` field), round-trip through save/load/dup-sheet, and integrate with the undo/redo stack like any other sheet mutation.
+
+---
+
 ## Auto Fill
 
 An Excel-style fill-handle mechanism (`spreader/core/autofill.ts` pure engine + `composables/interactions.ts` canvas/interaction layer). Drag the small square at the bottom-right corner of the active selection to fill cells: no DOM handles, all drawn on Canvas.
