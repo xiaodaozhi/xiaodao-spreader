@@ -149,6 +149,14 @@ const activeSheetIndex = sheetsOpsRaw.activeSheetIndex;
 const sortMenuOpen = sheetsOpsRaw.sortMenuOpen;
 const cachedSortOrder = sheetsOpsRaw.cachedSortOrder;
 const outlineMenuOpen = ref(false);
+// 选区是否覆盖整行/整列：决定工具栏「分组」按钮是否可用（仅选中行/列才点亮），并作为菜单项作用轴（对标右键菜单按轴分菜单的逻辑，按钮版由选区定轴）
+const outlineAxis = computed<'rows' | 'cols' | null>(() => {
+  const sel = coreState.selection;
+  if (!sel) return null;
+  if (sel.startCol === 0 && sel.endCol === coreState.colCount - 1) return 'rows';
+  if (sel.startRow === 0 && sel.endRow === coreState.rowCount - 1) return 'cols';
+  return null;
+});
 const interactions = reactive(interactionsRaw) as unknown as UnwrapRef<InteractionsState>;
 const findReplace = reactive(findReplaceRaw) as unknown as UnwrapRef<FindReplaceState>;
 
@@ -605,6 +613,7 @@ const setDimInputRef = (el: unknown) => {
       :cached-sort-order="cachedSortOrder"
       :can-sort="canSort"
       :outline-menu-open="outlineMenuOpen"
+      :outline-axis="outlineAxis"
       :can-filter="canFilter"
       :filter-active="coreState.getFilter() !== null"
       :h-align-options="undoStyles.hAlignOptions"

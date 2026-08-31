@@ -345,6 +345,8 @@ const props = defineProps<{
   cachedSortOrder: SortOrder;
   canSort: boolean;
   outlineMenuOpen: boolean;
+  /** 当前选区轴：'rows'=选中整行，'cols'=选中整列，null=未选中行/列。决定「分组」按钮是否可用（置灰提示先选行/列） */
+  outlineAxis?: 'rows' | 'cols' | null;
   /** 工具栏「筛选」按钮是否可用（单选合并单元格且无筛选态时禁用） */
   canFilter: boolean;
   /** 当前 worksheet 是否已启用筛选 */
@@ -1263,7 +1265,7 @@ const freezeOptions = computed<FontOption[]>(() => {
 
     <!-- 分组 / 折叠（Outline），位于排序之后 -->
     <Teleport
-      :disabled="teleportDisabled('outline')"
+      :disabled="!outlineAxis || teleportDisabled('outline')"
       :to="overflowMenuTarget"
     >
       <div
@@ -1302,6 +1304,7 @@ const freezeOptions = computed<FontOption[]>(() => {
           :locale="locale"
           :trigger-el="outlineArrowRef"
           :boundary-el="boundaryEl"
+          :axis="outlineAxis"
           @update:model-open="emit('update:outline-menu-open', $event)"
           @action="emit('outline-action', $event)"
         />
