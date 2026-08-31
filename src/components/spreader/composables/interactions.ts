@@ -2191,16 +2191,16 @@ export function createInteractions(
       const subH = subRect.height;
       sub.style.display = prev;
       if (w > maxSubW) maxSubW = w;
-      // 垂直方向：父项 top + 子菜单高度（即 top:-4 对齐时的子菜单下缘）超过有效下边界 - 余量，
-      // 则改为向上弹出（bottom 对齐父项底部），避免子菜单向下溢出。inline style 覆盖 CSS 默认 top:-4px。
+      // 垂直方向：父项 top + 子菜单高度（即 top:-5px 对齐时的子菜单下缘）超过有效下边界 - 余量，
+      // 则改为向上弹出（bottom 对齐父项底部），避免子菜单向下溢出。inline style 覆盖 CSS 默认 top:-5px。
       const itemRect = it.getBoundingClientRect();
       if (itemRect.top + subH > boundBottom - SUBMENU_EDGE_MARGIN) {
-        // 向上弹出：bottom 比向下弹出的 top(-4px) 再低 1px，使子菜单顶缘与父项底缘之间留出 1px，
-        // 视觉上与向下弹出时的 -4px 上探保持对称（向下弹时子菜单下移量更大，向上弹相应多下移 1px）。
+        // 向上弹出：bottom:-5px，与向下弹出的 CSS 默认 top:-5px 等距对称（向下弹上移 1px、向上弹下移 1px）。
+        // 注意：向下弹出的偏移写在 spreader.vue 的 .context-submenu{ top:-5px }，两处需同步修改。
         sub.style.top = 'auto';
         sub.style.bottom = '-5px';
       } else {
-        // 不溢出时清掉 inline，让 CSS 默认 top:-4px 生效，避免上次菜单残留方向
+        // 不溢出时清掉 inline，让 CSS 默认 top:-5px 生效，避免上次菜单残留方向
         sub.style.top = '';
         sub.style.bottom = '';
       }

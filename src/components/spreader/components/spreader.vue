@@ -1265,7 +1265,9 @@ const setDimInputRef = (el: unknown) => {
 .context-menu__item--disabled { color: #bbb; cursor: default; }
 .context-menu__item--disabled:hover { background: transparent; }
 .context-menu__arrow { margin-left: 8px; margin-right: -2px; width: 12px; height: 12px; fill: #888; flex: none; }
-.context-submenu { display: none; position: absolute; left: 100%; top: -4px; background: #fff; border: 1px solid #ccc; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); padding: 4px 0; min-width: 100px; z-index: 10001; }
+/* top:-5px = 向下弹出时相对父项上移 1px 后的对齐值；向上弹出时由 interactions.ts 的
+   predictCtxSubmenuDir() inline 写 bottom:-5px（等距下移）。两处需保持同步。 */
+.context-submenu { display: none; position: absolute; left: 100%; top: -5px; background: #fff; border: 1px solid #ccc; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); padding: 4px 0; min-width: 100px; z-index: 10001; }
 .context-submenu--left { left: auto; right: 100%; }
 .context-menu__item:not(.context-menu__item--disabled):hover > .context-submenu { display: block; }
 .context-submenu .context-menu__item { justify-content: flex-start; }
