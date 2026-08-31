@@ -1683,7 +1683,7 @@ const freezeOptions = computed<FontOption[]>(() => {
 .overflow-menu .cf-menu-root .cf-menu-trigger { padding-left: 6px; gap: 6px; }
 .overflow-menu .cf-menu-trigger__icon { width: 18px; height: 18px; }
 .overflow-menu .outline-trigger { padding-left: 6px; gap: 6px; }
-.overflow-menu .outline-trigger .toolbar-btn__icon { width: 18px; height: 18px; }
+.overflow-menu .outline-trigger .toolbar-btn__icon { width: 16px; height: 16px; }
 
 /* 统一弹出动画：fade + scale */
 .menu-pop-enter-active, .menu-pop-leave-active { transition: opacity 0.12s ease-out, transform 0.12s ease-out; }
@@ -1711,7 +1711,7 @@ const freezeOptions = computed<FontOption[]>(() => {
 .overflow-menu .cf-menu-root .cf-menu-trigger { padding-left: 6px; gap: 6px; }
 .overflow-menu .cf-menu-trigger__icon { width: 18px; height: 18px; }
 .overflow-menu .outline-trigger { padding-left: 6px; gap: 6px; }
-.overflow-menu .outline-trigger .toolbar-btn__icon { width: 18px; height: 18px; }
+.overflow-menu .outline-trigger .toolbar-btn__icon { width: 16px; height: 16px; }
 .overflow-menu .toolbar-font-size__input { flex: 1 1 auto; width: auto; min-width: 40px; }
 
 .overflow-menu .toolbar-btn:hover:not(:disabled) { background: var(--sp-toolbar-btn-hover-bg); }
