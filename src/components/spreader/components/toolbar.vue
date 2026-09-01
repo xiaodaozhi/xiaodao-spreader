@@ -370,6 +370,12 @@ const props = defineProps<{
   vAlignOptions: FontOption[];
   mergeMenuOpen: boolean;
   calcMenuOpen: boolean;
+  cfMenuOpen: boolean;
+  freezeMenuOpen: boolean;
+  fontMenuOpen: boolean;
+  hAlignMenuOpen: boolean;
+  vAlignMenuOpen: boolean;
+  numFmtMenuOpen: boolean;
   isSingleCell: boolean;
   /** 当前 worksheet 是否已有冻结行或列 */
   hasFreeze: boolean;
@@ -391,7 +397,7 @@ const emit = defineEmits<{
   (e: 'font-family-change' | 'font-size-change' | 'h-align-change' | 'v-align-change', v: string | number): void;
   (e: 'font-size-input' | 'text-color-change' | 'fill-color-change' | 'number-format-change' | 'freeze-change' | 'cf-preset' | 'outline-action', v: string): void;
   (e: 'font-size-keydown', ev: KeyboardEvent): void;
-  (e: 'update:font-size-menu-open' | 'update:text-color-menu-open' | 'update:fill-color-menu-open' | 'update:border-menu-open' | 'update:sort-menu-open' | 'update:outline-menu-open' | 'update:merge-menu-open' | 'update:calc-menu-open', v: boolean): void;
+  (e: 'update:font-size-menu-open' | 'update:text-color-menu-open' | 'update:fill-color-menu-open' | 'update:border-menu-open' | 'update:sort-menu-open' | 'update:outline-menu-open' | 'update:merge-menu-open' | 'update:calc-menu-open' | 'update:cf-menu-open' | 'update:freeze-menu-open' | 'update:font-menu-open' | 'update:h-align-menu-open' | 'update:v-align-menu-open' | 'update:num-fmt-menu-open', v: boolean): void;
   (e: 'border-change', v: BorderType): void;
   (e: 'sort-change', v: SortOrder): void;
   (e: 'merge-change', v: MergeType): void;
@@ -400,9 +406,9 @@ const emit = defineEmits<{
 
 // 同一时刻仅允许一个工具栏下拉菜单打开：任一 picker 下拉打开时，关闭其余 picker 下拉。
 // 覆盖主栏与溢出菜单（二者同源 tb-item + 同一套状态），修复「溢出菜单里点不同下拉框、前一个不关闭」的问题。
-const TOOLBAR_MENU_KEYS = ['fontSize', 'textColor', 'fillColor', 'border', 'merge', 'calc', 'sort', 'outline'] as const;
+const TOOLBAR_MENU_KEYS = ['fontSize', 'textColor', 'fillColor', 'border', 'merge', 'calc', 'sort', 'outline', 'cf', 'freeze', 'font', 'hAlign', 'vAlign', 'numFmt'] as const;
 type ToolbarMenuKey = typeof TOOLBAR_MENU_KEYS[number];
-const MENU_EMIT: Record<ToolbarMenuKey, 'update:font-size-menu-open' | 'update:text-color-menu-open' | 'update:fill-color-menu-open' | 'update:border-menu-open' | 'update:merge-menu-open' | 'update:calc-menu-open' | 'update:sort-menu-open' | 'update:outline-menu-open'> = {
+const MENU_EMIT: Record<ToolbarMenuKey, 'update:font-size-menu-open' | 'update:text-color-menu-open' | 'update:fill-color-menu-open' | 'update:border-menu-open' | 'update:merge-menu-open' | 'update:calc-menu-open' | 'update:sort-menu-open' | 'update:outline-menu-open' | 'update:cf-menu-open' | 'update:freeze-menu-open' | 'update:font-menu-open' | 'update:h-align-menu-open' | 'update:v-align-menu-open' | 'update:num-fmt-menu-open'> = {
   fontSize: 'update:font-size-menu-open',
   textColor: 'update:text-color-menu-open',
   fillColor: 'update:fill-color-menu-open',
@@ -411,6 +417,12 @@ const MENU_EMIT: Record<ToolbarMenuKey, 'update:font-size-menu-open' | 'update:t
   calc: 'update:calc-menu-open',
   sort: 'update:sort-menu-open',
   outline: 'update:outline-menu-open',
+  cf: 'update:cf-menu-open',
+  freeze: 'update:freeze-menu-open',
+  font: 'update:font-menu-open',
+  hAlign: 'update:h-align-menu-open',
+  vAlign: 'update:v-align-menu-open',
+  numFmt: 'update:num-fmt-menu-open',
 };
 function coordToolbarMenu(key: ToolbarMenuKey, v: boolean) {
   if (v) {
@@ -431,7 +443,7 @@ function closeAllToolbarMenus() {
 // （箭头/触发器由 coordToolbarMenu 处理互斥与开关，这里不能重复关闭，否则刚点开的会被立刻收起。）
 function onOverflowMenuClick(e: MouseEvent) {
   const target = e.target as HTMLElement;
-  if (target.closest?.('.toolbar-split__arrow, .outline-trigger, .toolbar-font-size__btn')) return;
+  if (target.closest?.('.toolbar-split__arrow, .outline-trigger, .toolbar-font-size__btn, .cf-menu-trigger, .sp-dropdown__trigger')) return;
   closeAllToolbarMenus();
 }
 
@@ -603,6 +615,8 @@ const freezeOptions = computed<FontOption[]>(() => {
           :visible-count="8"
           :title="t(locale, 'fontFamily')"
           align="right"
+          :model-open="fontMenuOpen"
+          @update:model-open="coordToolbarMenu('font', $event)"
           @change="emit('font-family-change', $event)"
           :boundary-el="boundaryEl"
         />
@@ -1010,6 +1024,8 @@ const freezeOptions = computed<FontOption[]>(() => {
           :visible-count="3"
           align="right"
           :title="t(locale, 'hAlign')"
+          :model-open="hAlignMenuOpen"
+          @update:model-open="coordToolbarMenu('hAlign', $event)"
           @change="emit('h-align-change', $event)"
           :boundary-el="boundaryEl"
         />
@@ -1034,6 +1050,8 @@ const freezeOptions = computed<FontOption[]>(() => {
           :visible-count="3"
           align="right"
           :title="t(locale, 'vAlign')"
+          :model-open="vAlignMenuOpen"
+          @update:model-open="coordToolbarMenu('vAlign', $event)"
           @change="emit('v-align-change', $event)"
           :boundary-el="boundaryEl"
         />
@@ -1144,6 +1162,8 @@ const freezeOptions = computed<FontOption[]>(() => {
             :title="t(locale, 'numberFormat')"
             :fallback-label="nfFallbackLabel"
             align="right"
+            :model-open="numFmtMenuOpen"
+            @update:model-open="coordToolbarMenu('numFmt', $event)"
             @change="emit('number-format-change', String($event))"
             :boundary-el="boundaryEl"
           />
@@ -1409,6 +1429,8 @@ const freezeOptions = computed<FontOption[]>(() => {
           :title="t(locale, 'freezePane')"
           :trigger-icon="FREEZE_ICON"
           :trigger-label="t(locale, 'freezePane')"
+          :model-open="freezeMenuOpen"
+          @update:model-open="coordToolbarMenu('freeze', $event)"
           @change="emit('freeze-change', String($event))"
           :boundary-el="boundaryEl"
         />
@@ -1428,6 +1450,8 @@ const freezeOptions = computed<FontOption[]>(() => {
           :locale="locale"
           :has-selection="hasSelection"
           :theme-vars="themeVars"
+          :model-open="cfMenuOpen"
+          @update:model-open="coordToolbarMenu('cf', $event)"
           @preset="emit('cf-preset', $event)"
           @new-rule="emit('cf-new-rule')"
           @manage="emit('cf-manage')"

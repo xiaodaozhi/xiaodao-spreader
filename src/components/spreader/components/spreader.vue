@@ -149,6 +149,15 @@ const activeSheetIndex = sheetsOpsRaw.activeSheetIndex;
 const sortMenuOpen = sheetsOpsRaw.sortMenuOpen;
 const cachedSortOrder = sheetsOpsRaw.cachedSortOrder;
 const outlineMenuOpen = ref(false);
+// 条件格式 / 冻结窗格下拉的展开状态：接入 toolbar 的 coordToolbarMenu 协调器，
+// 实现「同一时刻仅一个工具栏下拉打开」（与主栏 picker 同源）
+const cfMenuOpen = ref(false);
+const freezeMenuOpen = ref(false);
+// 字体族 / 水平对齐 / 垂直对齐 / 数字格式下拉的展开状态：同样接入 toolbar 的 coordToolbarMenu 协调器
+const fontMenuOpen = ref(false);
+const hAlignMenuOpen = ref(false);
+const vAlignMenuOpen = ref(false);
+const numFmtMenuOpen = ref(false);
 // 选区是否覆盖整行/整列：决定工具栏「分组」按钮是否可用（仅选中行/列才点亮），并作为菜单项作用轴（对标右键菜单按轴分菜单的逻辑，按钮版由选区定轴）
 const outlineAxis = computed<'rows' | 'cols' | null>(() => {
   const sel = coreState.selection;
@@ -623,6 +632,12 @@ const setDimInputRef = (el: unknown) => {
       :sel-wrap="undoStyles.selWrap"
       :merge-menu-open="bordersMerge.mergeMenuOpen"
       :calc-menu-open="bordersMerge.calcMenuOpen"
+      :cf-menu-open="cfMenuOpen"
+      :freeze-menu-open="freezeMenuOpen"
+      :font-menu-open="fontMenuOpen"
+      :h-align-menu-open="hAlignMenuOpen"
+      :v-align-menu-open="vAlignMenuOpen"
+      :num-fmt-menu-open="numFmtMenuOpen"
       :is-single-cell="isSingleCell"
       :has-freeze="coreState.freeze.rows > 0 || coreState.freeze.cols > 0"
       :freeze-panes-disabled="freezePanesDisabled"
@@ -675,6 +690,12 @@ const setDimInputRef = (el: unknown) => {
       @merge-change="bordersMerge.onMergeChange($event)"
       @apply-merge="bordersMerge.onApplyMerge"
       @update:calc-menu-open="bordersMerge.onCalcMenuToggle($event)"
+      @update:cf-menu-open="cfMenuOpen = $event"
+      @update:freeze-menu-open="freezeMenuOpen = $event"
+      @update:font-menu-open="fontMenuOpen = $event"
+      @update:h-align-menu-open="hAlignMenuOpen = $event"
+      @update:v-align-menu-open="vAlignMenuOpen = $event"
+      @update:num-fmt-menu-open="numFmtMenuOpen = $event"
       @calc-sum="bordersMerge.onCalcSum"
       @calc-avg="bordersMerge.onCalcAvg"
       @calc-count="bordersMerge.onCalcCount"

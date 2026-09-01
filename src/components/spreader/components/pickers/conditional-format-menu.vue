@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, nextTick, onMounted, onBeforeUnmount } from 'vue';
+import { ref, watch, nextTick, onMounted, onBeforeUnmount } from 'vue';
 import { t } from '../../core/constants';
 import { getFloatBounds, cssRightFromX } from '../../core/utils';
 import { useFloatMenuPosition } from '../../composables/useFloatMenuPosition';
@@ -10,15 +10,19 @@ const props = withDefaults(defineProps<{
   themeVars?: Record<string, string>;
   /** 边界基准元素（通常是表格容器 wrapper）：菜单不得越出其可视区，见 getFloatBounds */
   boundaryEl?: HTMLElement | null;
+  /** 受控展开状态：由 toolbar 的 coordToolbarMenu 协调器统一管理（同一时刻仅一个下拉打开） */
+  modelOpen?: boolean;
 }>(), {
   themeVars: () => ({}),
   boundaryEl: null,
+  modelOpen: false,
 });
 
 const emit = defineEmits<{
   (e: 'preset', type: string): void;
   (e: 'new-rule' | 'manage'): void;
   (e: 'clear', scope: 'selection' | 'sheet'): void;
+  (e: 'update:modelOpen', v: boolean): void;
 }>();
 
 const rootRef = ref<HTMLElement | null>(null);
@@ -61,12 +65,14 @@ const highlightItems = [
 ];
 
 function toggle() {
-  if (open.value) {
-    close();
-  } else {
-    openMenu();
-  }
+  emit('update:modelOpen', !open.value);
 }
+
+// 受控：展开状态由 modelOpen 驱动；内部 open 仅作为渲染态
+watch(() => props.modelOpen, (v) => {
+  if (v && !open.value) openMenu();
+  else if (!v && open.value) doClose();
+});
 
 function openMenu() {
   const el = btnRef.value;
@@ -84,10 +90,16 @@ function openMenu() {
   });
 }
 
-function close() {
+function doClose() {
   open.value = false;
   clearTimeout(subCloseTimer);
   submenu.value = null;
+}
+
+// 用户点击菜单项 / 点击菜单外部时关闭：通过 emit 通知父组件统一协调，
+// 由 modelOpen watch 回写内部 open，避免父 toolbar 状态与本组件状态脱节。
+function close() {
+  emit('update:modelOpen', false);
 }
 
 function onMenuScroll() {

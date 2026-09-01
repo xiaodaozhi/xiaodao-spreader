@@ -188,6 +188,7 @@ export function createInteractions(
   so: SheetsOpsState,
   lastEmittedDataRef: { value: string },
 ): InteractionsState {
+
   // ============ 渲染器 ============
   let rp = false;
   let rCtx: CanvasRenderingContext2D | null = null;
@@ -600,19 +601,39 @@ export function createInteractions(
             rCtx.fillRect(x + cw - wR, y, wR, rh);
           }
           // 角方块
-          if (wT > 0 && wL > 0) {
+          const skipLeft = col > 0 && s.isColumnCollapsed(col - 1);
+          const skipRight = col < s.colCount - 1 && s.isColumnCollapsed(col + 1);
+          const skipTop = row > 0 && s.isRowCollapsed(row - 1);
+          const skipBottom = row < s.rowCount - 1 && s.isRowCollapsed(row + 1);
+          // 关键修复（冻结窗格边缘狗牙）：当前绘制在 body canvas 上时，如果 col < freeze.cols，冻结列的右上角/右下角
+          // 方块会以 x = bodyLeft（固定坐标）画在 body canvas 上，由于 body canvas 随滚动移动而这两个方块不滚动，
+          // 导致它们「钉死」在冻结线右侧，形成逐行小点。同理 row < freeze.rows 时不画左下角/右下角方块。
+          // 判断「当前是否在 body canvas」：canvas class 只含 "grid-canvas"（不含 --freeze）。
+          const _freezeRightCornerSkip = (col < s.freeze.cols) && (() => {
+            try {
+              const cvs = (rCtx as unknown as { canvas?: HTMLCanvasElement }).canvas;
+              return cvs ? (String(cvs.className || '') === 'grid-canvas') : false;
+            } catch (_e) { return false; }
+          })();
+          const _freezeBottomCornerSkip = (row < s.freeze.rows) && (() => {
+            try {
+              const cvs = (rCtx as unknown as { canvas?: HTMLCanvasElement }).canvas;
+              return cvs ? (String(cvs.className || '') === 'grid-canvas') : false;
+            } catch (_e) { return false; }
+          })();
+          if (wT > 0 && wL > 0 && !skipLeft && !skipTop) {
             rCtx.fillStyle = rT?.color || rL?.color || BORDER_COLOR;
             rCtx.fillRect(x - wL, y - wT, wL, wT);
           }
-          if (wT > 0 && wR > 0) {
+          if (wT > 0 && wR > 0 && !skipRight && !skipTop && !_freezeRightCornerSkip) {
             rCtx.fillStyle = rT?.color || rR?.color || BORDER_COLOR;
             rCtx.fillRect(x + cw, y - wT, wR, wT);
           }
-          if (wB > 0 && wL > 0) {
+          if (wB > 0 && wL > 0 && !skipLeft && !skipBottom && !_freezeBottomCornerSkip) {
             rCtx.fillStyle = rB?.color || rL?.color || BORDER_COLOR;
             rCtx.fillRect(x - wL, y + rh, wL, wB);
           }
-          if (wB > 0 && wR > 0) {
+          if (wB > 0 && wR > 0 && !skipRight && !skipBottom && !_freezeRightCornerSkip && !_freezeBottomCornerSkip) {
             rCtx.fillStyle = rB?.color || rR?.color || BORDER_COLOR;
             rCtx.fillRect(x + cw, y + rh, wR, wB);
           }
@@ -721,8 +742,15 @@ export function createInteractions(
     const drawMergeBorder = (ctx: CanvasRenderingContext2D, m: { startCol: number; startRow: number; endCol: number; endRow: number }, ax: number, ay: number, aw: number, ah: number, hFrozenPane: boolean, vFrozenPane: boolean): void => {
       const sC = m.startCol, eCm = m.endCol, sR = m.startRow, eRm = m.endRow;
       const y = ay, rh = ah;
-      const skipRightAll = hFrozenPane && eCm >= s.freeze.cols;
-      const skipBottomAll = vFrozenPane && eRm >= s.freeze.rows;
+      // 落在冻结 pane 内 + 合并 endCol 跨冻结线 → 右侧边界统一由 body 段绘制
+      // 落在冻结 pane 内 + 合并 endCol+1 正好是冻结线(freeze.cols)且该列已折叠 → 同折叠侧跳过，不绘制右侧边+角
+      const freezeRightIsCollapsed = hFrozenPane && eCm + 1 === s.freeze.cols
+        && s.freeze.cols < s.colCount && s.isColumnCollapsed(s.freeze.cols);
+      const skipRightAll = (hFrozenPane && eCm >= s.freeze.cols) || freezeRightIsCollapsed;
+
+      const freezeBottomIsCollapsed = vFrozenPane && eRm + 1 === s.freeze.rows
+        && s.freeze.rows < s.rowCount && s.isRowCollapsed(s.freeze.rows);
+      const skipBottomAll = (vFrozenPane && eRm >= s.freeze.rows) || freezeBottomIsCollapsed;
       const cell = s.cells[s.cellKey(sC, sR)];
       const ownBorder: Record<string, BorderSide | undefined> = {
         top: s.getCellBorderSide(cell, 'top'),
@@ -793,7 +821,9 @@ export function createInteractions(
           : ownBorder.left;
         const wT = topSeg?.width ?? 0;
         const wL = leftSeg?.width ?? 0;
-        if (wT > 0 && wL > 0) {
+        const skipLeft = sC > 0 && s.isColumnCollapsed(sC - 1);
+        const skipTop = sR > 0 && s.isRowCollapsed(sR - 1);
+        if (wT > 0 && wL > 0 && !skipLeft && !skipTop) {
           ctx.fillStyle = topSeg?.color || leftSeg?.color || BORDER_COLOR;
           ctx.fillRect(ax - wL, ay - wT, wL, wT);
         }
@@ -808,7 +838,9 @@ export function createInteractions(
           : ownBorder.right;
         const wT = topSeg?.width ?? 0;
         const wR = rightSeg?.width ?? 0;
-        if (wT > 0 && wR > 0) {
+        const skipRight = eCm < s.colCount - 1 && s.isColumnCollapsed(eCm + 1);
+        const skipTop = sR > 0 && s.isRowCollapsed(sR - 1);
+        if (wT > 0 && wR > 0 && !skipRight && !skipTop) {
           ctx.fillStyle = topSeg?.color || rightSeg?.color || BORDER_COLOR;
           ctx.fillRect(ax + aw, ay - wT, wR, wT);
         }
@@ -823,7 +855,9 @@ export function createInteractions(
           : ownBorder.left;
         const wB = bottomSeg?.width ?? 0;
         const wL = leftSeg?.width ?? 0;
-        if (wB > 0 && wL > 0) {
+        const skipLeft = sC > 0 && s.isColumnCollapsed(sC - 1);
+        const skipBottom = eRm < s.rowCount - 1 && s.isRowCollapsed(eRm + 1);
+        if (wB > 0 && wL > 0 && !skipLeft && !skipBottom) {
           ctx.fillStyle = bottomSeg?.color || leftSeg?.color || BORDER_COLOR;
           ctx.fillRect(ax - wL, ay + ah, wL, wB);
         }
@@ -838,7 +872,9 @@ export function createInteractions(
           : ownBorder.right;
         const wB = bottomSeg?.width ?? 0;
         const wR = rightSeg?.width ?? 0;
-        if (wB > 0 && wR > 0) {
+        const skipRight = eCm < s.colCount - 1 && s.isColumnCollapsed(eCm + 1);
+        const skipBottom = eRm < s.rowCount - 1 && s.isRowCollapsed(eRm + 1);
+        if (wB > 0 && wR > 0 && !skipRight && !skipBottom) {
           ctx.fillStyle = bottomSeg?.color || rightSeg?.color || BORDER_COLOR;
           ctx.fillRect(ax + aw, ay + ah, wR, wB);
         }
@@ -895,7 +931,15 @@ export function createInteractions(
         }
         ctx.strokeStyle = cs.gridLine;
         ctx.lineWidth = 0.5;
-        ctx.strokeRect(ax + 0.25, ay + 0.25, (segRight - ax) - 0.5, (segBottom - ay) - 0.5);
+        // 网格线画在完整合并边界上（与非合并单元格一致），不内缩边框宽度。
+        // drawMergeBorder 随后在上层覆盖边框，盖住网格线，避免边框与背景间出现浅色缝隙。
+        const gridX = ax + 0.25;
+        const gridY = ay + 0.25;
+        const gridW = (segRight - ax) - 0.5;
+        const gridH = (segBottom - ay) - 0.5;
+        if (gridW > 0 && gridH > 0) {
+          ctx.strokeRect(gridX, gridY, gridW, gridH);
+        }
         drawMergeBorder(ctx, m, ax, ay, aw, ah, hFrozenPane, vFrozenPane);
         // 合并格选中边框：merge 为当前 activeCell 时在整个合并矩形外围描蓝色粗边框
         if (s.activeCell.value.col === aC && s.activeCell.value.row === aR) {
@@ -929,7 +973,11 @@ export function createInteractions(
     // PASS 1：body 区域裁剪
     rCtx.save();
     rCtx.beginPath();
-    rCtx.rect(bodyLeft, bodyTop, bodyWidth, bodyHeight);
+    // clip 向左/上各外扩 2px：让紧邻冻结线的 body 区第一列(col=freeze.cols)/第一行(row=freeze.rows)的左侧/上边角方块能完整画在 body canvas，
+    // 代替原先跨 canvas 的 drawFreezeBoundaryCorners 分层补画逻辑（后者在 frozen canvas 永久绘制导致向右滚动仍固定显示=狗牙）
+    const cxPad = frozenColumnsWidth > 0 ? 2 : 0;
+    const cyPad = frozenRowsHeight > 0 ? 2 : 0;
+    rCtx.rect(bodyLeft - cxPad, bodyTop - cyPad, bodyWidth + cxPad, bodyHeight + cyPad);
     rCtx.clip();
     drawCells(rCtx, iterC, eC, iterR, eR, rH);
     drawBorders(rCtx, iterC, eC, iterR, eR, rH);
@@ -1259,6 +1307,8 @@ export function createInteractions(
       ctx.fillStyle = '#444';
       for (let row = sR2; row <= eR2; row++) {
         for (let col = sC2; col <= eC2; col++) {
+          if (s.isRowCollapsed(row)) continue;
+          if (s.isColumnCollapsed(col)) continue;
           const mergeInfo = s.findMerge(col, row);
           if (mergeInfo && !(col === mergeInfo.range.startCol && row === mergeInfo.range.startRow)) continue;
           const rect2 = s.cellToScreenRect(row, col);
@@ -1302,6 +1352,27 @@ export function createInteractions(
             ctx.fillStyle = rR?.color || '#444';
             ctx.fillRect(x + cw - wR, y, wR, rh);
           }
+          // 角方块（与 body 区一致，含折叠侧跳过）
+          const skipLeft = col > 0 && s.isColumnCollapsed(col - 1);
+          const skipRight = col < s.colCount - 1 && s.isColumnCollapsed(col + 1);
+          const skipTop = row > 0 && s.isRowCollapsed(row - 1);
+          const skipBottom = row < s.rowCount - 1 && s.isRowCollapsed(row + 1);
+          if (wT > 0 && wL > 0 && !skipLeft && !skipTop) {
+            ctx.fillStyle = rT?.color || rL?.color || '#444';
+            ctx.fillRect(x - wL, y - wT, wL, wT);
+          }
+          if (wT > 0 && wR > 0 && !skipRight && !skipTop) {
+            ctx.fillStyle = rT?.color || rR?.color || '#444';
+            ctx.fillRect(x + cw, y - wT, wR, wT);
+          }
+          if (wB > 0 && wL > 0 && !skipLeft && !skipBottom) {
+            ctx.fillStyle = rB?.color || rL?.color || '#444';
+            ctx.fillRect(x - wL, y + rh, wL, wB);
+          }
+          if (wB > 0 && wR > 0 && !skipRight && !skipBottom) {
+            ctx.fillStyle = rB?.color || rR?.color || '#444';
+            ctx.fillRect(x + cw, y + rh, wR, wB);
+          }
         }
       }
     };
@@ -1309,6 +1380,8 @@ export function createInteractions(
       if (w <= 0 || h <= 0) return;
       frozenCtx.save();
       frozenCtx.beginPath();
+      // 严格按冻结区域 clip：绝对禁止角方块从 frozen canvas 溢到冻结线右侧/下侧。
+      // 溢出的像素挂在 frozen canvas（不随滚动重绘），向右滚走 body 列背景后就暴露成固定小点。
       frozenCtx.rect(x, y, w, h);
       frozenCtx.clip();
       frozenCtx.fillStyle = cs.gridBg;
@@ -1331,6 +1404,7 @@ export function createInteractions(
     if (frozenColumnsWidth > 0) {
       drawFrozenPane(HW, bodyTop, frozenColumnsWidth, bodyHeight, 0, frozenEC, iterR, eR);
     }
+
     frozenCtx.strokeStyle = cs.headerSep;
     frozenCtx.lineWidth = 1;
     if (frozenColumnsWidth > 0) {
