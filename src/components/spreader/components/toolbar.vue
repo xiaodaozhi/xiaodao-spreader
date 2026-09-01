@@ -107,7 +107,6 @@ const skipCloseAnim = ref(false);
 const overflowKeyVersion = ref(0);
 const overflowCanUp = ref(false);
 const overflowCanDown = ref(false);
-const toolbarReady = ref(false);
 
 const GAP = 2;     // .toolbar 的列间距
 const PAD = 6;     // .toolbar 左右内边距
@@ -161,10 +160,21 @@ function sameSet(a: Set<string>, b: Set<string>): boolean {
 
 let recomputeRaf = 0;
 let recomputeTries = 0;
+let recomputeFallbackTimer: ReturnType<typeof setTimeout> | null = null;
 function scheduleRecompute() {
   if (recomputeRaf) cancelAnimationFrame(recomputeRaf);
-  // 兜底：布局长期不可用时最多重试若干次，避免无限 rAF
-  if (recomputeTries > 60) return;
+  // 兜底：取消 60 次硬退出。少数环境（独立项目生产构建首屏 + 字体交换/JS 加载竞争）下 layout 长期
+  // 未就绪导致 clientWidth 持续为 0；超阈值后转长间隔 setTimeout 继续重试，配合 ResizeObserver /
+  // window.load / orientationchange 重新触发，理论上总能等到布局就绪（内容可见性已改用纯 CSS
+  // animation，不会因测量延迟而变透明，这里只影响溢出菜单的判定时机）
+  if (recomputeTries > 60) {
+    if (recomputeFallbackTimer) clearTimeout(recomputeFallbackTimer);
+    recomputeFallbackTimer = setTimeout(() => {
+      recomputeTries = 0;
+      scheduleRecompute();
+    }, 500);
+    return;
+  }
   recomputeTries++;
   // 双 rAF：等浏览器完成布局后再测量，规避移动端初始化时宽度未就绪导致的误判
   recomputeRaf = requestAnimationFrame(() => requestAnimationFrame(recompute));
@@ -204,7 +214,6 @@ function recompute() {
     overflowKeyVersion.value++;
     if (next.size === 0) overflowOpen.value = false;
   }
-  toolbarReady.value = true;
 }
 
 let ro: ResizeObserver | null = null;
@@ -312,6 +321,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   if (recomputeRaf) cancelAnimationFrame(recomputeRaf);
+  if (recomputeFallbackTimer) clearTimeout(recomputeFallbackTimer);
   ro?.disconnect();
   document.removeEventListener('pointerdown', onDocPointerdown, true);
   window.removeEventListener('resize', onWindowResize);
@@ -451,7 +461,6 @@ const freezeOptions = computed<FontOption[]>(() => {
   <div
     ref="rootEl"
     class="toolbar"
-    :class="{ 'toolbar--ready': toolbarReady }"
     @mousedown.prevent
   >
     <Teleport
@@ -1562,8 +1571,11 @@ const freezeOptions = computed<FontOption[]>(() => {
 <style scoped>
 .toolbar { position: relative; display: flex; align-items: center; height: 32px; min-height: 32px; gap: 2px; padding: 0 6px; background: var(--sp-toolbar-bg); border-bottom: 1px solid var(--sp-toolbar-border); user-select: none; }
 /* 初始化时先隐藏内容（opacity，不影响尺寸测量），等溢出计算完成后淡入，避免窄屏先全显示再闪现溢出按钮 */
-.toolbar > * { opacity: 0; transition: none; }
-.toolbar.toolbar--ready > * { opacity: 1; transition: opacity .15s ease-out; }
+/* 初始化时先淡入（both 保证结束时停在 opacity:1），避免窄屏先全显示再闪现溢出按钮。
+   关键：纯 CSS animation，绝不依赖 JS 测量的 toolbar--ready —— 无论 overflow 测量成功与否、甚至
+   JS 未执行，0.15s 后一定 opacity:1，杜绝「整条 toolbar 永久透明」的 bug。 */
+.toolbar > * { animation: toolbar-fade-in .15s ease-out both; }
+@keyframes toolbar-fade-in { from { opacity: 0; } to { opacity: 1; } }
 .tb-item { display: flex; align-items: center; flex: 0 0 auto; }
 .toolbar-sep { width: 1px; height: 18px; margin: 0 4px; background: var(--sp-toolbar-border); }
 .toolbar-font, .toolbar-number-format, .toolbar-align, .toolbar-freeze { flex: 0 0 auto; }
