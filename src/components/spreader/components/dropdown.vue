@@ -98,12 +98,12 @@ function openMenu() {
   const b = getFloatBounds(props.boundaryEl);
   if (props.align === 'right') {
     pos.value = {
-      right: cssRightFromX(r.right),
+      right: cssRightFromX(Math.min(r.right, b.right)),
       top: tmpTop,
       up: false,
     };
   } else {
-    pos.value = { left: r.left, top: tmpTop, up: false };
+    pos.value = { left: Math.max(b.left, r.left), top: tmpTop, up: false };
   }
   const idx = baseOptions.value.findIndex((o) => String(o.value) === String(props.modelValue));
   viewStart.value = idx >= 0
@@ -124,16 +124,19 @@ function openMenu() {
     const spaceAbove = r2.top - b.top - 8;
     // 下方能放就向下；下方放不下但上方够就向上；两边都不够→优先向上（尽量避开底部）
     const up = spaceBelow < h && spaceAbove > 0;
-    let top = up ? r2.top - h - 4 : r2.bottom + 4;
-    top = Math.max(b.top + 8, Math.min(b.bottom - h - 8, top)); // 兜底贴边界
+    const ideal = up ? r2.top - h - 4 : r2.bottom + 4;
+    // 夹紧下界取 min(b.top + 8, trigger 下缘 + 4)，与 useFloatMenuPosition 同源：
+    // trigger 位于有效区之上时（工具栏按钮在表格容器之外），b.top + 8 会把菜单硬推离 trigger。
+    const lower = Math.min(b.top + 8, r2.bottom + 4);
+    const top = Math.max(lower, Math.min(b.bottom - h - 8, ideal));
     if (props.align === 'right') {
       pos.value = {
-        right: cssRightFromX(r2.right),
+        right: cssRightFromX(Math.min(r2.right, b.right)),
         top,
         up,
       };
     } else {
-      pos.value = { left: r2.left, top, up };
+      pos.value = { left: Math.max(b.left, r2.left), top, up };
     }
   });
 }

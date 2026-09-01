@@ -595,6 +595,7 @@ const freezeOptions = computed<FontOption[]>(() => {
           :title="t(locale, 'fontFamily')"
           align="right"
           @change="emit('font-family-change', $event)"
+          :boundary-el="boundaryEl"
         />
       </div>
     </Teleport>
@@ -635,6 +636,7 @@ const freezeOptions = computed<FontOption[]>(() => {
             :trigger-el="fontSizeArrowRef"
             @update:model-open="coordToolbarMenu('fontSize', $event)"
             @change="emit('font-size-change', $event)"
+            :boundary-el="boundaryEl"
           />
           <button
             ref="fontSizeArrowRef"
@@ -1000,6 +1002,7 @@ const freezeOptions = computed<FontOption[]>(() => {
           align="right"
           :title="t(locale, 'hAlign')"
           @change="emit('h-align-change', $event)"
+          :boundary-el="boundaryEl"
         />
       </div>
     </Teleport>
@@ -1023,6 +1026,7 @@ const freezeOptions = computed<FontOption[]>(() => {
           align="right"
           :title="t(locale, 'vAlign')"
           @change="emit('v-align-change', $event)"
+          :boundary-el="boundaryEl"
         />
       </div>
     </Teleport>
@@ -1132,6 +1136,7 @@ const freezeOptions = computed<FontOption[]>(() => {
             :fallback-label="nfFallbackLabel"
             align="right"
             @change="emit('number-format-change', String($event))"
+            :boundary-el="boundaryEl"
           />
           <!-- 增加小数位数 -->
           <button
@@ -1396,6 +1401,7 @@ const freezeOptions = computed<FontOption[]>(() => {
           :trigger-icon="FREEZE_ICON"
           :trigger-label="t(locale, 'freezePane')"
           @change="emit('freeze-change', String($event))"
+          :boundary-el="boundaryEl"
         />
       </div>
     </Teleport>
