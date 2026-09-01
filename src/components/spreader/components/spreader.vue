@@ -803,7 +803,20 @@ const setDimInputRef = (el: unknown) => {
           @mousedown.prevent
           @click.stop="openInsertFunctionDialog"
         >
-          <span class="formula-bar__fx-label">fx</span>
+          <svg
+            class="formula-bar__fx-icon"
+            width="16"
+            height="16"
+            viewBox="0 0 1024 1024"
+            version="1.1"
+            xmlns="http://www.w3.org/2000/svg"
+            aria-hidden="true"
+          >
+            <path
+              fill="currentColor"
+              d="M841 370c3-3.3 2.7-8.3-0.6-11.3-1.5-1.3-3.4-2.1-5.3-2.1h-72.6c-2.4 0-4.6 1-6.1 2.8L633.5 504.6c-2.9 3.4-7.9 3.8-11.3 0.9-0.9-0.8-1.6-1.7-2.1-2.8l-63.5-141.3c-1.3-2.9-4.1-4.7-7.3-4.7H380.7l0.9-4.7 8-42.3c10.5-55.4 38-81.4 85.8-81.4 18.6 0 35.5 1.7 48.8 4.7l14.1-66.8c-22.6-4.7-35.2-6.1-54.9-6.1-103.3 0-156.4 44.3-175.9 147.3l-9.4 49.4h-97.6c-3.8 0-7.1 2.7-7.8 6.4L181.9 415c-0.9 4.3 1.9 8.6 6.2 9.5 0.5 0.1 1.1 0.2 1.6 0.2H284l-89 429.9c-0.9 4.3 1.9 8.6 6.2 9.5 0.5 0.1 1.1 0.2 1.6 0.2H269c3.8 0 7.1-2.7 7.8-6.4l89.7-433.1h135.8l68.2 139.1c1.4 2.9 1 6.4-1.2 8.8l-180.6 203c-2.9 3.3-2.6 8.4 0.7 11.3 1.5 1.3 3.4 2 5.3 2h72.7c2.4 0 4.6-1 6.1-2.8l123.7-146.7c2.8-3.4 7.9-3.8 11.3-1 0.9 0.8 1.6 1.7 2.1 2.8L676.4 784c1.3 2.8 4.1 4.7 7.3 4.7h64.6c4.4 0 8-3.6 8-8 0-1.2-0.3-2.4-0.8-3.5l-95.2-198.9c-1.4-2.9-0.9-6.4 1.3-8.8L841 370z"
+            ></path>
+          </svg>
         </button>
       </div>
       <textarea
@@ -1242,12 +1255,11 @@ const setDimInputRef = (el: unknown) => {
 .formula-bar__btn:hover { background: var(--sp-scroll-btn-hover-bg, #f0f0f0); }
 .formula-bar__btn--cancel:hover { color: #e53935; background: #fdecea; }
 .formula-bar__btn--accept:hover { color: #2e7d32; background: #e8f5e9; }
-.formula-bar__fx-label {
-  font-family: Georgia, "Times New Roman", serif;
-  font-style: italic;
-  font-weight: 600;
-  font-size: 13px;
-  line-height: 1;
+.formula-bar__fx-icon {
+  display: block;
+  width: 16px;
+  height: 16px;
+  color: var(--sp-formula-bar-input-color, #333);
   user-select: none;
 }
 .formula-bar__btn--fx:hover { background: var(--sp-scroll-btn-hover-bg, #f0f0f0); }
