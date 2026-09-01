@@ -1357,19 +1357,25 @@ export function createInteractions(
           const skipRight = col < s.colCount - 1 && s.isColumnCollapsed(col + 1);
           const skipTop = row > 0 && s.isRowCollapsed(row - 1);
           const skipBottom = row < s.rowCount - 1 && s.isRowCollapsed(row + 1);
+          // 冻结线角方块跳过（与 body canvas 一致）：冻结列(col<freeze.cols)的右上/右下角方块
+          // 落在 x=bodyLeft（冻结线），会从 top-right/bottom-right pane 的 clip 左边界溢出成固定小点；
+          // 冻结行(row<freeze.rows)的左下/右下角方块落在 y=bodyTop，同理从 bottom pane 上边界溢出。
+          // 在 top-left/bottom-left pane 中这些角方块本就因 clip 右/下边界不包含而被裁剪，跳过无副作用。
+          const _freezeRightCornerSkip = col < s.freeze.cols;
+          const _freezeBottomCornerSkip = row < s.freeze.rows;
           if (wT > 0 && wL > 0 && !skipLeft && !skipTop) {
             ctx.fillStyle = rT?.color || rL?.color || '#444';
             ctx.fillRect(x - wL, y - wT, wL, wT);
           }
-          if (wT > 0 && wR > 0 && !skipRight && !skipTop) {
+          if (wT > 0 && wR > 0 && !skipRight && !skipTop && !_freezeRightCornerSkip) {
             ctx.fillStyle = rT?.color || rR?.color || '#444';
             ctx.fillRect(x + cw, y - wT, wR, wT);
           }
-          if (wB > 0 && wL > 0 && !skipLeft && !skipBottom) {
+          if (wB > 0 && wL > 0 && !skipLeft && !skipBottom && !_freezeBottomCornerSkip) {
             ctx.fillStyle = rB?.color || rL?.color || '#444';
             ctx.fillRect(x - wL, y + rh, wL, wB);
           }
-          if (wB > 0 && wR > 0 && !skipRight && !skipBottom) {
+          if (wB > 0 && wR > 0 && !skipRight && !skipBottom && !_freezeRightCornerSkip && !_freezeBottomCornerSkip) {
             ctx.fillStyle = rB?.color || rR?.color || '#444';
             ctx.fillRect(x + cw, y + rh, wR, wB);
           }
@@ -1439,6 +1445,10 @@ export function createInteractions(
     const hy = rect.y + rect.height - FILL_HANDLE_SIZE / 2;
     // 滚动后选中单元格可能被推出可视区：若填充柄进入表头（列头/行头）区域则不绘制，避免叠加错位
     if (hx < hwOff() || hy < hhOff()) return;
+    // 非冻结单元格滚到冻结区后方时，填充柄被冻结区遮挡，不应绘制（避免在冻结层上方叠加显示）
+    const { frozenColumnsWidth, frozenRowsHeight } = s.getFrozenMetrics();
+    if (frozenColumnsWidth > 0 && sel.endCol >= s.freeze.cols && hx < hwOff() + frozenColumnsWidth) return;
+    if (frozenRowsHeight > 0 && sel.endRow >= s.freeze.rows && hy < hhOff() + frozenRowsHeight) return;
     // Merge 兼容：源区域与 merge 部分相交时填充柄变灰，不可拖拽
     const mergeOk = validateMergeCompatibility(sel, sel, s.merges).ok;
     ctx.fillStyle = mergeOk ? cs.activeCellBorder : cs.scrollTrack;
@@ -2366,7 +2376,8 @@ export function createInteractions(
     showCtx(e.clientX, e.clientY, [
       { label: t(s.locale.value, 'insert'), action: () => {
         us.saveUndo();
-        so.insertRows(s2.startRow, s2.endRow);
+        so.insertRows(s2.startRow, s2.startRow);
+        s.selectRange(0, s2.startRow, s.colCount - 1, s2.startRow, 'row');
         scheduleRender();
         so.emitModelData();
       } },
@@ -2419,7 +2430,8 @@ export function createInteractions(
     showCtx(e.clientX, e.clientY, [
       { label: t(s.locale.value, 'insert'), action: () => {
         us.saveUndo();
-        so.insertCols(s2.startCol, s2.endCol);
+        so.insertCols(s2.startCol, s2.startCol);
+        s.selectRange(s2.startCol, 0, s2.startCol, s.rowCount - 1, 'col');
         scheduleRender();
         so.emitModelData();
       } },

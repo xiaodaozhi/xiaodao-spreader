@@ -907,15 +907,15 @@ export function createSheetsOps(
       if (endRow < rS) {
         // 插入位置之上 → 不动
         rebuilt.push({ newAnchorKey: oldKey, newRange: { startCol, startRow, endCol, endRow } });
-      } else if (startRow > rE) {
-        // 插入位置之下 → 整体 +n（cells 主流程已经把这些行向下移了，anchor key 需要同步改）
+      } else if (startRow < rS) {
+        // 合并格顶行严格在插入点之上，且合并跨度覆盖插入点 → 合并"扩大"，end += n，anchor 不变
+        endRow += n;
+        rebuilt.push({ newAnchorKey: oldKey, newRange: { startCol, startRow, endCol, endRow } });
+      } else {
+        // 合并格顶行在插入点或之下 → 整体下移 +n（cells 主流程已经把这些行向下移了，anchor key 需要同步改）
         startRow += n;
         endRow += n;
         rebuilt.push({ newAnchorKey: s.cellKey(startCol, startRow), newRange: { startCol, startRow, endCol, endRow } });
-      } else {
-        // 插入位置落在合并跨度里 → 合并"扩大"，end += n，anchor 不变
-        endRow += n;
-        rebuilt.push({ newAnchorKey: oldKey, newRange: { startCol, startRow, endCol, endRow } });
       }
     }
     return rebuilt;
@@ -931,13 +931,15 @@ export function createSheetsOps(
       const { startRow, endRow } = m;
       if (endCol < cS) {
         rebuilt.push({ newAnchorKey: oldKey, newRange: { startCol, startRow, endCol, endRow } });
-      } else if (startCol > cE) {
+      } else if (startCol < cS) {
+        // 合并格左边界列严格在插入点之左，且合并跨度覆盖插入点 → 合并"扩大"，end += n，anchor 不变
+        endCol += n;
+        rebuilt.push({ newAnchorKey: oldKey, newRange: { startCol, startRow, endCol, endRow } });
+      } else {
+        // 合并格左边界列在插入点或之右 → 整体右移 +n
         startCol += n;
         endCol += n;
         rebuilt.push({ newAnchorKey: s.cellKey(startCol, startRow), newRange: { startCol, startRow, endCol, endRow } });
-      } else {
-        endCol += n;
-        rebuilt.push({ newAnchorKey: oldKey, newRange: { startCol, startRow, endCol, endRow } });
       }
     }
     return rebuilt;
