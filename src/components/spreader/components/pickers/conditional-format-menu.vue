@@ -172,8 +172,11 @@ function enterSub(name: 'highlight' | 'clear', e?: MouseEvent) {
     // 向下会溢出有效下边界（触发项顶 + 子高 > 下边界 - 8）则向上弹，子菜单底对齐触发项底 +5px
     // （等价于右键向上弹的 bottom:-5px），与 -5px 约定对称。两处偏移需同步维护。
     const overflowDown = r.top + subH > b.bottom - 8;
-    let top = overflowDown ? r.bottom + 5 - subH : r.top - 5;
-    top = Math.max(b.top + 8, Math.min(b.bottom - subH - 8, top));
+    const ideal = overflowDown ? r.bottom + 5 - subH : r.top - 5;
+    // 夹紧下界：触发项位于有效边界之上（如主菜单项在表格容器 boundary 之上）时，
+    // 若死守 b.top+8 会把子菜单硬推离触发项数十像素，故下界不得高于当前理想位置。
+    const lower = Math.min(b.top + 8, ideal);
+    const top = Math.max(lower, Math.min(b.bottom - subH - 8, ideal));
     const posObj = dir === 'right'
       ? { left: r.right + 4, top }
       : { right: cssRightFromX(r.left - 4), top };
