@@ -20,6 +20,9 @@ export interface FloatMenuPosition {
  * - 右缘锚定 trigger 右缘（Math.min(r.right, b.right) 夹回有效右边界），top 先落 trigger 下缘 +4；
  * - 传入 menuEl（已挂载、可量高度）后，按「容器∩视口」有效区做上下翻向 + 夹紧：
  *   下方放得下就向下；下方放不下但上方有空间就向上；两边都放不下→夹紧贴顶/贴底兜底。
+ *   夹紧下界取 min(b.top + 8, trigger 下缘 + 4)：工具栏按钮在 boundaryEl（表格容器）之上，
+ *   此时 b.top + 8 落在按钮下方，若仍以它为下界会把菜单硬推离按钮数十像素（主栏下拉整体下移），
+ *   故下界不得高于「紧贴 trigger 下方」这一理想位置。
  *
  * 调用约定（与 cf-menu 一致）：先 place(trigger, boundary) 做初始下落放置，
  * 再于 nextTick 后 place(trigger, boundary, menuEl) 量高翻向。
@@ -44,8 +47,11 @@ export function useFloatMenuPosition() {
     const spaceBelow = b.bottom - r.bottom - 8;
     const spaceAbove = r.top - b.top - 8;
     const up = spaceBelow < h && spaceAbove > 0;
-    let top = up ? r.top - h - 4 : r.bottom + 4;
-    top = Math.max(b.top + 8, Math.min(b.bottom - h - 8, top));
+    const ideal = up ? r.top - h - 4 : r.bottom + 4;
+    // 下界：以 b.top + 8 为准，但不高于「紧贴 trigger 下方」——否则 trigger 位于有效区之上时
+    // （工具栏按钮在表格容器之外）菜单会被 b.top 硬推下去，与按钮脱开一大截。
+    const lower = Math.min(b.top + 8, r.bottom + 4);
+    const top = Math.max(lower, Math.min(b.bottom - h - 8, ideal));
     pos.value = { right, top, up };
   }
 
