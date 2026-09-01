@@ -148,6 +148,7 @@ export function createUndoStyles(
         dataValidations: sh.dataValidations ? sh.dataValidations.map((r) => ({ ...r, ranges: (r.ranges ?? []).map((rg) => ({ ...rg })) })) : [],
         rowOutlines: sh.rowOutlines ? sh.rowOutlines.map((o) => ({ ...o })) : [],
         columnOutlines: sh.columnOutlines ? sh.columnOutlines.map((o) => ({ ...o })) : [],
+        notes: sh.notes ? Object.fromEntries(Object.entries(sh.notes).map(([id, n]) => [id, { ...n }])) : {},
       })),
       styles: [...s.styles],
       activeSheetIndex: sheetsCtx.activeSheetIndex.value,

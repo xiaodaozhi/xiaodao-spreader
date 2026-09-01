@@ -1,5 +1,5 @@
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount, type Ref, type ComputedRef } from 'vue';
-import { HEADER_HEIGHT, HEADER_WIDTH, SB_SIZE, DEFAULT_COL_WIDTH, MIN_COL_WIDTH, MIN_ROW_HEIGHT, MAX_COL_WIDTH, MAX_ROW_HEIGHT, DEFAULT_FONT_FAMILY, FILL_HANDLE_SIZE, FILL_HANDLE_HIT_PADDING, t } from '../core/constants';
+import { HEADER_HEIGHT, HEADER_WIDTH, SB_SIZE, DEFAULT_COL_WIDTH, MIN_COL_WIDTH, MIN_ROW_HEIGHT, MAX_COL_WIDTH, MAX_ROW_HEIGHT, DEFAULT_FONT_FAMILY, FILL_HANDLE_SIZE, FILL_HANDLE_HIT_PADDING, DEFAULT_NOTE_AUTHOR, t } from '../core/constants';
 import { colToLabel, resolveSize, getCanvasXY, getFloatBounds } from '../core/utils';
 import type { CoreState } from './core-state';
 import type { UndoStylesState } from './undo-styles';
@@ -109,6 +109,22 @@ export interface InteractionsState {
   openValidationDropdown: (col: number, row: number) => boolean;
   closeValidationDropdown: () => void;
   onValidationDropdownSelect: (value: string) => void;
+
+  // 单元格批注（Cell Note）UI 状态
+  /** 当前显示的批注浮层：mode=view 查看 / edit 编辑；null=关闭 */
+  noteUi: Ref<{ mode: 'view' | 'edit'; row: number; col: number } | null>;
+  /** 按逻辑坐标打开批注浮层（view / edit）；编辑态需由宿主组件聚焦输入框 */
+  openNote: (row: number, col: number, mode: 'view' | 'edit') => void;
+  /** 关闭批注浮层 */
+  closeNote: () => void;
+  /** 右键 / Shift+F2 入口：新建或编辑批注（有则预填、无则新建） */
+  editNoteAt: (row: number, col: number) => void;
+  /** 编辑态保存：空文本删除现存批注；非空按新建/更新走 setCellNote/updateCellNote */
+  saveNoteAt: (row: number, col: number, text: string, author?: string) => void;
+  /** 右键：删除批注 */
+  removeNoteAt: (row: number, col: number) => void;
+  /** 命中测试：点是否落在单元格右上角的批注指示器上 */
+  isNoteIndicatorHit: (x: number, y: number) => { row: number; col: number } | null;
 
   // 行高/列宽浮动设置栏
   dimInputRef: Ref<HTMLInputElement | null>;
@@ -532,6 +548,10 @@ export function createInteractions(
             const isActive = s.activeCell.value.col === col && s.activeCell.value.row === row;
             drawValidationDropdownIndicator(rCtx, x, y, cw, rh, isActive || s.isSelected(col, row), cs);
           }
+          // ---- 批注指示器：单元格有批注时右上角显示（drawCells：非合并单元格） ----
+          if (s.hasNote(row, col)) {
+            drawNoteIndicator(rCtx, x, y, cw, rh);
+          }
         }
       }
     };
@@ -951,6 +971,10 @@ export function createInteractions(
           const isActive = s.activeCell.value.col === aC && s.activeCell.value.row === aR;
           drawValidationDropdownIndicator(ctx, ax, ay, aw, ah, isActive, cs);
         }
+        // 批注指示器：合并单元格统一在锚点处绘制一次（不随各子格重复）
+        if (s.hasNote(aR, aC)) {
+          drawNoteIndicator(ctx, ax, ay, aw, ah);
+        }
         if (!(s.editingCell.value && s.editingCell.value.col === aC && s.editingCell.value.row === aR)) {
           // 文本布局宽/高用逻辑尺寸（不随滚动）；绘制起点按 pane 与是否跨冻结线决定：
           //  - 冻结 pane：直接用 anchor 屏幕坐标 ax/ay（cellToScreenRect 对冻结列/行已不含滚动偏移）；
@@ -1257,7 +1281,8 @@ export function createInteractions(
     frozenCtx.clearRect(0, 0, W, H);
 
     const { frozenRowsHeight, frozenColumnsWidth } = s.getFrozenMetrics();
-    if (frozenRowsHeight <= 0 && frozenColumnsWidth <= 0) return;
+    // 行列头始终渲染（即使无冻结）：freeze canvas（z-index:1）需覆盖 body canvas 的行列头，让 NoteOverlay（z-index:0）被遮挡
+    // 仅当有冻结区域时才绘制冻结单元格；无冻结区域时只绘制行列头
     const bodyLeft = hw + frozenColumnsWidth;
     const bodyTop = hh + frozenRowsHeight;
     const bodyWidth = Math.max(0, W - hw - SB_SIZE - frozenColumnsWidth);
@@ -1858,6 +1883,100 @@ export function createInteractions(
     if (v === null) rdl();
   });
 
+  // ============ 单元格批注 UI 状态（Note Popup / Editor）============
+  /** 当前显示的批注浮层：mode=view 查看 / edit 编辑；null=关闭。
+   *  仅记录逻辑坐标，显示位置由浮层组件用 cellToScreenRect 实时推导（兼容滚动/冻结/合并）。 */
+  const noteUi = ref<{ mode: 'view' | 'edit'; row: number; col: number } | null>(null);
+  /** hover 打开批注的防抖计时器 */
+  let noteHoverTimer: ReturnType<typeof setTimeout> | null = null;
+  /** 当前 hover 命中的带批注单元格（防抖基准） */
+  let noteHoverCell: { row: number; col: number } | null = null;
+  function clearNoteHover() {
+    if (noteHoverTimer) {
+      clearTimeout(noteHoverTimer);
+      noteHoverTimer = null;
+    }
+    noteHoverCell = null;
+  }
+  /** 按逻辑坐标打开批注浮层（view / edit）；编辑态需由宿主组件聚焦输入框 */
+  function openNote(row: number, col: number, mode: 'view' | 'edit') {
+    clearNoteHover();
+    noteUi.value = { mode, row, col };
+  }
+  /** 关闭批注浮层 */
+  function closeNote() {
+    clearNoteHover();
+    noteUi.value = null;
+  }
+  /** 右键 / Shift+F2 入口：新建或编辑批注（有则预填、无则新建） */
+  function editNoteAt(row: number, col: number) {
+    openNote(row, col, 'edit');
+  }
+  /** 编辑态保存：空文本删除现存批注；非空按新建/更新走 setCellNote/updateCellNote。
+   *  Undo/render/emit 均在 core-state 内部独立完成，此处只补 close + 末次 render 兜底。 */
+  function saveNoteAt(row: number, col: number, text: string, author?: string) {
+    const existing = s.getNote(row, col);
+    if (text) {
+      if (existing) s.updateCellNote(existing.id, text);
+      else s.setCellNote(row, col, text, author || DEFAULT_NOTE_AUTHOR);
+    } else if (existing) {
+      s.deleteCellNote(row, col);
+    }
+    closeNote();
+    scheduleRender();
+  }
+  /** 右键：删除批注（deleteCellNote 内部独立 Undo + render + emit） */
+  function removeNoteAt(row: number, col: number) {
+    s.deleteCellNote(row, col);
+    closeNote();
+    scheduleRender();
+  }
+  /** hover 防抖：进入带批注格 300ms 后打开查看浮层；离开后延迟关闭（给鼠标移入浮层留时间） */
+  function updateNoteHover(px: number, py: number) {
+    if (noteUi.value?.mode === 'edit') return; // 编辑中不因 hover 切换
+    const inGrid = !!(px >= hwOff() && py >= hhOff());
+    const hit = inGrid ? s.screenToCell(px, py) : null;
+    const noteHit = hit && hit.col >= 0 && hit.row >= 0 && s.hasNote(hit.row, hit.col) ? hit : null;
+    const curView = noteUi.value && noteUi.value.mode === 'view' ? noteUi.value : null;
+    const _curKey = curView ? `${curView.col},${curView.row}` : null;
+    const newKey = noteHit ? `${noteHit.col},${noteHit.row}` : null;
+
+    // 仍停留在同一带批注格：不重置计时
+    if (noteHoverCell && `${noteHoverCell.col},${noteHoverCell.row}` === newKey) return;
+    noteHoverCell = noteHit ? { row: noteHit.row, col: noteHit.col } : null;
+    if (noteHoverTimer) {
+      clearTimeout(noteHoverTimer);
+      noteHoverTimer = null;
+    }
+    if (newKey) {
+      noteHoverTimer = setTimeout(() => {
+        noteHoverTimer = null;
+        if (noteUi.value?.mode !== 'edit') {
+          noteUi.value = { mode: 'view', row: noteHit!.row, col: noteHit!.col };
+          scheduleRender();
+        }
+      }, 300);
+    }
+  }
+  /** 命中测试：点是否落在单元格右上角的批注指示器上（优先级高于普通 Cell 选择） */
+  function isNoteIndicatorHit(x: number, y: number): { row: number; col: number } | null {
+    if (x < hwOff() || y < hhOff()) return null;
+    const hit = s.screenToCell(x, y);
+    if (!hit) return null;
+    const { col, row } = hit;
+    if (!s.hasNote(row, col)) return null;
+    const rect = s.cellToScreenRect(row, col);
+    const size = 5;
+    // 指示器顶点：右上角 (bx,by)，向左 (bx-size) 、向下 (by+size)
+    const bx = rect.x + rect.width - 1.5;
+    const by = rect.y + 1.5;
+    const dx = x - bx;
+    const dy = y - by;
+    // 三角区域：左下方（dx<=0, dy>=0）且位于斜边 y=x+size 之下（dy-dx<=size）
+    if (dx <= 1 && dy >= -1 && dy - dx <= size + 1) return { row, col };
+    return null;
+  }
+
   // ============ 筛选弹窗 ============
   /** 当前打开的筛选弹窗：关联的列与屏幕锚点；null 表示未打开 */
   const filterPopup = ref<{ col: number; x: number; y: number } | null>(null);
@@ -1921,6 +2040,30 @@ export function createInteractions(
     ctx.moveTo(cx - tw / 2, cy - th / 2 + 0.5);
     ctx.lineTo(cx + tw / 2, cy - th / 2 + 0.5);
     ctx.lineTo(cx, cy + th / 2 + 0.5);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  /** 批注指示器：单元格右上角小红三角。颜色在两套主题下均可见（Excel Note 语义），
+   *  尺寸很小、不覆盖内容/边框。因在 drawCells/drawMergedCells 内联判断绘制，不产生常驻 DOM。 */
+  function drawNoteIndicator(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    cw: number,
+    rh: number,
+  ): void {
+    if (cw < 8 || rh < 8) return;
+    const size = 5;
+    const bx = x + cw - 1.5;
+    const by = y + 1.5;
+    ctx.save();
+    ctx.fillStyle = '#d93025';
+    ctx.beginPath();
+    ctx.moveTo(bx, by);
+    ctx.lineTo(bx - size, by);
+    ctx.lineTo(bx, by + size);
     ctx.closePath();
     ctx.fill();
     ctx.restore();
@@ -2519,6 +2662,13 @@ export function createInteractions(
         scheduleRender();
         so.emitModelData();
       } },
+      // ---- 单元格批注：仅单格选区显示「新建/编辑/删除批注」 ----
+      ...(isSingleCell
+        ? [
+            { label: s.hasNote(r, c) ? t(s.locale.value, 'editNote') : t(s.locale.value, 'newNote'), action: () => editNoteAt(r, c) },
+            ...(s.hasNote(r, c) ? [{ label: t(s.locale.value, 'deleteNote'), action: () => removeNoteAt(r, c) }] : []),
+          ]
+        : []),
     ]);
   }
 
@@ -2942,6 +3092,16 @@ export function createInteractions(
       openValidationDropdown(hitDv.col, hitDv.row);
       return;
     }
+    // 批注指示器命中（优先级高于普通 Cell 选择）：点击指示器打开批注而非选择单元格；关闭编辑态
+    if (noteUi.value?.mode === 'edit') closeNote();
+    const hitNote = isNoteIndicatorHit(p.x, p.y);
+    if (hitNote) {
+      openNote(hitNote.row, hitNote.col, 'view');
+      so.emitModelData();
+      return;
+    } else if (noteUi.value) {
+      closeNote();
+    }
     // 筛选按钮命中（最高优先级：高于 resize / 选择 / 行列头选择）
     const hitFilter = isFilterButtonHit(p.x, p.y);
     if (hitFilter >= 0) {
@@ -3087,6 +3247,11 @@ export function createInteractions(
         return;
       }
       const p = getCanvasXY(e, cvs);
+      // 批注指示器 hover：命中指示器显示 pointer + 更新浮层（浮层只有 hover 到带批注格才打开）
+      if (isNoteIndicatorHit(p.x, p.y)) {
+        cvs.style.cursor = 'pointer';
+      }
+      updateNoteHover(p.x, p.y);
       if (hitTestOutlineControl(p.x, p.y)) {
         cvs.style.cursor = 'pointer';
         return;
@@ -3685,6 +3850,11 @@ export function createInteractions(
         scheduleRender();
         so.focusEditInput();
         return;
+      case sh && e.key === 'F2':
+        // Shift+F2：新建 / 编辑当前单元格批注
+        e.preventDefault();
+        editNoteAt(s.activeCell.value.row, s.activeCell.value.col);
+        return;
       case e.key === 'Delete':
       case e.key === 'Backspace':
         e.preventDefault();
@@ -3898,6 +4068,8 @@ export function createInteractions(
           sh.filter = normalizeLoadedFilter(smd.filter, sh.cells);
           // 恢复数据验证规则（旧数据无该字段视为无验证）
           sh.dataValidations = Array.isArray(smd.dataValidations) ? [...smd.dataValidations] : [];
+          // 恢复批注池（旧数据无该字段视为无批注）
+          sh.notes = smd.notes ? Object.fromEntries(Object.entries(smd.notes).map(([id, n]) => [id, { ...n }])) : {};
           return sh;
         });
         if (so.sheets.value.length > 0) so.loadSheet(0);
@@ -3971,6 +4143,8 @@ export function createInteractions(
         // 恢复行列分组（旧数据无该字段视为无分组）
         sh.rowOutlines = Array.isArray(smd.rowOutlines) ? smd.rowOutlines.map((o) => ({ ...o })) : [];
         sh.columnOutlines = Array.isArray(smd.columnOutlines) ? smd.columnOutlines.map((o) => ({ ...o })) : [];
+        // 恢复批注池（旧数据无该字段视为无批注）
+        sh.notes = smd.notes ? Object.fromEntries(Object.entries(smd.notes).map(([id, n]) => [id, { ...n }])) : {};
         return sh;
       });
       if (so.sheets.value.length > 0) so.loadSheet(0);
@@ -4036,6 +4210,15 @@ export function createInteractions(
     onRowHdrCtx,
     onColHdrCtx,
     onCellCtx,
+
+    // 单元格批注 UI 状态
+    noteUi,
+    openNote,
+    closeNote,
+    editNoteAt,
+    saveNoteAt,
+    removeNoteAt,
+    isNoteIndicatorHit,
 
     dimInputRef,
     dimPanel,

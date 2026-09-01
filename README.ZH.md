@@ -36,6 +36,7 @@
 - **条件格式**: 按工作表存储条件格式规则（`SheetState.conditionalFormats`）。工具栏「条件格式」下拉提供高亮单元格预设（大于 / 小于 / 介于 / 文本包含 / 重复 / 唯一 / 空白 / 非空白）以及「新建规则」对话框（支持单元格值条件和自定义公式条件）。规则渲染为基础单元格样式之上的临时覆盖层，绝不写回底层 `value` 或 `styleId`。规则优先级（数值越小优先级越高）、`stopIfTrue` 语义、单元格值变化时自动失效缓存。插入/删除行列时通过与自动填充相同的 `shiftFormulaRefs` 引擎自动调整规则范围与公式引用（`$B$2` 绝对引用保持固定）。内置「管理规则」对话框可编辑、排序、删除规则；「清除规则」子菜单支持清除全部或按选区清除。渲染时与基础样式正确合成背景色、文字颜色、粗体、斜体、下划线、删除线。*见 [条件格式](#条件格式)*
 - **数据验证**: 按工作表存储类 Excel 数据验证规则。工具栏「数据验证」按钮打开对话框，设置允许类型（任何值 / 列表 / 整数 / 小数 / 日期 / 时间 / 文本长度 / 自定义公式）、运算符（介于 / 不介于 / 等于 / 大于 ……）与条件值。列表验证在单元格内显示下拉，支持搜索与完整键盘操作（↑ ↓ / Home / End / PageUp / PageDown / Enter / Esc）。支持逐条输入信息提示与出错警告（停止 / 警告 / 信息）：验证发生在值写入之前，停止级违规直接拒绝录入，警告/信息级由用户确认后继续。同一范围的多条规则必须全部通过。规则随 v-model 持久化、接入撤销/重做，并在行列增删时自动调整范围。复制/粘贴与自动填充走原子校验——出现停止级违规则整次取消。*见 [数据验证](#数据验证)*
 - **行列分组与折叠**: 类 Excel 的行/列分组（Outline）。选中整行或整列后，工具栏「分组」下拉（位于排序与筛选之间）提供添加分组 / 取消分组 / 清除分组 / 全部展开 / 全部折叠，直接作用于选中轴；行/列右键菜单提供同构的「分组」子菜单。仅支持一层、互不相交的分组，嵌套或部分重叠会被校验拒绝并提示。分组区间在行号/列号带用交替背景色区分，± 折叠按钮浮动于表头带内，不占用独立 gutter。折叠的行/列不参与内容绘制；插入/删除行列时分组范围自动平移、被清空的分组自动删除。分组状态按工作表持久化（`rowOutlines` / `columnOutlines`），增删与折叠均接入撤销/重做。*见 [行列分组与折叠](#行列分组与折叠)*
+- **单元格批注**: 类 Excel 的单元格批注（Note/Comment）。右键菜单新建 / 编辑 / 删除；单元格右上角红色三角指示器标识含批注；hover 悬停查看、点按编辑；批注独立于单元格值与样式，采用 Note Pool 存储（Sheet 级 notes 池 + cell.noteId 引用），便于排序 / 插入删除时随 cell 一起移动。批注支持多行文本、可选作者、创建 / 修改时间。可通过 `noteAuthor` prop 设置当前作者名。*见 [单元格批注](#单元格批注)*
 - **自动填充（填充柄）**: 类 Excel 的活动选区右下角填充柄，按住向上/下/左/右拖拽即可填充单元格：单值复制、数字/日期/文本数字自动续序列（如 `1,2 → 3,4,5`）、公式引用按相对/绝对/混合规则平移（如 `=A1*2 → =A2*2`）、源 `styleId` 经样式池复用。拖拽期间实时预览、边缘自动滚动、动态扩展工作表、冻结窗格兼容、单次拖拽仅产生一个撤销步骤，*见 [自动填充](#自动填充)*
 
 ### 交互体验
@@ -143,6 +144,7 @@ const myData = ref<SheetModelData[]>([
 | `height` | `number \| string` | - | 组件高度（像素；传 `string` 或省略则自适应） |
 | `theme` | `'light' \| 'dark'` | `'light'` | 主题模式 |
 | `locale` | `string` | `'zh-CN'` | 语言: `'zh-CN'` \| `'en-US'` |
+| `noteAuthor` | `string` | `''`（空串，显示时回退为 i18n 占位符「未命名」） | 当前批注作者名；为空时存入批注的 author 字段为空字符串，显示时回退为 i18n 占位符 |
 
 ---
 
@@ -160,6 +162,8 @@ interface SheetModelData {
   cells: Record<string, {
     value: string;
     styleId?: number;
+    /** 批注引用：指向 Sheet 级 notes 池中的 CellNote */
+    noteId?: string;
   }>;
   merges?: Record<string, SelectionRange>;
   freeze?: { rows: number; cols: number };
@@ -169,6 +173,8 @@ interface SheetModelData {
   colCount?: number;
   /** 逻辑行数（0 基，不含）。省略时默认为 200。 */
   rowCount?: number;
+  /** 单元格批注池：按 noteId 存放 CellNote，cell.noteId 引用之；与 cell value/style 完全独立 */
+  notes?: Record<string, CellNote>;
 }
 ```
 
@@ -222,6 +228,7 @@ src/
         │   ├── tabbar.vue            # Sheet 标签栏
         │   ├── dropdown.vue          # 通用下拉组件
         │   ├── find-replace-bar.vue  # 查找替换栏 UI
+        │   └── note-overlay.vue    # 批注查看/编辑浮层（view + edit 双模）
         │   └── pickers/
         │       ├── colorPicker.vue       # 文字 / 填充颜色选择器
         │       ├── borderPicker.vue      # 边框选择器
@@ -237,6 +244,7 @@ src/
         │   ├── borders-merge.ts     # 边框操作、合并操作、剪贴板、求和
         │   ├── sheets-ops.ts        # 行列增删、多 Sheet、v-model 发射、主题、refs
         │   ├── find-replace.ts      # 查找替换状态与交互（依赖 Vue）
+        │   └── notes.ts           # 批注池管理：CRUD、持久化、Undo 集成
         │   └── interactions.ts      # 渲染器、编辑栏、标签栏、右键菜单、滚动条、事件
         └── core/
             ├── constants.ts         # 布局常量、国际化、主题调色板
@@ -507,6 +515,53 @@ CF 引擎的 `shiftFormulaRefsSafe` 复用公式引擎的 `shiftFormulaRefs` 函
 
 ---
 
+
+## 单元格批注
+
+类 Excel 的单元格批注（Note / Comment）功能，独立于单元格值与样式。核心引擎位于 `spreader/core/notes.ts`，纯逻辑实现；UI 浮层为 `components/note-overlay.vue`。
+
+### 数据模型
+
+批注采用 **Note Pool** 存储：Sheet 级 `notes` 池按 `id` 存放完整 `CellNote` 对象，单元格仅保存 `noteId` 引用。
+
+````typescript
+interface CellNote {
+  id: string;           // 稳定唯一 ID
+  text: string;         // 批注正文（多行文本）
+  author?: string;      // 作者（可选）
+  createdAt: number;    // 创建时间（epoch ms）
+  updatedAt: number;    // 最近修改时间（epoch ms）
+}
+````
+
+- **`CellData.noteId`**: 单元格上的批注引用，指向 `SheetState.notes` 池
+- **`SheetModelData.notes`**: v-model 序列化时的批注池，键为 noteId
+
+Note Pool 设计使得排序、插入 / 删除行列等操作移动单元格时，`noteId` 随 cell 数据一起搬运，批注不会丢失。
+
+### 交互入口
+
+- **右键菜单**: 单元格右键菜单提供「新建批注 / 编辑批注 / 删除批注」三项；无批注时隐藏编辑 / 删除，有批注时隐藏新建
+- **Shift+F2**: 在含批注的单元格上切换编辑浮层
+- **hover 查看**: 鼠标悬停含批注的单元格时弹出只读查看浮层
+
+### 渲染
+
+- 含批注的单元格右上角绘制 6px 红色三角指示器（Canvas 绘制，无 DOM 开销）
+- 批注浮层 `note-overlay.vue` 为 Vue DOM 组件，`position: absolute` 驻留于 `.spreadsheet-wrapper` 内，被 `overflow: hidden` 裁剪到表格区域，不溢出覆盖 toolbar / 行列头 / 冻结区域 / 滚动条
+- z-index 分层：非冻结区浮层在 freeze canvas（z-index: 1）之下（z-index: 0），冻结区浮层在 freeze canvas 之上（z-index: 2），滚动条 z-index: 3 永远在最上层
+
+### 作者名
+
+通过 `noteAuthor` prop 设置当前作者名。空串时存入批注的 `author` 字段为空字符串，显示时回退为 i18n 占位符（中文「未命名」/ 英文 Unnamed）。
+
+### 持久化与撤销
+
+- 批注随 Sheet v-model（`notes` 字段）持久化，保存 / 加载 / 复制工作表均正确往返
+- 新建 / 修改 / 删除批注各产生一个撤销步骤，与单元格值、样式、边框等操作共享同一撤销栈
+
+---
+
 ## 自动填充
 
 一套类 Excel 的填充柄机制（`spreader/core/autofill.ts` 纯引擎 + `composables/interactions.ts` 画布/交互层）。拖动活动选区右下角的小方块即可填充单元格，无 DOM 句柄，全部在 Canvas 上绘制。
@@ -735,7 +790,7 @@ x-spreader 以触屏为第一交互：每个鼠标操作都有对称的触屏路
 - [x] 排序与筛选：按展示内容排序，含类 Excel「排序提醒」对话框（扩展选定区域 / 仅对选定区域排序）；见 [排序与排序提醒](#功能特性)
 - [x] 自动筛选（AutoFilter）：工具栏「筛选」/`Ctrl+Shift+L` 启用，表头下箭头、智能向下探测数据区、值/文本/数值/日期多类型筛选、清除单列与整体移除分离；见 [自动筛选（AutoFilter）](#自动筛选autofilter)
 - [x] 触屏与移动端交互：选择 / 右键菜单 / 筛选 / 列宽行高 / 框选 / 格式刷 / tab 菜单均补齐对称触屏路径，浮层支持点外部关闭；见 [触屏与移动端交互](#触屏与移动端交互)
-- [ ] 单元格批注
+- [x] 单元格批注：Note Pool 存储、右键菜单 CRUD、hover 查看、编辑浮层、持久化与撤销；见 [单元格批注](#单元格批注)
 - [ ] 打印布局
 
 ### 远期

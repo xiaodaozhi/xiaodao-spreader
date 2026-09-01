@@ -34,6 +34,7 @@ A high-performance, canvas-based spreadsheet component for Vue 3: bringing an Ex
 - **Find & Replace**: Open via the toolbar find button or `Ctrl/Cmd+F` (also `Ctrl/Cmd+H`); three scopes: current sheet / entire workbook / current selection; match case and match entire cell; highlights all matches and locates the active one with wrap-around navigation; single and replace-all both integrate with undo/redo, mutating only the raw `value` (always kept a string), never format / border / merge
 - **Conditional Formatting**: Excel-style conditional formatting rules stored per-sheet. The toolbar "Conditional Formatting" dropdown offers preset rules (greater than / less than / between / text contains / duplicate / unique / blank / not blank) and a "New Rule" dialog with cell value and formula-based conditions. Rules render as temporary style overlays on top of the base cell style — no mutation of the underlying cell `value` or `styleId`. Rule priority (smaller number = higher), `stopIfTrue` semantics, and automatic cache invalidation on cell value change. Inserting / deleting rows or columns adjusts rule ranges and formula references via the same `shiftFormulaRefs` engine used by auto-fill. Includes a "Manage Rules" dialog for editing, reordering, and deleting rules; the "Clear Rules" sub-dialog lets you clear all rules or rules from selected ranges. Render-time style synthesis correctly composes CF background, font color, bold, italic, underline, and strikethrough with the base cell style. *see [Conditional Formatting](#conditional-formatting)*
 - **Data Validation**: Excel-style data validation rules stored per-sheet. The toolbar "Data Validation" button opens a dialog to set the allowed type (any value / list / whole number / decimal / date / time / text length / custom formula), the operator (between, not between, equal, greater than, …), and the criterion values. List validation shows an in-cell dropdown with search and full keyboard navigation (↑ ↓ / Home / End / PageUp / PageDown / Enter / Esc). Per-rule input message and error alert (Stop / Warning / Information) are supported; validation runs *before* the value is committed, so Stop-level violations reject the edit while Warning/Information let the user confirm. All rules on a range must pass. Rules persist through v-model, integrate with undo/redo, and adjust automatically on row/column insert/delete. Copy/paste and Auto Fill validate atomically — a Stop violation cancels the whole operation. *see [Data Validation](#data-validation)*
+- **Cell Notes**: Excel-style cell notes (comments). Right-click menu to create / edit / delete; red triangle indicator at cell corner marks cells with notes; hover to preview, click to edit. Notes are independent from cell values and styles, stored via a Note Pool (Sheet-level notes pool + cell.noteId reference), so sort / insert-delete moves cells together with their notes. Notes support multi-line text, optional author, and create/update timestamps. Author name can be set via the noteAuthor prop. *see [Cell Notes](#cell-notes)*
 - **Auto Fill (Fill Handle)**: Excel-style fill handle at the bottom-right corner of the active selection. Drag it up/down/left/right to fill cells: single values copy, number/date/text-number sequences auto-continue (e.g. `1,2 → 3,4,5`), formula references adjust per relative/absolute/mixed rules (e.g. `=A1*2` → `=A2*2`), and source `styleId` is reused via the style pool. Live preview during drag, edge auto-scroll, dynamic sheet expansion, freeze-pane compatibility, and a single undo step per operation: *see [Auto Fill](#auto-fill)*
 - **Row / Column Grouping & Collapsing**: Excel-style row/column outlines. Select whole rows or columns, then the toolbar "Group" dropdown (between Sort and Filter) offers Add Group / Ungroup / Clear Outline / Expand All / Collapse All, applied directly to the selected axis; row/column context menus expose a matching "Group" submenu. Only one level of non-overlapping groups is supported — nesting and partial overlap are rejected with a message. Group ranges get alternating background colors in the row/column header band; ± collapse buttons float inside the header band without reserving a separate gutter. Collapsed rows/columns are skipped during content rendering; inserting/deleting rows or columns shifts group ranges and auto-removes emptied groups. Groups persist per-sheet (`rowOutlines` / `columnOutlines`) through v-model, and every mutation integrates with undo/redo. *see [Row / Column Grouping & Collapsing](#row--column-grouping--collapsing)*
 
@@ -140,6 +141,7 @@ const myData = ref<SheetModelData[]>([
 | `height` | `number \| string` | - | Component height (pixels; omit or pass `string` for responsive) |
 | `theme` | `'light' \| 'dark'` | `'light'` | Theme mode |
 | `locale` | `string` | `'zh-CN'` | Language: `'zh-CN'` \| `'en-US'` |
+| `noteAuthor` | `string` | `''` | Current note author name; when empty, saved notes have empty author field that renders as i18n placeholder |
 
 ---
 
@@ -157,6 +159,8 @@ interface SheetModelData {
   cells: Record<string, {
     value: string;
     styleId?: number;
+    /** Note reference pointing to a CellNote in the Sheet-level notes pool */
+    noteId?: string;
   }>;
   merges?: Record<string, SelectionRange>;
   freeze?: { rows: number; cols: number };
@@ -166,6 +170,8 @@ interface SheetModelData {
   colCount?: number;
   /** Logic row count (0-based exclusive). Defaults to 200 when omitted. */
   rowCount?: number;
+  /** Cell notes pool: CellNote objects keyed by noteId; cell.noteId references into this pool */
+  notes?: Record<string, CellNote>;
 }
 ```
 
@@ -219,6 +225,7 @@ src/
         │   ├── tabbar.vue            # Sheet tab bar
         │   ├── dropdown.vue          # Generic dropdown component
         │   ├── find-replace-bar.vue  # Find/replace bar UI
+        note-overlay.vue    # Note view/edit overlay (dual-mode: view + edit)
         │   └── pickers/
         │       ├── colorPicker.vue       # Text & fill color picker
         │       ├── borderPicker.vue      # Border picker
@@ -234,6 +241,7 @@ src/
         │   ├── borders-merge.ts     # Border ops, merge ops, clipboard, sum
         │   ├── sheets-ops.ts        # Row/col ops, multi-sheet, v-model emit, theme, refs
         │   ├── find-replace.ts      # Find/replace state & interaction (Vue-dependent)
+        notes.ts           # Note pool management: CRUD, persistence, undo integration
         │   └── interactions.ts      # Renderer, formula bar, tab bar, context menu, scrollbar, events
         └── core/
             ├── constants.ts         # Layout constants, i18n, theme palettes
@@ -504,6 +512,51 @@ Inserting/deleting rows or columns shifts group ranges via `addOutlineForInsert`
 
 ---
 
+## Cell Notes
+
+Excel-style cell notes (comments), fully independent from cell values and styles. The engine lives in `spreader/core/notes.ts` — pure-logic, zero Vue/Canvas deps; the UI overlay is `components/note-overlay.vue`.
+
+### Data Model
+
+Notes use a **Note Pool** storage pattern: each sheet maintains a `notes` pool keyed by stable `id`, and cells only store a `noteId` reference.
+
+``	ypescript
+interface CellNote {
+  id: string;           // Stable unique ID
+  text: string;         // Note body (multi-line text)
+  author?: string;      // Optional author name
+  createdAt: number;    // Creation time (epoch ms)
+  updatedAt: number;    // Last modification time (epoch ms)
+}
+``
+
+- **`CellData.noteId`**: Per-cell reference pointing into `SheetState.notes`
+- **`SheetModelData.notes`**: v-model serialized note pool, keyed by noteId
+
+The Note Pool design ensures that sort, insert/delete row/column, and other cell-moving operations carry `noteId` together with the cell data — notes never get orphaned.
+
+### Entry Points
+
+- **Context menu**: Cell right-click menu offers *New Note / Edit Note / Delete Note*; edit/delete are hidden when no note exists, new is hidden when one does
+- **Shift+F2**: Toggle the edit overlay on a note-bearing cell
+- **Hover preview**: A read-only view overlay pops up when the cursor hovers over a cell with a note
+
+### Rendering
+
+- Cells with a note show a 6px red triangle indicator in the top-right corner, drawn on Canvas (zero DOM cost)
+- The `note-overlay.vue` component is a Vue DOM overlay with `position: absolute` mounted inside `.spreadsheet-wrapper`, constrained by `overflow: hidden` to the table area — it never spills over the toolbar, row/column headers, frozen panes, or scrollbars
+- Z-index layering: non-frozen overlays sit *below* the freeze canvas (z-index: 0 vs 1), frozen-region overlays sit *above* it (z-index: 2); scrollbars (z-index: 3) always stay on top for interactivity
+
+### Author Name
+
+Set the current author via the `noteAuthor` prop. When empty, saved notes store an empty `author` field, and display falls back to an i18n placeholder (`Unnamed`).
+
+### Persistence & Undo
+
+- Notes persist through the sheet v-model (`notes` field), round-tripping correctly through save / load / duplicate-sheet
+- Creating / editing / deleting a note each produces one undo step, sharing the same undo stack as cell values, styles, and borders
+
+---
 ## Auto Fill
 
 An Excel-style fill-handle mechanism (`spreader/core/autofill.ts` pure engine + `composables/interactions.ts` canvas/interaction layer). Drag the small square at the bottom-right corner of the active selection to fill cells: no DOM handles, all drawn on Canvas.
@@ -732,7 +785,7 @@ x-spreader is touch-first: every mouse interaction has a symmetric touch path, v
 - [x] Sort & filter: sort by displayed content with Excel-style Sort Warning dialog (expand selection / current selection only); see [Sorting & Sort Warning](#features)
 - [x] Auto Filter (AutoFilter): toolbar "Filter" / `Ctrl+Shift+L` to enable, header drop-down arrows, intelligent downward data probing, value/text/number/date multi-type filters, separate clear-column vs remove-all; see [Auto Filter (AutoFilter)](#auto-filter-autofilter)
 - [x] Touch & mobile interaction: symmetric touch paths for select / context menu / filter / resize / range select / format brush / tab menu; popups close on outside tap; see [Touch & Mobile Interaction](#touch--mobile-interaction)
-- [ ] Cell comments / notes
+- [x] Cell comments / notes: Note Pool storage, context-menu CRUD, hover preview, edit overlay, persistence & undo; see [Cell Notes](#cell-notes)
 - [ ] Print layout
 
 ### Long-term

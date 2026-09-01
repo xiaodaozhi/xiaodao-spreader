@@ -4,7 +4,8 @@ import { FormulaDeps, clearEvalCache, computeCellValue, parseFormulaRefs } from 
 import { formatNumber, isGeneralFormat, parseDateTimeInput, parseNumericText } from '../core/number-format';
 import { applyAutoFillPlan, validateMergeCompatibility } from '../core/autofill';
 import { colToLabel } from '../core/utils';
-import type { CellCoord, CellData, CellStyle, SelectionRange, BorderStyle, BorderSide, FreezePane, ViewportRegion, SheetFilter, FilterColumn, ConditionalFormattingRule, ConditionalFormattingFormat, DataValidationRule, DataValidationResult, DataValidationSeverity, DimensionOutline } from '../core/types';
+import type { CellCoord, CellData, CellStyle, CellNote, SelectionRange, BorderStyle, BorderSide, FreezePane, ViewportRegion, SheetFilter, FilterColumn, ConditionalFormattingRule, ConditionalFormattingFormat, DataValidationRule, DataValidationResult, DataValidationSeverity, DimensionOutline } from '../core/types';
+import { hasNote as _noteHasNote, getNote as _noteGet, setNote as _noteSet, updateNote as _noteUpdate, removeNote as _noteRemove, getNotesInRange as _noteGetInRange, gcOrphanNotes as _noteGc } from '../core/notes';
 import { resolveConditionalFormatting, CfValueCache, genRuleId, type CFContext } from '../core/conditional-formatting';
 import {
   DataValidationIndex,
@@ -302,6 +303,24 @@ export interface CoreState {
   /** 查找高亮钩子：返回某单元格当前的高亮类型（由 find-replace 模块注入） */
   findHighlight?: (col: number, row: number) => 'active' | 'match' | null;
 
+  // ============ 单元格批注（Cell Note）============
+  /** 当前工作表批注池：按 noteId 存放，cell.noteId 引用之；与 value/style 完全独立 */
+  notes: Record<string, CellNote>;
+  /** 单元格是否有批注 */
+  hasNote: (row: number, col: number) => boolean;
+  /** 读取单元格批注（返回池中对象引用） */
+  getNote: (row: number, col: number) => CellNote | undefined;
+  /** 为单元格创建/覆盖批注（一次独立 Undo），返回新批注 */
+  setCellNote: (row: number, col: number, text: string, author?: string, opts?: { silent?: boolean }) => CellNote;
+  /** 更新现存批注文本（按 id，一次独立 Undo） */
+  updateCellNote: (id: string, text: string) => void;
+  /** 删除单元格批注（一次独立 Undo） */
+  deleteCellNote: (row: number, col: number) => void;
+  /** 清理 notes 池中未被任何 cell 引用的孤儿批注（删除/覆盖单元格后调用） */
+  gcNotes: () => void;
+  /** 批量读取选区内所有批注（key -> note） */
+  getNotesInRange: (range: SelectionRange) => Map<string, CellNote>;
+
   // ============ 数据验证（Data Validation）============
   // 注意：本组 API 统一采用 (row, col) 参数顺序，与 Excel/Univer 的「先行后列」习惯一致。
   /** 当前工作表的全部数据验证规则（规则属于 Sheet，不属于 Cell） */
@@ -410,6 +429,10 @@ export function createCoreState(
   const conditionalFormats = reactive<ConditionalFormattingRule[]>([]);
   // 重复/唯一值统计缓存（不序列化、不持久化）
   const cfCache = new CfValueCache();
+
+  // ============ 单元格批注（Cell Note）============
+  // 批注池属于当前工作表，按 noteId 存放，cell.noteId 引用之；随 saveSheet 持久化到 SheetState。
+  const notes = reactive<Record<string, CellNote>>({});
 
   // ============ 数据验证（Data Validation）============
   // 规则属于当前工作表（不是 Cell），随 saveSheet 持久化到 SheetState。
@@ -1381,6 +1404,8 @@ export function createCoreState(
     cfCache.invalidate();
     // 值变化可能改变 list 规则的源区域内容：下拉列表缓存一并失效
     if (dataValidations.length > 0) invalidateDataValidationCache();
+    // 批注与值完全独立：重写 value 时必须保留原 noteId（不允许输入新值删除批注）
+    const prevNoteId = cells[k]?.noteId;
     if (v === '' || v == null) {
       formulaDeps.clear(k);
       const styleId = cells[k]?.styleId;
@@ -1402,7 +1427,7 @@ export function createCoreState(
         const dt = parseDateTimeInput(val, locale.value);
         if (dt) {
           const newStyle: CellStyle = { ...(oldStyle ?? {}), numberFormat: dt.format };
-          cells[k] = { value: String(dt.serial), styleId: registerStyle(newStyle) };
+          cells[k] = { value: String(dt.serial), styleId: registerStyle(newStyle), noteId: prevNoteId };
           formulaDeps.clear(k);
           formulaDeps.markDirty(k);
           return;
@@ -1411,7 +1436,7 @@ export function createCoreState(
         const nt = parseNumericText(val, locale.value);
         if (nt) {
           const newStyle: CellStyle = { ...(oldStyle ?? {}), numberFormat: nt.format };
-          cells[k] = { value: String(nt.num), styleId: registerStyle(newStyle) };
+          cells[k] = { value: String(nt.num), styleId: registerStyle(newStyle), noteId: prevNoteId };
           formulaDeps.clear(k);
           formulaDeps.markDirty(k);
           return;
@@ -1421,6 +1446,7 @@ export function createCoreState(
     const styleId = cells[k]?.styleId;
     const cell: CellData = { value: val };
     if (styleId !== undefined && styleId > 0) cell.styleId = styleId;
+    if (prevNoteId) cell.noteId = prevNoteId;
     cells[k] = cell;
     if (val.startsWith('=')) {
       formulaDeps.set(k, parseFormulaRefs(val.slice(1), dims.colCount, dims.rowCount));
@@ -1441,6 +1467,8 @@ export function createCoreState(
     }
     cfCache.invalidate();
     if (dataValidations.length > 0) invalidateDataValidationCache();
+    // 删除单元格内容后其批注引用随之消失，清理孤儿批注池对象
+    _noteGc(cells, notes);
   }
 
   // ============ 条件格式（Conditional Formatting）============
@@ -1645,6 +1673,43 @@ export function createCoreState(
       }
     }
     return worst ?? { valid: true };
+  }
+
+  // ============ 单元格批注（Cell Note）============
+  function hasNoteFn(row: number, col: number): boolean {
+    return _noteHasNote(row, col, cells);
+  }
+  function getNoteFn(row: number, col: number): CellNote | undefined {
+    return _noteGet(row, col, cells, notes);
+  }
+  function setCellNoteFn(row: number, col: number, text: string, author?: string, opts?: { silent?: boolean }): CellNote {
+    if (!opts?.silent) state.saveUndo?.();
+    const note = _noteSet(row, col, text, author, cells, notes);
+    _noteGc(cells, notes);
+    state.scheduleRender?.();
+    state.emitModelData?.();
+    return note;
+  }
+  function updateCellNoteFn(id: string, text: string): void {
+    if (!notes[id]) return;
+    state.saveUndo?.();
+    _noteUpdate(id, text, notes);
+    state.scheduleRender?.();
+    state.emitModelData?.();
+  }
+  function deleteCellNoteFn(row: number, col: number): void {
+    if (!_noteHasNote(row, col, cells)) return;
+    state.saveUndo?.();
+    _noteRemove(row, col, cells, notes);
+    _noteGc(cells, notes);
+    state.scheduleRender?.();
+    state.emitModelData?.();
+  }
+  function gcNotesFn(): void {
+    _noteGc(cells, notes);
+  }
+  function getNotesInRangeFn(range: SelectionRange): Map<string, CellNote> {
+    return _noteGetInRange(range, cells, notes);
   }
 
   /** 新建规则；silent=true 表示由调用方统一负责 Undo（如粘贴） */
@@ -2415,6 +2480,16 @@ export function createCoreState(
     invalidateDataValidationCache,
     isValidationAlertOpen,
     confirmInvalidValue: resolveValidationAlert,
+
+    // 单元格批注（Cell Note）
+    notes,
+    hasNote: hasNoteFn,
+    getNote: getNoteFn,
+    setCellNote: setCellNoteFn,
+    updateCellNote: updateCellNoteFn,
+    deleteCellNote: deleteCellNoteFn,
+    gcNotes: gcNotesFn,
+    getNotesInRange: getNotesInRangeFn,
   };
 
   // 设置内部函数对 state 的反向引用

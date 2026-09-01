@@ -73,6 +73,28 @@ export interface CellStyle {
 export interface CellData {
   value: string;
   styleId?: number;
+  /** 批注引用：指向 Sheet 级 notes 池中的一个 CellNote；与 value/style 完全独立 */
+  noteId?: string;
+}
+
+// ============ 单元格批注（Cell Note / Annotation）============
+/**
+ * 批注是绑定到 Cell 的独立附加元数据，不属于 cell.value / formula / style。
+ * 采用「Note Pool」存储：Sheet 级 notes 池按 id 存放，cell 只保存 noteId 引用，
+ * 便于扩展 Threaded Comment，且多个操作（排序/插入删除）移动 cell 时 noteId 随数据移动。
+ * 第一阶段实现与多人协作 Threaded Comment 无关。
+ */
+export interface CellNote {
+  /** 稳定唯一 ID（不可用数组 index） */
+  id: string;
+  /** 批注正文（多行文本，含换行） */
+  text: string;
+  /** 作者信息（可选） */
+  author?: string;
+  /** 创建时间（epoch ms） */
+  createdAt: number;
+  /** 最近修改时间（epoch ms） */
+  updatedAt: number;
 }
 
 // ============ 查找和替换 ============
@@ -380,6 +402,8 @@ export interface SheetModelData {
   rowOutlines?: DimensionOutline[];
   /** 列分组集合；旧数据缺省视为无分组 */
   columnOutlines?: DimensionOutline[];
+  /** 单元格批注池：按 noteId 存放，cell.noteId 引用之；与 cell value/style 完全独立 */
+  notes?: Record<string, CellNote>;
 }
 
 export interface SheetState {
@@ -413,6 +437,8 @@ export interface SheetState {
   rowOutlines: DimensionOutline[];
   /** 列分组集合；缺省为空数组 */
   columnOutlines: DimensionOutline[];
+  /** 单元格批注池：按 noteId 存放，cell.noteId 引用之 */
+  notes: Record<string, CellNote>;
 }
 
 /** 视口区域：冻结窗格将画布划分为四个独立滚动区域 */

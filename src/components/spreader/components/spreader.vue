@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, reactive, computed, nextTick, type Ref, type UnwrapRef } from 'vue';
-import { SB_SIZE, t } from '../core/constants';
+import { SB_SIZE, DEFAULT_NOTE_AUTHOR, t } from '../core/constants';
 import Toolbar from './toolbar.vue';
 import Tabbar from './tabbar.vue';
 import FindReplaceBar from './find-replace-bar.vue';
@@ -14,6 +14,7 @@ import DataValidationDialog from './pickers/data-validation-dialog.vue';
 import DataValidationDropdown from './pickers/data-validation-dropdown.vue';
 import DataValidationAlert from './pickers/data-validation-alert.vue';
 import DataValidationInputMessage from './data-validation-input-message.vue';
+import NoteOverlay from './note-overlay.vue';
 import type {
   SheetModelData,
   SheetState,
@@ -41,11 +42,13 @@ const props = withDefaults(defineProps<{
   height?: number | string;
   theme?: 'light' | 'dark';
   locale?: string;
+  noteAuthor?: string;
 }>(), {
   rowCount: 200,
   colCount: 26,
   theme: 'light',
   locale: 'zh-CN',
+  noteAuthor: DEFAULT_NOTE_AUTHOR,
 });
 
 // ============ v-model:data ============
@@ -91,6 +94,7 @@ const sheetsCtx: {
     dataValidations: [],
     rowOutlines: [],
     columnOutlines: [],
+    notes: {},
   }),
 };
 
@@ -505,6 +509,28 @@ const dvInputTip = computed(() => {
     width: rect.width,
     height: rect.height,
   };
+});
+
+/** 单元格批注浮层：anchor 随活动 noteUi 单元格 / 滚动实时重算（复用 cellToScreenRect，兼容冻结与合并） */
+const noteAnchor = computed(() => {
+  const ui = interactionsRaw.noteUi.value;
+  if (!ui) return null;
+  const rect = coreStateRaw.cellToScreenRect(ui.row, ui.col);
+  return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+});
+/** 批注对象（view 模式读取；edit 模式预填）；新建时为 null */
+const noteCurrent = computed(() => {
+  const ui = interactionsRaw.noteUi.value;
+  if (!ui) return null;
+  return coreStateRaw.getNote(ui.row, ui.col) ?? null;
+});
+const notePlaceholder = computed(() => t(coreState.locale, 'notePlaceholder'));
+/** 活动批注单元格是否在冻结区域内（决定浮层 z-index：冻结区=2 在冻结画布之上，非冻结区=0 在冻结画布之下） */
+const noteIsFrozen = computed(() => {
+  const ui = interactionsRaw.noteUi.value;
+  if (!ui) return false;
+  const f = coreState.freeze;
+  return ui.row < f.rows && ui.col < f.cols;
 });
 
 // ============ 模板赋值辅助函数（用于 @update:xxx 事件）============
@@ -991,6 +1017,21 @@ const setDimInputRef = (el: unknown) => {
         v-if="sheetsOps.maxScrollX > 0 && sheetsOps.maxScrollY > 0"
         class="sb-corner"
       />
+      <!-- 单元格批注浮层（view 查看已存批注 / edit 新建/编辑批注） -->
+      <NoteOverlay
+        v-if="interactions.noteUi && noteAnchor"
+        :anchor="noteAnchor"
+        :mode="interactions.noteUi.mode"
+        :note="noteCurrent"
+        :author="props.noteAuthor"
+        :locale="coreState.locale"
+        :placeholder="notePlaceholder"
+        :boundary-el="wrapperEl"
+        :frozen="noteIsFrozen"
+        @save="(text: string) => interactionsRaw.saveNoteAt(interactions.noteUi!.row, interactions.noteUi!.col, text, props.noteAuthor)"
+        @delete="interactionsRaw.removeNoteAt(interactions.noteUi!.row, interactions.noteUi!.col)"
+        @close="interactionsRaw.closeNote()"
+      />
     </div>
 
     <!-- Sheet 标签栏 -->
@@ -1285,7 +1326,7 @@ const setDimInputRef = (el: unknown) => {
 }
 .formula-bar__btn--fx:hover { background: var(--sp-scroll-btn-hover-bg, #f0f0f0); }
 .formula-bar__input { flex: 1; min-height: 28px; height: 28px; line-height: 20px; margin-top: 4px; border: 1px solid var(--sp-formula-bar-input-border); border-radius: 2px; outline: none; padding: 3px 6px; margin-left: 4px; font-size: 13px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; color: var(--sp-formula-bar-input-color); background: var(--sp-formula-bar-input-bg); resize: none; overflow: hidden; box-sizing: border-box; }
-.formula-bar__input--expanded { height: 68px; overflow: auto; }
+.formula-bar__input--expanded { height: 68px; overflow: auto; margin-bottom: 4px; }
 .formula-bar__input:focus { border-color: var(--sp-formula-bar-input-focus-border); box-shadow: 0 0 0 1px var(--sp-formula-bar-input-focus-shadow); }
 .formula-bar__toggle { width: 22px; min-width: 22px; height: 28px; margin-top: 4px; margin-left: 2px; margin-right: 2px; border: 1px solid var(--sp-formula-bar-input-border); border-radius: 2px; background: var(--sp-formula-bar-input-bg); color: var(--sp-formula-bar-input-color); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; padding: 0; user-select: none; }
 .formula-bar__toggle:hover { background: var(--sp-scroll-btn-hover-bg, #e8e8e8); }
@@ -1294,9 +1335,9 @@ const setDimInputRef = (el: unknown) => {
 .grid-canvas--freeze { pointer-events: none; z-index: 1; }
 .grid-canvas:not(.grid-canvas--freeze) { z-index: 0; }
 .grid-canvas:focus { outline: none; }
-.v-scrollbar { position: absolute; right: 0; top: 0; width: 11px; height: calc(100% - 11px); display: flex; flex-direction: column; background: var(--sp-wrapper-bg); }
-.h-scrollbar { position: absolute; left: 0; bottom: 0; height: 11px; width: calc(100% - 11px); display: flex; background: var(--sp-wrapper-bg); }
-.sb-corner { position: absolute; right: 0; bottom: 0; width: 11px; height: 11px; background: var(--sp-wrapper-bg); }
+.v-scrollbar { position: absolute; right: 0; top: 0; width: 11px; height: calc(100% - 11px); display: flex; flex-direction: column; background: var(--sp-wrapper-bg); z-index: 3; }
+.h-scrollbar { position: absolute; left: 0; bottom: 0; height: 11px; width: calc(100% - 11px); display: flex; background: var(--sp-wrapper-bg); z-index: 3; }
+.sb-corner { position: absolute; right: 0; bottom: 0; width: 11px; height: 11px; background: var(--sp-wrapper-bg); z-index: 3; }
 .sb-btn { width: 11px; height: 11px; min-width: 11px; min-height: 11px; border: none; background: var(--sp-scroll-btn-bg, #e8e8e8); display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; user-select: none; }
 .sb-btn:hover { background: var(--sp-scroll-btn-hover-bg, #d0d0d0); }
 .sb-btn:active { background: var(--sp-scroll-btn-active-bg, #c0c0c0); }

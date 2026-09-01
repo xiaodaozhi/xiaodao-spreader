@@ -248,6 +248,12 @@ export function migrateCells(
       delete cell.styleId;
     }
 
+    // 保留批注引用（若旧数据 cell 携带）
+    const nid = (old as Record<string, unknown>).noteId;
+    if (typeof nid === 'string' && nid) {
+      (cell as unknown as Record<string, unknown>).noteId = nid;
+    }
+
     newCells[key] = cell;
   }
 
@@ -263,6 +269,9 @@ export function cloneCells(src: Record<string, CellData>): Record<string, CellDa
     const cell: CellData = { value: v.value };
     if (v.styleId !== undefined && v.styleId > 0) {
       cell.styleId = v.styleId;
+    }
+    if (v.noteId) {
+      cell.noteId = v.noteId;
     }
     o[k] = cell;
   }

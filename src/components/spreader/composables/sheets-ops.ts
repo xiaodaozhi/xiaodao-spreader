@@ -5,6 +5,7 @@ import { resolveSize } from '../core/utils';
 import { buildOuterStyle } from '../core/theme';
 import { clearEvalCache } from '../core/formula';
 import { adjustDvRangeForDelete, adjustDvRangeForInsert } from '../core/data-validation';
+import { loadNotes } from '../core/notes';
 import { parseSortKeyByDisplay, buildSortedRowOrder, looksLikeHeader, type SortOrder, type SortKey } from '../core/sort-core';
 import type { CoreState } from './core-state';
 import type { UndoStylesState } from './undo-styles';
@@ -309,6 +310,9 @@ export function createSheetsOps(
       s.cells[sh.newKey] = sh.cell;
     }
 
+    // 清理可能残留的孤儿批注（被删行的 noteId 不再被任何 cell 引用）
+    s.gcNotes?.();
+
     // 重建 rowHeights：上半部不变，下半部前移，尾部清空
     const rH = s.rowHeights.value;
     const newRH: (number | undefined)[] = new Array(rH.length);
@@ -478,6 +482,9 @@ export function createSheetsOps(
       Reflect.deleteProperty(s.cells, sh.oldKey);
       s.cells[sh.newKey] = sh.cell;
     }
+
+    // 清理可能残留的孤儿批注（被删列的 noteId 不再被任何 cell 引用）
+    s.gcNotes?.();
 
     // 重建 colWidths：左半部不变，右半部前移，尾部清空
     const cW = s.colWidths.value;
@@ -1001,6 +1008,7 @@ export function createSheetsOps(
       dataValidations: [],
       rowOutlines: [],
       columnOutlines: [],
+      notes: {},
     };
   }
   const sheets = ref<SheetState[]>([mkSheet('Sheet1')]);
@@ -1029,6 +1037,9 @@ export function createSheetsOps(
     sh.conditionalFormats = [...s.conditionalFormats];
     // 持久化数据验证规则
     sh.dataValidations = [...s.dataValidations];
+    // 持久化批注池（浅拷贝键 + 深拷贝 note 对象，独立于运行时响应式对象）
+    const noteEntries = Object.entries(s.notes).map(([id, n]) => [id, { ...n }]);
+    sh.notes = Object.fromEntries(noteEntries);
     // 持久化行列分组（结构 + 折叠状态）
     sh.rowOutlines = s.getRowOutlines();
     sh.columnOutlines = s.getColumnOutlines();
@@ -1089,6 +1100,12 @@ export function createSheetsOps(
     const dv = normalizeLoadedDataValidations(sh.dataValidations);
     s.dataValidations.splice(0, s.dataValidations.length, ...dv);
     s.invalidateDataValidationCache?.();
+    // 恢复批注池（旧数据缺省视为无批注；深拷贝干净对象到响应式池）
+    const loadedNotes = loadNotes(sh.notes);
+    Object.keys(s.notes).forEach((k) => {
+      (s.notes as Record<string, unknown>)[k] = undefined;
+    });
+    Object.assign(s.notes, loadedNotes);
     // 恢复行列分组（旧数据缺省视为无分组）
     s.syncOutlines(sh.rowOutlines, sh.columnOutlines);
     activeSheetIndex.value = i;
@@ -1158,6 +1175,8 @@ export function createSheetsOps(
       dataValidations: normalizeLoadedDataValidations(src.dataValidations),
       rowOutlines: src.rowOutlines ? src.rowOutlines.map((o) => ({ ...o })) : [],
       columnOutlines: src.columnOutlines ? src.columnOutlines.map((o) => ({ ...o })) : [],
+      // 复制批注池（深拷贝，副本持有各自独立池及 noteId 引用）
+      notes: loadNotes(src.notes),
     };
     sheets.value.splice(i + 1, 0, cp);
     loadSheet(i + 1);
@@ -1186,10 +1205,11 @@ export function createSheetsOps(
   function emitModelData() {
     saveSheet();
     const out: SheetModelData[] = sheets.value.map((sh) => {
-      const cs: Record<string, { value: string; styleId?: number }> = {};
+      const cs: Record<string, { value: string; styleId?: number; noteId?: string }> = {};
       for (const [k, v] of Object.entries(sh.cells)) {
         cs[k] = { value: v.value };
         if (v.styleId && v.styleId > 0) cs[k]!.styleId = v.styleId;
+        if (v.noteId) cs[k]!.noteId = v.noteId;
       }
       const smd: SheetModelData = { name: sh.name, cells: cs };
       // 输出样式池（styles[0] 始终为默认空样式 {}）
@@ -1234,6 +1254,12 @@ export function createSheetsOps(
           ...r,
           ranges: r.ranges.map((rg) => ({ ...rg })),
         }));
+      }
+      // 输出批注池：仅在存在时输出，保持旧数据兼容
+      if (sh.notes && Object.keys(sh.notes).length) {
+        smd.notes = Object.fromEntries(
+          Object.entries(sh.notes).map(([id, n]) => [id, { ...n }]),
+        );
       }
       // 输出行列分组：仅在存在时输出，保持旧数据兼容
       if (sh.rowOutlines && sh.rowOutlines.length) {

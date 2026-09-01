@@ -26,6 +26,10 @@ export const UNDO_MAX = 50;
 export const OUTLINE_PANEL = 16;   // 左上 Outline Level 控件条宽度 / 高度像素
 export const OUTLINE_GUTTER = 15;  // 每个分组层级占用的 gutter 宽 / 高像素
 
+// ============ 单元格批注（Cell Note）============
+/** 新建批注时的默认作者（空串=不记录作者名，显示时用 i18n noteUnnamed 占位） */
+export const DEFAULT_NOTE_AUTHOR = '';
+
 // ============ 国际化文本 ============
 export const i18n: Record<string, Record<string, string>> = {
   'zh-CN': {
@@ -331,6 +335,17 @@ export const i18n: Record<string, Record<string, string>> = {
     cfUnderline: '下划线',
     cfFontColor: '字体颜色',
     cfFillColor: '填充颜色',
+
+    // ---- 单元格批注（Cell Note）----
+    note: '批注',
+    newNote: '新建批注',
+    editNote: '编辑批注',
+    deleteNote: '删除批注',
+    noteSave: '保存',
+    noteAuthor: '作者',
+    noteUnnamed: '未命名',
+    noteEmpty: '（无内容）',
+    notePlaceholder: '输入批注内容…',
 
     // ---- 数据验证（Data Validation）----
     dv: '数据验证',
@@ -715,6 +730,17 @@ export const i18n: Record<string, Record<string, string>> = {
     cfUnderline: 'Underline',
     cfFontColor: 'Font Color',
     cfFillColor: 'Fill Color',
+
+    // ---- Cell Note ----
+    note: 'Note',
+    newNote: 'New Note',
+    editNote: 'Edit Note',
+    deleteNote: 'Delete Note',
+    noteSave: 'Save',
+    noteAuthor: 'Author',
+    noteUnnamed: 'Unnamed',
+    noteEmpty: '（Empty）',
+    notePlaceholder: 'Enter note text…',
 
     // ---- Data Validation ----
     dv: 'Data Validation',
