@@ -616,9 +616,9 @@ const freezeOptions = computed<FontOption[]>(() => {
           :title="t(locale, 'fontFamily')"
           align="right"
           :model-open="fontMenuOpen"
+          :boundary-el="boundaryEl"
           @update:model-open="coordToolbarMenu('font', $event)"
           @change="emit('font-family-change', $event)"
-          :boundary-el="boundaryEl"
         />
       </div>
     </Teleport>
@@ -657,9 +657,9 @@ const freezeOptions = computed<FontOption[]>(() => {
             :model-open="fontSizeMenuOpen"
             align="right"
             :trigger-el="fontSizeArrowRef"
+            :boundary-el="boundaryEl"
             @update:model-open="coordToolbarMenu('fontSize', $event)"
             @change="emit('font-size-change', $event)"
-            :boundary-el="boundaryEl"
           />
           <button
             ref="fontSizeArrowRef"
@@ -872,9 +872,9 @@ const freezeOptions = computed<FontOption[]>(() => {
             :current-color="selTextColor"
             :locale="locale"
             :trigger-el="textColorArrowRef"
+            :boundary-el="boundaryEl"
             @update:model-open="coordToolbarMenu('textColor', $event)"
             @change="emit('text-color-change', $event)"
-            :boundary-el="boundaryEl"
           />
         </div>
       </div>
@@ -926,9 +926,9 @@ const freezeOptions = computed<FontOption[]>(() => {
             :current-color="selFillColor"
             :locale="locale"
             :trigger-el="fillColorArrowRef"
+            :boundary-el="boundaryEl"
             @update:model-open="coordToolbarMenu('fillColor', $event)"
             @change="emit('fill-color-change', $event)"
-            :boundary-el="boundaryEl"
           />
         </div>
       </div>
@@ -986,9 +986,9 @@ const freezeOptions = computed<FontOption[]>(() => {
             :locale="locale"
             :current-border="cachedBorder"
             :trigger-el="borderArrowRef"
+            :boundary-el="boundaryEl"
             @update:model-open="coordToolbarMenu('border', $event)"
             @change="emit('border-change', $event)"
-            :boundary-el="boundaryEl"
           />
         </div>
       </div>
@@ -1025,9 +1025,9 @@ const freezeOptions = computed<FontOption[]>(() => {
           align="right"
           :title="t(locale, 'hAlign')"
           :model-open="hAlignMenuOpen"
+          :boundary-el="boundaryEl"
           @update:model-open="coordToolbarMenu('hAlign', $event)"
           @change="emit('h-align-change', $event)"
-          :boundary-el="boundaryEl"
         />
       </div>
     </Teleport>
@@ -1051,9 +1051,9 @@ const freezeOptions = computed<FontOption[]>(() => {
           align="right"
           :title="t(locale, 'vAlign')"
           :model-open="vAlignMenuOpen"
+          :boundary-el="boundaryEl"
           @update:model-open="coordToolbarMenu('vAlign', $event)"
           @change="emit('v-align-change', $event)"
-          :boundary-el="boundaryEl"
         />
       </div>
     </Teleport>
@@ -1121,9 +1121,9 @@ const freezeOptions = computed<FontOption[]>(() => {
             :model-open="mergeMenuOpen"
             :locale="locale"
             :trigger-el="mergeArrowRef"
+            :boundary-el="boundaryEl"
             @update:model-open="coordToolbarMenu('merge', $event)"
             @change="emit('merge-change', $event)"
-            :boundary-el="boundaryEl"
           />
         </div>
       </div>
@@ -1163,9 +1163,9 @@ const freezeOptions = computed<FontOption[]>(() => {
             :fallback-label="nfFallbackLabel"
             align="right"
             :model-open="numFmtMenuOpen"
+            :boundary-el="boundaryEl"
             @update:model-open="coordToolbarMenu('numFmt', $event)"
             @change="emit('number-format-change', String($event))"
-            :boundary-el="boundaryEl"
           />
           <!-- 增加小数位数 -->
           <button
@@ -1267,9 +1267,9 @@ const freezeOptions = computed<FontOption[]>(() => {
             :locale="locale"
             :trigger-el="calcArrowRef"
             :disabled="isSingleCell"
+            :boundary-el="boundaryEl"
             @update:model-open="coordToolbarMenu('calc', $event)"
             @change="emit(`calc-${$event}`)"
-            :boundary-el="boundaryEl"
           />
         </div>
       </div>
@@ -1328,9 +1328,9 @@ const freezeOptions = computed<FontOption[]>(() => {
             :locale="locale"
             :current-sort="cachedSortOrder"
             :trigger-el="sortArrowRef"
+            :boundary-el="boundaryEl"
             @update:model-open="coordToolbarMenu('sort', $event)"
             @change="emit('sort-change', $event)"
-            :boundary-el="boundaryEl"
           />
         </div>
       </div>
@@ -1362,9 +1362,9 @@ const freezeOptions = computed<FontOption[]>(() => {
             stroke-linecap="round"
             stroke-linejoin="round"
           ><path d="M160 224 H560 V800 H160 Z" /><path
-              stroke-width="44"
-              d="M664 640 H864 V384 H664"
-            /></svg>
+            stroke-width="44"
+            d="M664 640 H864 V384 H664"
+          /></svg>
           <span class="toolbar-btn__label">{{ t(locale, 'outlineGroup') }}</span>
           <svg
             class="outline-trigger__caret"
@@ -1430,9 +1430,9 @@ const freezeOptions = computed<FontOption[]>(() => {
           :trigger-icon="FREEZE_ICON"
           :trigger-label="t(locale, 'freezePane')"
           :model-open="freezeMenuOpen"
+          :boundary-el="boundaryEl"
           @update:model-open="coordToolbarMenu('freeze', $event)"
           @change="emit('freeze-change', String($event))"
-          :boundary-el="boundaryEl"
         />
       </div>
     </Teleport>
@@ -1451,12 +1451,12 @@ const freezeOptions = computed<FontOption[]>(() => {
           :has-selection="hasSelection"
           :theme-vars="themeVars"
           :model-open="cfMenuOpen"
+          :boundary-el="boundaryEl"
           @update:model-open="coordToolbarMenu('cf', $event)"
           @preset="emit('cf-preset', $event)"
           @new-rule="emit('cf-new-rule')"
           @manage="emit('cf-manage')"
           @clear="emit('cf-clear', $event)"
-          :boundary-el="boundaryEl"
         />
       </div>
     </Teleport>

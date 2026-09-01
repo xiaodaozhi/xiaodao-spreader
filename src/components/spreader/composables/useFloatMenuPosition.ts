@@ -57,4 +57,3 @@ export function useFloatMenuPosition() {
 
   return { pos, place };
 }
-

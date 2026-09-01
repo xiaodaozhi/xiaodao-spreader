@@ -177,7 +177,7 @@ function enterSub(name: 'highlight' | 'clear', e?: MouseEvent) {
     const subH = subEl.offsetHeight;
     // 左右翻向：默认向右；右侧放不下（含 8px 余量）则翻左；左右都放不下仍选左（宁左勿右兜底）
     const wantRight = r.right + subW + 8 > b.right;
-    const wantLeft = r.left - subW - 8 < b.left;
+    // const wantLeft = r.left - subW - 8 < b.left;
     let dir: 'left' | 'right' = 'right';
     if (wantRight) dir = 'left';
     // 上下翻向：默认向下弹（top 对齐触发项顶 -5px，与右键 .context-submenu 的 top:-5px 等距）；

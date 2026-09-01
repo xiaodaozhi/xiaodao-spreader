@@ -188,7 +188,6 @@ export function createInteractions(
   so: SheetsOpsState,
   lastEmittedDataRef: { value: string },
 ): InteractionsState {
-
   // ============ 渲染器 ============
   let rp = false;
   let rCtx: CanvasRenderingContext2D | null = null;
