@@ -3,7 +3,7 @@ import { colToLabel, writeClipboardText } from '../core/utils';
 import { clearEvalCache, parseFormulaRefs, shiftFormulaRefs } from '../core/formula';
 import type { CoreState } from './core-state';
 import type { UndoStylesState } from './undo-styles';
-import type { BorderType } from '../components/pickers/border-picker.vue';
+import type { BorderType } from '../core/border-icon';
 import type { MergeType } from '../core/constants';
 import type { SelectionRange, BorderStyle, BorderSide, DataValidationRule } from '../core/types';
 import { translateDvRange } from '../core/data-validation';

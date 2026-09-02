@@ -2,8 +2,20 @@
 import { ref, watch, nextTick, onBeforeUnmount } from 'vue';
 import { t } from '../../core/constants';
 import { useFloatMenuPosition } from '../../composables/useFloatMenuPosition';
+import {
+  BORDER_OPTIONS,
+  BORDER_SEGS,
+  segRole,
+  needsCornerDot,
+  CORNER_DOT_R,
+  CORNER_DOT_CX,
+  CORNER_DOT_CY,
+} from '../../core/border-icon';
 
-export type BorderType = 'none' | 'bottom' | 'top' | 'left' | 'right' | 'all' | 'outer' | 'thickOuter';
+// 类型与图标定义已收敛到 core/border-icon.ts（toolbar 主按钮共用同一份），
+// 此处 re-export 仅为兼容既有的 `from './pickers/border-picker.vue'` 导入
+export type { BorderType } from '../../core/border-icon';
+import type { BorderType } from '../../core/border-icon';
 
 const props = withDefaults(defineProps<{
   modelOpen?: boolean;
@@ -24,54 +36,6 @@ const emit = defineEmits<{
   (e: 'update:modelOpen', v: boolean): void;
   (e: 'change', v: BorderType): void;
 }>();
-
-const BORDER_OPTIONS: { key: BorderType; i18nKey: string }[] = [
-  { key: 'bottom', i18nKey: 'borderBottom' },
-  { key: 'top', i18nKey: 'borderTop' },
-  { key: 'left', i18nKey: 'borderLeft' },
-  { key: 'right', i18nKey: 'borderRight' },
-  { key: 'none', i18nKey: 'borderNone' },
-  { key: 'all', i18nKey: 'borderAll' },
-  { key: 'outer', i18nKey: 'borderOuter' },
-  { key: 'thickOuter', i18nKey: 'borderThickOuter' },
-];
-
-// 田字型边框图标：4 个外边 + 1 条竖中线 + 1 条横中线
-interface BorderSeg { name: string; x1: number; y1: number; x2: number; y2: number }
-const BORDER_SEGS: BorderSeg[] = [
-  { name: 'top', x1: 4, y1: 4, x2: 26, y2: 4 },
-  { name: 'bottom', x1: 4, y1: 26, x2: 26, y2: 26 },
-  { name: 'left', x1: 4, y1: 4, x2: 4, y2: 26 },
-  { name: 'right', x1: 26, y1: 4, x2: 26, y2: 26 },
-  { name: 'vMid', x1: 15, y1: 4, x2: 15, y2: 26 },
-  { name: 'hMid', x1: 4, y1: 15, x2: 26, y2: 15 },
-];
-// 各边框类型对应的实线段；粗外框线对应粗实线段；未列出者为虚线
-const SOLID_SEGS: Record<BorderType, string[]> = {
-  bottom: ['bottom'],
-  top: ['top'],
-  left: ['left'],
-  right: ['right'],
-  none: [],
-  all: ['top', 'bottom', 'left', 'right', 'vMid', 'hMid'],
-  outer: ['top', 'bottom', 'left', 'right'],
-  thickOuter: ['top', 'bottom', 'left', 'right'],
-};
-const THICK_SEGS: Record<BorderType, string[]> = {
-  bottom: [],
-  top: [],
-  left: [],
-  right: [],
-  none: [],
-  all: [],
-  outer: [],
-  thickOuter: ['top', 'bottom', 'left', 'right'],
-};
-function segRole(bt: BorderType, name: string): 'solid' | 'dashed' | 'thick' {
-  if (THICK_SEGS[bt].includes(name)) return 'thick';
-  if (SOLID_SEGS[bt].includes(name)) return 'solid';
-  return 'dashed';
-}
 
 const open = ref(false);
 const rootRef = ref<HTMLDivElement | null>(null);
@@ -169,6 +133,13 @@ defineExpose({ open, openMenu, close });
                 :stroke-width="segRole(opt.key, s.name) === 'thick' ? 3 : 1.5"
                 :stroke-dasharray="segRole(opt.key, s.name) === 'dashed' ? '0 4' : 'none'"
                 :stroke-linecap="segRole(opt.key, s.name) === 'dashed' ? 'round' : 'square'"
+              />
+              <circle
+                v-if="needsCornerDot(opt.key)"
+                :cx="CORNER_DOT_CX"
+                :cy="CORNER_DOT_CY"
+                :r="CORNER_DOT_R"
+                fill="currentColor"
               />
             </svg>
             <span class="border-picker__label">{{ t(locale, opt.i18nKey) }}</span>

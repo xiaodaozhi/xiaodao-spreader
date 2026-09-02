@@ -3,6 +3,7 @@ import { ref, watch, nextTick, onBeforeUnmount } from 'vue';
 import { t } from '../../core/constants';
 import { useFloatMenuPosition } from '../../composables/useFloatMenuPosition';
 import type { SortOrder } from '../../core/sort-core';
+import { SORT_OPTIONS, SORT_BARS, SORT_ARROW_PATHS } from '../../core/sort-icon';
 
 const props = withDefaults(defineProps<{
   modelOpen?: boolean;
@@ -23,25 +24,6 @@ const emit = defineEmits<{
   (e: 'update:modelOpen', v: boolean): void;
   (e: 'change', v: SortOrder): void;
 }>();
-
-const SORT_OPTIONS: { key: SortOrder; i18nKey: string }[] = [
-  { key: 'asc', i18nKey: 'sortAsc' },
-  { key: 'desc', i18nKey: 'sortDesc' },
-];
-
-// 排序图标（与 toolbar 触发按钮保持一致）：左侧三条渐宽横线 + 右侧方向箭头
-interface SortBar { name: string; x1: number; y1: number; x2: number; y2: number }
-const SORT_BARS: SortBar[] = [
-  { name: 'bar1', x1: 96, y1: 224, x2: 352, y2: 224 },
-  { name: 'bar2', x1: 96, y1: 512, x2: 512, y2: 512 },
-  { name: 'bar3', x1: 96, y1: 800, x2: 672, y2: 800 },
-];
-const SORT_ARROW_PATHS: Record<SortOrder, string> = {
-  // 升序：箭头向上
-  asc: 'M832 800V288M672 448l160-160 160 160',
-  // 降序：箭头向下
-  desc: 'M832 224v512M672 576l160 160 160-160',
-};
 
 const open = ref(false);
 const rootRef = ref<HTMLDivElement | null>(null);

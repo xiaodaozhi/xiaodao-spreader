@@ -6,71 +6,24 @@ import { getFloatBounds, cssRightFromX } from '../core/utils';
 import { NF_MIXED, type NFOption } from '../core/number-format';
 import SpDropdown from './dropdown.vue';
 import ColorPicker from './pickers/color-picker.vue';
-import BorderPicker, { type BorderType } from './pickers/border-picker.vue';
+import BorderPicker from './pickers/border-picker.vue';
 import SortPicker from './pickers/sort-picker.vue';
 import OutlinePicker from './pickers/outline-picker.vue';
 import MergePicker from './pickers/merge-picker.vue';
 import ConditionalFormatMenu from './pickers/conditional-format-menu.vue';
 import CalcPicker from './pickers/calc-picker.vue';
 import type { SortOrder } from '../core/sort-core';
-
-// 田字型边框按钮图标：4 个外边 + 1 条竖中线 + 1 条横中线（与 border-picker.vue 保持一致）
-interface BorderSeg { name: string; x1: number; y1: number; x2: number; y2: number }
-const BORDER_SEGS: BorderSeg[] = [
-  { name: 'top', x1: 4, y1: 4, x2: 26, y2: 4 },
-  { name: 'bottom', x1: 4, y1: 26, x2: 26, y2: 26 },
-  { name: 'left', x1: 4, y1: 4, x2: 4, y2: 26 },
-  { name: 'right', x1: 26, y1: 4, x2: 26, y2: 26 },
-  { name: 'vMid', x1: 15, y1: 4, x2: 15, y2: 26 },
-  { name: 'hMid', x1: 4, y1: 15, x2: 26, y2: 15 },
-];
-const SOLID_SEGS: Record<BorderType, string[]> = {
-  bottom: ['bottom'],
-  top: ['top'],
-  left: ['left'],
-  right: ['right'],
-  none: [],
-  all: ['top', 'bottom', 'left', 'right', 'vMid', 'hMid'],
-  outer: ['top', 'bottom', 'left', 'right'],
-  thickOuter: ['top', 'bottom', 'left', 'right'],
-};
-const THICK_SEGS: Record<BorderType, string[]> = {
-  bottom: [],
-  top: [],
-  left: [],
-  right: [],
-  none: [],
-  all: [],
-  outer: [],
-  thickOuter: ['top', 'bottom', 'left', 'right'],
-};
-function segRole(bt: BorderType, name: string): 'solid' | 'dashed' | 'thick' {
-  if (THICK_SEGS[bt].includes(name)) return 'thick';
-  if (SOLID_SEGS[bt].includes(name)) return 'solid';
-  return 'dashed';
-}
-const BORDER_LABEL_KEY: Record<BorderType, string> = {
-  none: 'borderNone',
-  bottom: 'borderBottom',
-  top: 'borderTop',
-  left: 'borderLeft',
-  right: 'borderRight',
-  all: 'borderAll',
-  outer: 'borderOuter',
-  thickOuter: 'borderThickOuter',
-};
-
-// 排序按钮图标：左侧三条渐宽横线 + 右侧方向箭头（与 sort-picker.vue 保持一致）
-interface SortBar { name: string; x1: number; y1: number; x2: number; y2: number }
-const SORT_BARS: SortBar[] = [
-  { name: 'bar1', x1: 96, y1: 224, x2: 352, y2: 224 },
-  { name: 'bar2', x1: 96, y1: 512, x2: 512, y2: 512 },
-  { name: 'bar3', x1: 96, y1: 800, x2: 672, y2: 800 },
-];
-const SORT_ARROW_PATHS: Record<SortOrder, string> = {
-  asc: 'M832 800V288M672 448l160-160 160 160',
-  desc: 'M832 224v512M672 576l160 160 160-160',
-};
+import {
+  type BorderType,
+  BORDER_SEGS,
+  BORDER_LABEL_KEY,
+  segRole,
+  needsCornerDot,
+  CORNER_DOT_R,
+  CORNER_DOT_CX,
+  CORNER_DOT_CY,
+} from '../core/border-icon';
+import { SORT_BARS, SORT_ARROW_PATHS } from '../core/sort-icon';
 
 // 冻结窗格图标：田字格 + 左上角实心，表示冻结的 corner 区域
 // 外框 + 横/竖分界线（描边）+ 左上角实心块（fill）
@@ -965,6 +918,14 @@ const freezeOptions = computed<FontOption[]>(() => {
                 :stroke-width="segRole(cachedBorder, s.name) === 'thick' ? 3 : 1.5"
                 :stroke-dasharray="segRole(cachedBorder, s.name) === 'dashed' ? '0 4' : 'none'"
                 :stroke-linecap="segRole(cachedBorder, s.name) === 'dashed' ? 'round' : 'square'"
+              />
+              <circle
+                v-if="needsCornerDot(cachedBorder)"
+                :cx="CORNER_DOT_CX"
+                :cy="CORNER_DOT_CY"
+                :r="CORNER_DOT_R"
+                fill="currentColor"
+                stroke="none"
               />
             </svg>
             <span class="toolbar-btn__label">{{ t(locale, BORDER_LABEL_KEY[cachedBorder] ?? 'borders') }}</span>
