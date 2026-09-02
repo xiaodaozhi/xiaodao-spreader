@@ -1,3 +1,9 @@
+/**
+ * CoreState - 表格运行时状态核心（依赖 Vue，渲染无关逻辑独立）。
+ * 持有当前 Sheet 的 cells / styles / borders / merges / 选区 / 冻结 / 筛选 /
+ * 数据验证 / 条件格式 / 批注 / 行列分组等状态，并提供读写、导航、行列增删、
+ * 公式与数据校验等原子操作入口。
+ */
 import { ref, reactive, computed, watchEffect, shallowRef, type ComputedRef, type Ref } from 'vue';
 import { HEADER_HEIGHT, HEADER_WIDTH, SB_SIZE, DEFAULT_COL_WIDTH, MAX_ROW_HEIGHT, DEFAULT_FONT_FAMILY, DEFAULT_FONT_SIZE, t } from '../core/constants';
 import { FormulaDeps, clearEvalCache, computeCellValue, parseFormulaRefs } from '../core/formula';

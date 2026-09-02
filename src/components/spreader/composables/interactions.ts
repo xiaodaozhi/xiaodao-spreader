@@ -1,3 +1,8 @@
+/**
+ * 交互层（渲染 + 事件，体量最大的组合式模块）。
+ * 负责 Canvas 绘制（单元格、边框、合并、筛选箭头、分组控件等）、鼠标 / 键盘 / 触摸事件、
+ * 公式栏、行高列宽面板、右键菜单、滚动条，以及查找 / 筛选等浮层入口的开关与锚定。
+ */
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount, type Ref, type ComputedRef } from 'vue';
 import { HEADER_HEIGHT, HEADER_WIDTH, SB_SIZE, DEFAULT_COL_WIDTH, MIN_COL_WIDTH, MIN_ROW_HEIGHT, MAX_COL_WIDTH, MAX_ROW_HEIGHT, DEFAULT_FONT_FAMILY, FILL_HANDLE_SIZE, FILL_HANDLE_HIT_PADDING, DEFAULT_NOTE_AUTHOR, t } from '../core/constants';
 import { colToLabel, resolveSize, getCanvasXY, getFloatBounds } from '../core/utils';

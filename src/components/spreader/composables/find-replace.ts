@@ -1,3 +1,8 @@
+/**
+ * 查找 / 替换 交互层（依赖 Vue）。
+ * 驱动查找栏 UI 的状态与操作：范围 / 大小写 / 整格匹配选项、命中遍历与跳转、
+ * 替换与全部替换，纯算法部分委托 core/find-replace-core。
+ */
 import {
   ref,
   computed,

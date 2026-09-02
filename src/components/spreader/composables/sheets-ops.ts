@@ -1,3 +1,8 @@
+/**
+ * Sheet 运维层：多工作表、主题与应用外壳 refs。
+ * 提供工作表新建 / 复制 / 删除 / 切换、插入删除行列时的合并与引用平移、
+ * 行高列宽调整、v-model 数据 emit 与模型重导入回灌等能力。
+ */
 import { ref, reactive, computed, watch, nextTick, type Ref, type ComputedRef } from 'vue';
 import { DEFAULT_COL_WIDTH, lightTheme, darkTheme } from '../core/constants';
 import type { ThemeColors, SheetState, SheetModelData, CellData, SelectionRange, SheetFilter, DataValidationRule } from '../core/types';

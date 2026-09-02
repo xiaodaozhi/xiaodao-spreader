@@ -1,3 +1,5 @@
+// 库入口 barrel：
+// 导出 Spreadsheet 组件、公开类型定义与可复用的纯逻辑工具。
 import Spreader from './components/spreader.vue';
 
 export default Spreader;

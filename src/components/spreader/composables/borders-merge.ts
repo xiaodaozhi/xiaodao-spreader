@@ -1,3 +1,8 @@
+/**
+ * 边框 / 合并 / 剪贴板 / 计算 组合层（依赖 Vue，不做渲染）。
+ * 承载工具栏与右键菜单发起的操作：按边设置边框（颜色、线型、owner 标记）、
+ * 合并拆分单元格、复制 / 剪切 / 粘贴、选区求和 / 平均 / 计数。
+ */
 import { ref, computed, type Ref, type ComputedRef } from 'vue';
 import { colToLabel, writeClipboardText } from '../core/utils';
 import { clearEvalCache, parseFormulaRefs, shiftFormulaRefs } from '../core/formula';

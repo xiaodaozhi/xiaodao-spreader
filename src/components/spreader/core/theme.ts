@@ -1,3 +1,8 @@
+/**
+ * 主题 CSS 变量组装：把 light / dark 的 ThemeColors 平铺成 --sp-* 自定义属性，
+ * 由外层容器注入；Teleport 到 body 的浮层通过 documentElement 级变量继承主题
+ * （见 spreader.vue 的 applyGlobalThemeVars）。
+ */
 import { computed, type ComputedRef } from 'vue';
 import { lightTheme, darkTheme } from './constants';
 import { DEFAULT_BORDER_COLOR, DARK_BORDER_COLOR } from './border-color';

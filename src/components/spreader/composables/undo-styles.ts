@@ -1,3 +1,8 @@
+/**
+ * 撤销 / 重做与格式相关状态层（依赖 Vue）。
+ * 维护 undo / redo 快照与格式刷，以及字体 / 字号 / 对齐 / 文字与填充色 / 数字格式
+ * 等工具栏 UI 状态，并执行对应样式的读取与写入。
+ */
 import { ref, computed, watch, nextTick, type ComputedRef, type Ref } from 'vue';
 import { UNDO_MAX, FONT_FAMILIES, FONT_SIZES, H_ALIGN_OPTIONS, V_ALIGN_OPTIONS, DEFAULT_FONT_SIZE, t } from '../core/constants';
 import type { FontOption } from '../core/constants';

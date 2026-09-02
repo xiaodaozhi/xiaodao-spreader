@@ -1,3 +1,7 @@
+/**
+ * 批注（Note）纯逻辑：CRUD、单元格与批注的绑定管理、范围内批注收集与孤儿清理。
+ * 无 Vue 依赖，供 core-state 与批注浮层（note-overlay）调用。
+ */
 import type { CellNote, CellData, SelectionRange } from './types';
 /** 安全移除 Record 中的指定 key（避免 ESLint no-dynamic-delete） */
 function removeFromRecord<T>(rec: Record<string, T>, key: string): void {

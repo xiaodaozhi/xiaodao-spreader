@@ -1,3 +1,8 @@
+/**
+ * 工具栏「右锚定下拉」浮层定位组合式函数（被多个 picker 复用的公共逻辑）。
+ * 依据触发器与边界元素（getFloatBounds）计算 left/right + top：
+ * 优先向下弹出，下方空间不足时向上翻转，并做边界夹紧。
+ */
 import { ref } from 'vue';
 import { getFloatBounds, cssRightFromX } from '../core/utils';
 

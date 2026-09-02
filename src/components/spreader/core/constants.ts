@@ -1,3 +1,6 @@
+// ============ 全局常量与 i18n 文案 ============
+// 布局/交互常量、zh-CN 与 en-US 的 i18n 文案表、light/dark 主题配色、
+// 字体/对齐等下拉选项常量；t(locale, key) 为统一翻译取词入口。
 import type { ThemeColors } from './types';
 
 // ============ 布局常量 ============
