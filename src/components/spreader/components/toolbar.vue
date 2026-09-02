@@ -310,8 +310,6 @@ const props = defineProps<{
   cachedBorderColor: string;
   /** 当前笔刷线型（solid/dashed/dotted）；仅用于边框线型子菜单高亮，不反映选区边框线型 */
   cachedBorderLineStyle: string;
-  /** 默认边框颜色（渲染回退色） */
-  borderColor: string;
   sortMenuOpen: boolean;
   cachedSortOrder: SortOrder;
   canSort: boolean;
@@ -808,7 +806,7 @@ const freezeOptions = computed<FontOption[]>(() => {
               </g>
               <path
                 d="M62.895 844.369m53.895 0l790.474 0q53.895 0 53.895 53.895l0 26.947q0 53.895-53.895 53.895l-790.474 0q-53.895 0-53.895-53.895l0-26.947q0-53.895 53.895-53.895z"
-                :fill="cachedTextColor || '#000000'"
+                :fill="cachedTextColor || 'currentColor'"
               />
             </svg>
             <span class="toolbar-btn__label">{{ t(locale, 'fontColor') }}</span>
@@ -1579,7 +1577,7 @@ const freezeOptions = computed<FontOption[]>(() => {
 .toolbar-font-size__input::-webkit-outer-spin-button,
 .toolbar-font-size__input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .toolbar-font-size__input:hover { background: var(--sp-toolbar-btn-hover-bg); }
-.toolbar-font-size__input:focus { border-color: var(--sp-toolbar-border); background: #fff; }
+.toolbar-font-size__input:focus { border-color: var(--sp-toolbar-border); background: var(--sp-toolbar-bg, #fff); }
 .toolbar-font-size__btn { display: flex; align-items: center; justify-content: center; width: 16px; height: 26px; border: 1px solid transparent; border-left: none; border-radius: 0 3px 3px 0; background: transparent; color: var(--sp-toolbar-btn-color); cursor: pointer; padding: 0; }
 .toolbar-font-size__btn:hover { background: var(--sp-toolbar-btn-hover-bg); }
 .toolbar-font-size__btn svg { width: 10px; height: 10px; }
@@ -1661,15 +1659,15 @@ const freezeOptions = computed<FontOption[]>(() => {
   height: 18px;
   border: none;
   background: transparent;
-  color: #888;
+  color: var(--sp-toolbar-btn-color, #888);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 3px;
 }
-.overflow-nav:hover:not(:disabled) { background: #eef3f9; }
-.overflow-nav:disabled { color: #d5d5d5; cursor: default; }
+.overflow-nav:hover:not(:disabled) { background: var(--sp-toolbar-btn-hover-bg, #eef3f9); }
+.overflow-nav:disabled { color: var(--sp-toolbar-btn-disabled-color, #d5d5d5); cursor: default; }
 .overflow-nav svg { width: 10px; height: 10px; }
 
 /* 统一弹出动画：fade + scale */

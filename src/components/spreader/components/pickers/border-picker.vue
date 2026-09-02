@@ -2,7 +2,7 @@
 import { ref, watch, nextTick, onBeforeUnmount } from 'vue';
 import { t } from '../../core/constants';
 import { getFloatBounds, cssRightFromX } from '../../core/utils';
-import { useFloatMenuPosition } from '../../composables/useFloatMenuPosition';
+import { useFloatMenuPosition } from '../../composables/float-menu-position';
 import ColorPalette from './color-palette.vue';
 import {
   BORDER_OPTIONS,
@@ -430,7 +430,7 @@ defineExpose({ open, openMenu, close });
 .border-picker__menu {
   position: fixed;
   z-index: 40000;
-  background: #fff;
+  background: var(--sp-toolbar-bg, #fff);
   border: 1px solid var(--sp-toolbar-border, #d0d0d0);
   border-radius: 4px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
@@ -456,7 +456,7 @@ defineExpose({ open, openMenu, close });
   white-space: nowrap;
   box-sizing: border-box;
 }
-.border-picker__item:hover { background: #eef3f9; }
+.border-picker__item:hover { background: var(--sp-toolbar-btn-hover-bg, #eef3f9); }
 .border-picker__icon { width: 18px; height: 18px; flex-shrink: 0; }
 .border-picker__label { flex: 1; overflow: hidden; text-overflow: ellipsis; }
 .border-picker__divider { height: 1px; background: var(--sp-toolbar-border, #e3e3e3); margin: 4px 2px; }
@@ -471,12 +471,12 @@ defineExpose({ open, openMenu, close });
   border: 1px solid rgba(0, 0, 0, 0.25);
   box-shadow: inset 0 0 0 1px #fff;
 }
-.border-picker__arrow { width: 12px; height: 12px; flex: none; fill: #888; }
+.border-picker__arrow { width: 12px; height: 12px; flex: none; fill: var(--sp-toolbar-btn-color, #888); }
 
 /* 边框颜色子菜单面板：与条件格式子菜单同构，按角落方向弹出 */
 .border-submenu-wrap {
   position: fixed;
-  background: #fff;
+  background: var(--sp-toolbar-bg, #fff);
   border: 1px solid var(--sp-toolbar-border, #d0d0d0);
   border-radius: 4px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
@@ -509,7 +509,7 @@ defineExpose({ open, openMenu, close });
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
   box-sizing: border-box;
 }
-.border-picker__line-item:hover { background: #eef3f9; }
+.border-picker__line-item:hover { background: var(--sp-toolbar-btn-hover-bg, #eef3f9); }
 .border-picker__line-item--active { background: #e3edf9; }
 .border-picker__line-item--active:hover { background: #d5e4f7; }
 .border-picker__line-preview {

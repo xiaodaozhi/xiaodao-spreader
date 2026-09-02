@@ -6,7 +6,7 @@
  *      · 改颜色  → 只改 color，保留 width / style，且不创建原本不存在的边框；
  *      · 改线型  → 只改 width，保留已有 color；边原本不存在时才用当前色板的颜色。
  *  - 颜色统一以标准 HEX 字符串存储（'#RRGGBB'）；'' / undefined 表示「自动」，
- *    渲染时回退到 DEFAULT_BORDER_COLOR，从而不破坏既有无颜色数据的历史边框。
+ *    渲染时回退到主题默认边框色（defaultBorderColor），从而不破坏既有无颜色数据的历史边框。
  *  - 本模块只做「计划（plan）」，不触碰真实数据；读写由调用方（borders-merge）注入，
  *    因此合并单元格的「锚点存储」等既有机制可以原样复用。
  */
@@ -15,8 +15,19 @@ import type { BorderSide, BorderStyle, SelectionRange } from './types';
 import type { BorderType } from './border-icon';
 import { normalizeBorderLineStyle, type BorderLineStyle } from './border-style';
 
-/** 默认边框颜色：BorderSide.color 缺失（自动）时的回退色 */
+/** 默认边框颜色：BorderSide.color 缺失（自动）时的回退色（light 主题） */
 export const DEFAULT_BORDER_COLOR = '#444';
+
+/** 暗色主题下的默认边框颜色：在深色背景上需要更亮才能看清 */
+export const DARK_BORDER_COLOR = '#aaaaaa';
+
+/**
+ * 按主题返回默认边框颜色：light 用 DEFAULT_BORDER_COLOR，dark 用 DARK_BORDER_COLOR。
+ * 让「自动」边框在暗色模式下依然清晰可见。
+ */
+export function defaultBorderColor(theme: 'light' | 'dark' | string | undefined): string {
+  return theme === 'dark' ? DARK_BORDER_COLOR : DEFAULT_BORDER_COLOR;
+}
 
 /** 四条边的键名 */
 export type BorderSideKey = 'top' | 'right' | 'bottom' | 'left';
@@ -55,9 +66,9 @@ export function sameBorderColor(a: string | undefined, b: string | undefined): b
   return na.toLowerCase() === nb.toLowerCase();
 }
 
-/** 解析实际绘制颜色（自动 → 默认色） */
-export function resolveBorderColor(color: string | undefined): string {
-  return normalizeBorderColor(color) ?? DEFAULT_BORDER_COLOR;
+/** 解析实际绘制颜色（自动 → 主题默认色；theme 缺省按 light 处理） */
+export function resolveBorderColor(color: string | undefined, theme?: 'light' | 'dark' | string): string {
+  return normalizeBorderColor(color) ?? defaultBorderColor(theme);
 }
 
 // ============ 单边派生 ============

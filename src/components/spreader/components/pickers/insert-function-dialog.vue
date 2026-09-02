@@ -182,6 +182,7 @@ function onKeydown(e: KeyboardEvent) {
               <label class="ifn-dialog__label">{{ t(locale, 'insertFunctionSelectLabel') }}</label>
               <SpDropdown
                 class="ifn-dialog__dropdown"
+                :locale="locale"
                 :model-value="selected"
                 :options="functionOptions"
                 :searchable="true"
@@ -244,12 +245,12 @@ function onKeydown(e: KeyboardEvent) {
 .ifn-dialog {
   width: 440px;
   max-width: calc(100vw - 32px);
-  background: #fff;
-  border: 1px solid #d0d0d0;
+  background: var(--sp-toolbar-bg, #fff);
+  border: 1px solid var(--sp-toolbar-border, #d0d0d0);
   border-radius: 6px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
-  color: #1a1a1a;
+  color: var(--sp-toolbar-btn-color, #1a1a1a);
   user-select: none;
 }
 .ifn-dialog__header {
@@ -257,7 +258,7 @@ function onKeydown(e: KeyboardEvent) {
   align-items: center;
   justify-content: space-between;
   padding: 10px 14px;
-  border-bottom: 1px solid #ececec;
+  border-bottom: 1px solid var(--sp-toolbar-border, #ececec);
 }
 .ifn-dialog__title { font-size: 13px; font-weight: 600; }
 .ifn-dialog__close {
@@ -268,24 +269,24 @@ function onKeydown(e: KeyboardEvent) {
   height: 22px;
   border: none;
   background: transparent;
-  color: #888;
+  color: var(--sp-toolbar-btn-color, #888);
   cursor: pointer;
   border-radius: 3px;
   padding: 0;
 }
-.ifn-dialog__close:hover { background: #f0f0f0; color: #444; }
+.ifn-dialog__close:hover { background: var(--sp-toolbar-btn-hover-bg, #f0f0f0); color: var(--sp-toolbar-btn-color, #444); }
 .ifn-dialog__close svg { width: 14px; height: 14px; }
 .ifn-dialog__body { padding: 14px; display: flex; flex-direction: column; gap: 12px; }
 .ifn-dialog__field { display: flex; flex-direction: column; gap: 6px; }
-.ifn-dialog__label { font-size: 12px; color: #333; }
+.ifn-dialog__label { font-size: 12px; color: var(--sp-toolbar-btn-color, #333); }
 .ifn-dialog__dropdown { width: 100%; }
 .ifn-dialog__dropdown :deep(.sp-dropdown__trigger) {
-  border: 1px solid #c0c0c0;
-  background: #fff;
-  color: #1a1a1a;
+  border: 1px solid var(--sp-toolbar-border, #c0c0c0);
+  background: var(--sp-toolbar-bg, #fff);
+  color: var(--sp-toolbar-btn-color, #1a1a1a);
   padding: 0 6px;
 }
-.ifn-dialog__dropdown :deep(.sp-dropdown__trigger:hover) { background: #f5f5f5; }
+.ifn-dialog__dropdown :deep(.sp-dropdown__trigger:hover) { background: var(--sp-toolbar-btn-hover-bg, #f5f5f5); }
 .ifn-dialog__dropdown :deep(.sp-dropdown__trigger--open) {
   border-color: #0078d7;
   box-shadow: 0 0 0 1px rgba(0, 120, 215, 0.3);
@@ -293,18 +294,18 @@ function onKeydown(e: KeyboardEvent) {
 .ifn-dialog__desc {
   font-size: 12px;
   line-height: 1.5;
-  color: #666;
+  color: var(--sp-toolbar-text-secondary, #666);
   user-select: text;
 }
 .ifn-dialog__textarea {
   width: 100%;
   height: 84px;
-  border: 1px solid #c0c0c0;
+  border: 1px solid var(--sp-toolbar-border, #c0c0c0);
   border-radius: 3px;
-  background: #fff;
+  background: var(--sp-toolbar-bg, #fff);
   font-size: 12px;
   line-height: 1.5;
-  color: #1a1a1a;
+  color: var(--sp-toolbar-btn-color, #1a1a1a);
   padding: 5px 6px;
   outline: none;
   box-sizing: border-box;
@@ -321,26 +322,26 @@ function onKeydown(e: KeyboardEvent) {
   justify-content: flex-end;
   gap: 8px;
   padding: 10px 14px;
-  border-top: 1px solid #ececec;
+  border-top: 1px solid var(--sp-toolbar-border, #ececec);
 }
 .ifn-dialog__btn {
   height: 28px;
   padding: 0 16px;
-  border: 1px solid #ccc;
+  border: 1px solid var(--sp-toolbar-border, #ccc);
   border-radius: 3px;
-  background: #fff;
-  color: #333;
+  background: var(--sp-toolbar-bg, #fff);
+  color: var(--sp-toolbar-btn-color, #333);
   font-size: 12px;
   cursor: pointer;
   font-family: inherit;
 }
-.ifn-dialog__btn:hover { background: #f0f0f0; }
+.ifn-dialog__btn:hover { background: var(--sp-toolbar-btn-hover-bg, #f0f0f0); }
 .ifn-dialog__btn--primary { border-color: #0078d7; background: #0078d7; color: #fff; }
 .ifn-dialog__btn--primary:hover { background: #0069c0; }
 .ifn-dialog__btn--primary:disabled,
 .ifn-dialog__btn--primary:disabled:hover {
-  border-color: #ccc;
-  background: #f0f0f0;
+  border-color: var(--sp-toolbar-border, #ccc);
+  background: var(--sp-toolbar-btn-hover-bg, #f0f0f0);
   color: #a8a8a8;
   cursor: not-allowed;
 }

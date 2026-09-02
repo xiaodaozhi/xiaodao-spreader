@@ -4,7 +4,7 @@
       v-model:data="myData"
       :row-count="200"
       :col-count="26"
-      theme="light"
+      theme="dark"
       locale="zh-CN"
     />
   </div>
@@ -68,7 +68,7 @@ const LAST_COL = 7;
 const FIRST_ROW = 0; // 标题行
 const THICK = 2;
 const THIN = 1;
-const BORDER_COLOR = '#555';
+const BORDER_COLOR = '';
 
 // ---- 边框生成函数：外边框粗、内边框细 ----
 function borderFor(col: number, row: number, lastRow: number): Record<string, unknown> {
@@ -236,7 +236,7 @@ function buildSheet(classIdx: number) {
 
   // Row 34: 平均分行
   cells[`0,${avgRow}`] = { value: '', style: { ...avgBase, ...borderFor(0, avgRow, lastRow) } };
-  cells[`1,${avgRow}`] = { value: '均修为', style: { ...avgBase, ...borderFor(1, avgRow, lastRow) } };
+  cells[`1,${avgRow}`] = { value: '平均修为', style: { ...avgBase, ...borderFor(1, avgRow, lastRow) } };
   cells[`2,${avgRow}`] = { value: '', style: { ...avgBase, ...borderFor(2, avgRow, lastRow) } };
   cells[`3,${avgRow}`] = { value: '', style: { ...avgBase, ...borderFor(3, avgRow, lastRow) } };
 
@@ -286,7 +286,7 @@ watch(myData, (v) => {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: #e8e8e8;
+  background: var(--sp-wrapper-bg);
   /* 禁止触摸缩放手势与双击/长按选择，避免误触缩放 */
   touch-action: none;
   -webkit-user-select: none;

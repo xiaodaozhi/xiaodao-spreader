@@ -394,10 +394,8 @@ export interface SheetModelData {
   merges?: Record<string, SelectionRange>;
   colWidths?: Record<number, number>;
   rowHeights?: Record<number, number>;
-  /** 工作表逻辑有效列数（0-based exclusive）。缺失时回退到默认 26 */
-  colCount?: number;
-  /** 工作表逻辑有效行数（0-based exclusive）。缺失时回退到默认 200 */
-  rowCount?: number;
+  // 注意：不持久化 colCount/rowCount。加载时由内容推导网格尺寸
+  // （见 core/model-dims.ts 的 deriveModelDims），保证超出默认 26×200 的数据仍可访问。
   /** 冻结窗格状态；缺省视为未冻结 { rows: 0, cols: 0 } */
   freeze?: FreezePane;
   /** 数据筛选状态；缺省视为未启用筛选 */
@@ -532,6 +530,12 @@ export interface ThemeColors {
   toolbarBtnHoverBg: string;
   toolbarBtnDisabledColor: string;
   toolbarBtnActiveColor: string;
+  /** 次级文本（如对话框 label），light #666 / dark #aaa */
+  toolbarTextSecondary: string;
+  /** 弱化文本（如空状态提示），light #999 / dark #888 */
+  toolbarTextMuted: string;
+  /** 下拉/右键菜单选中项底色，light #e5f1fb / dark 半透明蓝（配 toolbarBtnActiveColor 文字色） */
+  toolbarItemActiveBg: string;
 
   // 查找高亮
   findMatchBg: string;

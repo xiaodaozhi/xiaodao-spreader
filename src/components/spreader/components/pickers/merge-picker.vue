@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, nextTick, onBeforeUnmount } from 'vue';
 import { t, MERGE_OPTIONS, type MergeType } from '../../core/constants';
-import { useFloatMenuPosition } from '../../composables/useFloatMenuPosition';
+import { useFloatMenuPosition } from '../../composables/float-menu-position';
 
 const props = withDefaults(defineProps<{
   modelOpen?: boolean;
@@ -127,7 +127,7 @@ defineExpose({ open, openMenu, close });
 .merge-picker__menu {
   position: fixed;
   z-index: 40000;
-  background: #fff;
+  background: var(--sp-toolbar-bg, #fff);
   border: 1px solid var(--sp-toolbar-border, #d0d0d0);
   border-radius: 4px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
@@ -153,7 +153,7 @@ defineExpose({ open, openMenu, close });
   white-space: nowrap;
   box-sizing: border-box;
 }
-.merge-picker__item:hover { background: #eef3f9; }
+.merge-picker__item:hover { background: var(--sp-toolbar-btn-hover-bg, #eef3f9); }
 .merge-picker__icon { width: 18px; height: 18px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
 .merge-picker__icon :deep(svg) { width: 18px; height: 18px; }
 .merge-picker__label { flex: 1; overflow: hidden; text-overflow: ellipsis; }

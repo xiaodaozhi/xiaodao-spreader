@@ -37,52 +37,62 @@ xiaodao-spreader/
         └── spreader/
             ├── index.ts                # Unified barrel export: component + types
             ├── components/
-            │   ├── spreader.vue        # Main component (Canvas rendering + all interaction logic)
-            │   ├── toolbar.vue         # Toolbar with overflow dropdown
-            │   ├── tabbar.vue          # Sheet tab bar
-            │   ├── dropdown.vue        # Generic dropdown component
+            │   ├── spreader.vue         # Entry component: template + style + composition
+            │   ├── toolbar.vue          # Toolbar with overflow dropdown
+            │   ├── tabbar.vue           # Sheet tab bar
+            │   ├── dropdown.vue         # Generic dropdown component
             │   ├── find-replace-bar.vue # Find/replace bar UI
+            │   ├── note-overlay.vue     # Note view/edit overlay (dual-mode: view + edit)
             │   └── pickers/
-            │       ├── border-picker.vue          # Border picker
-            │       ├── calc-picker.vue            # Sum / average / count picker
-            │       ├── color-picker.vue           # Text & fill color picker
-            │       ├── merge-picker.vue           # Merge cell picker
-            │       ├── sort-picker.vue            # Sort dropdown
-            │       ├── sort-confirm-dialog.vue    # Excel-style sort warning dialog
-            │       ├── number-format-dialog.vue   # Number format custom dialog
-            │       ├── insert-function-dialog.vue # Insert function dialog
-            │       ├── filter-popup.vue           # Auto Filter panel (values / text / number / date + search + blanks + multi-column AND)
-            │       ├── conditional-format-menu.vue       # Conditional formatting toolbar dropdown (presets + new / manage / clear rules)
-            │       ├── conditional-format-rule-editor.vue # Conditional formatting "New Rule / Edit Rule" dialog
+            │       ├── border-picker.vue                  # Border picker (per-side type/color/line style + submenus)
+            │       ├── calc-picker.vue                    # Sum / average / count picker
+            │       ├── color-palette.vue                  # Shared color swatch palette for text / fill / border
+            │       ├── color-picker.vue                   # Text & fill color picker
             │       ├── conditional-format-manager.vue     # Conditional formatting "Manage Rules" dialog
-            │       ├── data-validation-dialog.vue    # Data validation settings dialog (Settings / Input Message / Error Alert / Apply To)
-            │       ├── data-validation-dropdown.vue  # Data validation list dropdown (search + virtual list + keyboard)
-            │       ├── data-validation-alert.vue    # Data validation error alert (Stop / Warning / Information)
-            │       └── outline-picker.vue          # Toolbar "Group" dropdown (add / ungroup / clear, expand / collapse)
+            │       ├── conditional-format-menu.vue        # Conditional formatting toolbar dropdown (presets + new / manage / clear rules)
+            │       ├── conditional-format-rule-editor.vue # Conditional formatting "New / Edit Rule" dialog
+            │       ├── data-validation-alert.vue          # Data validation error alert (Stop / Warning / Information)
+            │       ├── data-validation-dialog.vue         # Data validation settings dialog
+            │       ├── data-validation-dropdown.vue       # Data validation list dropdown (search + virtual list + keyboard)
+            │       ├── data-validation-input-message.vue  # Cell-focus input message tooltip
+            │       ├── filter-popup.vue                   # Auto Filter panel (values / text / number / date + search + blanks + multi-column AND)
+            │       ├── insert-function-dialog.vue         # Insert function dialog
+            │       ├── merge-picker.vue                   # Merge cell picker
+            │       ├── number-format-dialog.vue           # Number format dialog
+            │       ├── outline-picker.vue                 # Toolbar "Group" dropdown (add / ungroup / clear, expand / collapse)
+            │       ├── sort-confirm-dialog.vue            # Excel-style sort warning dialog
+            │       └── sort-picker.vue                    # Sort dropdown
             ├── composables/
-            │   ├── core-state.ts      # Props, cells/merges/selection, font metrics, navigation, outline state
-            │   ├── undo-styles.ts      # Undo/redo, format painter, font/alignment/color
-            │   ├── borders-merge.ts    # Border ops, merge ops, clipboard, sum/avg/count
-            │   ├── sheets-ops.ts      # Row/col ops, multi-sheet, v-model emit, theme, refs
-            │   ├── find-replace.ts    # Find/replace state & interaction (Vue-dependent)
-            │   ├── useFloatMenuPosition.ts # Shared toolbar dropdown positioning (right-anchor + flip/clamp)
-            │   └── interactions.ts    # Renderer, formula bar, tab bar, context menu, scrollbar, events
+            │   ├── borders-merge.ts       # Border ops, merge ops, clipboard, sum/avg/count
+            │   ├── core-state.ts          # Props, cells/merges/selection, font metrics, navigation, outline state
+            │   ├── find-replace.ts        # Find/replace state & interaction (Vue-dependent)
+            │   ├── interactions.ts        # Renderer, formula bar, tab bar, context menu, scrollbar, events
+            │   ├── sheets-ops.ts          # Row/col ops, multi-sheet, v-model emit, theme, refs
+            │   ├── undo-styles.ts         # Undo/redo, format painter, font/alignment/color
+            │   └── float-menu-position.ts # Shared toolbar dropdown positioning (right-anchor + flip/clamp)
             └── core/
-                ├── constants.ts       # Layout constants, i18n text, theme color palette
-                ├── types.ts           # All type definitions
-                ├── style-pool.ts      # Style pool: dedup, registration, resolve, migration, GC
-                ├── border-pool.ts     # Border pool: dedup, registration, resolve, migration, GC
-                ├── border-resolve.ts  # Shared-border conflict resolution (resolveSharedBorder)
-                ├── border-color.ts    # Per-side border color: decouple color from line type, plan color changes
-                ├── border-style.ts    # Border line type (solid/dashed/dotted): normalize + dash pattern
-                ├── formula.ts         # Formula engine (parsing, evaluation, dependency tracking)
-                ├── find-replace-core.ts # Find/replace pure algorithms (zero Vue deps, unit-testable)
-                ├── sort-core.ts       # Sort pure algorithms (zero Vue deps, unit-testable)
-                ├── autofill.ts        # Auto-fill pure engine (pattern inference, fill handle logic, zero Vue deps)
-                ├── outline-core.ts     # Row/column grouping pure engine (validation / shifting / collapse, zero Vue deps)
-                ├── number-format.ts    # Number format engine (Excel-style display formatting)
-                ├── theme.ts           # Theme CSS variable construction
-                └── utils.ts           # Pure utility functions (column label conversion, hit testing, etc.)
+                ├── autofill.ts               # Auto-fill pure engine (pattern inference, fill handle, zero Vue deps)
+                ├── border-color.ts           # Per-side border color: color decoupled from line type, plan color changes
+                ├── border-icon.ts            # Border icon single source (toolbar + picker)
+                ├── border-pool.ts            # Border pool: dedup, registration, resolve, migration, GC
+                ├── border-resolve.ts         # Shared-border conflict resolution (resolveSharedBorder)
+                ├── border-style.ts           # Border line type (solid / dashed / dotted): normalize + dash pattern
+                ├── conditional-formatting.ts # Conditional formatting engine (condition eval + rule cache, pure)
+                ├── constants.ts              # Layout constants, i18n text, theme color palette
+                ├── data-validation.ts        # Data validation engine (pure)
+                ├── filter-core.ts            # AutoFilter engine (pure, cascading candidates)
+                ├── find-replace-core.ts      # Find/replace pure algorithms (zero Vue deps, unit-testable)
+                ├── formula.ts                # Formula engine (parsing, evaluation, dependency tracking)
+                ├── model-dims.ts             # Model dimensions derived from content (pure)
+                ├── notes.ts                  # Note pool management: CRUD, persistence, undo integration
+                ├── number-format.ts          # Number format engine (Excel-style display formatting)
+                ├── outline-core.ts           # Row/column grouping pure engine (validation / shifting / collapse)
+                ├── sort-core.ts              # Sort pure algorithms (zero Vue deps, unit-testable)
+                ├── sort-icon.ts              # Sort icon single source (toolbar + picker)
+                ├── style-pool.ts             # Style pool: dedup, registration, resolve, migration, GC
+                ├── theme.ts                  # Theme CSS variable construction
+                ├── types.ts                  # All type definitions
+                └── utils.ts                  # Pure utilities (column label, hit test, resolve size)
 ```
 
 **Dependency Direction**: `App.vue → spreader/index.ts → spreader.vue → composables/* + core/*`
@@ -163,10 +173,9 @@ interface SheetModelData {
   cells: Record<string, { value: string; styleId?: number; style?: CellStyle }>
   colWidths?: Record<number, number>
   rowHeights?: Record<number, number>
-  /** Logical column count (0-based exclusive). Defaults to 26 when omitted. */
-  colCount?: number
-  /** Logical row count (0-based exclusive). Defaults to 200 when omitted. */
-  rowCount?: number
+  // Grid dimensions (colCount/rowCount) are not persisted: they are derived from
+  // content on load (deriveModelDims), at least the props default 26x200, then
+  // extended by data / custom row/column sizes / rule ranges
 }
 
 // Worksheet internal runtime state
@@ -266,13 +275,14 @@ SCROLL_STEP   = 50   (scroll amount per click)
 FILL_HANDLE_SIZE       = 6   (fill handle visual size, px)
 FILL_HANDLE_HIT_PADDING = 4   (fill handle hit area expansion, px)
 DEFAULT_COL_WIDTH  = 100
-DEFAULT_ROW_HEIGHT = 24
 MIN_COL_WIDTH  = 30
 MIN_ROW_HEIGHT = 24
 
 Default logical range: 200 rows × 26 columns
 Dynamic expansion via ensureCapacity(minCol, minRow) with buffer steps (8 columns / 32 rows)
 ```
+
+Row height is font-size driven: the height of an empty row (also the lower bound of auto row height) is `AUTO_ROW_BASE = round(2 × BASE_CELL_VPAD + line height of the default font size)`, so it follows `DEFAULT_FONT_SIZE` instead of a fixed constant.
 
 ### 5.1 Canvas Layout Plane
 
@@ -822,7 +832,7 @@ dims: { colCount: number; rowCount: number }
 
 - Initialised from the `colCount`/`rowCount` props (default: 26 columns, 200 rows).
 - Grows monotonically: never shrinks automatically (only explicit sheet reset/load can reduce it).
-- Persisted as `colCount`/`rowCount` in `SheetModelData` for save/load round-tripping.
+- Logical dimensions are **not persisted** in `SheetModelData`: on load / re-import they are derived from content by `deriveModelDims` (`core/model-dims.ts`) from cells, merges, custom row/column sizes, filter/conditional-format/data-validation ranges and outlines, always at least the props default. Empty areas grown at runtime by scrolling/navigation alone (no data, no custom sizes) are not kept after a save/load round trip.
 
 ### 20.2 ensureCapacity(minCol, minRow)
 
@@ -873,7 +883,7 @@ Expansion works seamlessly with the existing sparse cell storage:
 - Expanding logical range **does not create empty cells**: cells are only stored when they have actual data.
 - `colWidths`/`rowHeights` arrays are padded with default values (100px / 24px) for the new range.
 - Undo/redo snapshots include `colCount`/`rowCount`, so range expansion/contraction is properly reversible.
-- Sheet serialization (`SheetModelData`) includes `colCount?`/`rowCount?` for persistence.
+- `SheetModelData` does **not** include `colCount`/`rowCount`: the grid is derived from content on load (see 20.1). Empty grids grown only by scroll/navigation therefore do not survive a serialization round trip, while actual data, merges and custom row/column sizes always restore a large enough grid.
 
 ### 20.6 Column Name Conversion
 
@@ -1266,7 +1276,7 @@ Paste and Auto Fill compute all candidate values first, call `validateCells()`, 
 
 `data-validation-alert.vue`: Stop / Warning / Information alert dialog, sharing the same visual language as Conditional Formatting.
 
-`data-validation-input-message.vue`: a tooltip shown on cell focus when `showInputMessage` is set (kept at the components root, not under pickers, since it is a pure informational bubble).
+`data-validation-input-message.vue`: a tooltip shown on cell focus when `showInputMessage` is set. Lives under `pickers/` together with the other data validation components.
 
 ### 26.8 Persistence and Undo
 

@@ -6,7 +6,8 @@ import type { UndoStylesState } from './undo-styles';
 import { formatNumber, shouldAlignRightByDefault, NF_INVALID_VALUE, isFormatOverflowsToHashes, isInvalidDisplayValue } from '../core/number-format';
 import { migrateCells } from '../core/style-pool';
 import { migrateBordersInStyles } from '../core/border-pool';
-import { DEFAULT_BORDER_COLOR } from '../core/border-color';
+import { deriveModelDims } from '../core/model-dims';
+import { defaultBorderColor } from '../core/border-color';
 import { normalizeBorderLineStyle, borderLineDash, type BorderLineStyle } from '../core/border-style';
 import type { BordersMergeState } from './borders-merge';
 import type { SheetsOpsState } from './sheets-ops';
@@ -245,7 +246,8 @@ export function createInteractions(
     return s.hitRow(logicalY);
   }
 
-  const BORDER_COLOR = DEFAULT_BORDER_COLOR;
+  // 默认（自动）边框色：随 light/dark 主题切换，dark 下更亮以保证在深色背景可见
+  let BORDER_COLOR = defaultBorderColor(s.props.theme);
 
   /**
    * 绘制单条单元格边框边（top / bottom / left / right）。
@@ -1365,7 +1367,7 @@ export function createInteractions(
       return s.getCellBorderSide(s.cells[s.cellKey(col, row)], side);
     };
     const drawBorders = (ctx: CanvasRenderingContext2D, sC2: number, eC2: number, sR2: number, eR2: number): void => {
-      ctx.fillStyle = '#444';
+      ctx.fillStyle = BORDER_COLOR;
       for (let row = sR2; row <= eR2; row++) {
         for (let col = sC2; col <= eC2; col++) {
           if (s.isRowCollapsed(row)) continue;
@@ -1398,16 +1400,16 @@ export function createInteractions(
           const wB = rB?.width ?? 0;
           const wR = rR?.width ?? 0;
           if (wT > 0) {
-            paintBorderEdge(ctx, x, y, x + cw, y, wT, rT?.color || '#444', normalizeBorderLineStyle(rT?.style));
+            paintBorderEdge(ctx, x, y, x + cw, y, wT, rT?.color || BORDER_COLOR, normalizeBorderLineStyle(rT?.style));
           }
           if (wB > 0) {
-            paintBorderEdge(ctx, x, y + rh - wB, x + cw, y + rh - wB, wB, rB?.color || '#444', normalizeBorderLineStyle(rB?.style));
+            paintBorderEdge(ctx, x, y + rh - wB, x + cw, y + rh - wB, wB, rB?.color || BORDER_COLOR, normalizeBorderLineStyle(rB?.style));
           }
           if (wL > 0) {
-            paintBorderEdge(ctx, x, y, x, y + rh, wL, rL?.color || '#444', normalizeBorderLineStyle(rL?.style));
+            paintBorderEdge(ctx, x, y, x, y + rh, wL, rL?.color || BORDER_COLOR, normalizeBorderLineStyle(rL?.style));
           }
           if (wR > 0) {
-            paintBorderEdge(ctx, x + cw - wR, y, x + cw - wR, y + rh, wR, rR?.color || '#444', normalizeBorderLineStyle(rR?.style));
+            paintBorderEdge(ctx, x + cw - wR, y, x + cw - wR, y + rh, wR, rR?.color || BORDER_COLOR, normalizeBorderLineStyle(rR?.style));
           }
           // 角方块（与 body 区一致，含折叠侧跳过）
           const skipLeft = col > 0 && s.isColumnCollapsed(col - 1);
@@ -1421,19 +1423,19 @@ export function createInteractions(
           const _freezeRightCornerSkip = col < s.freeze.cols;
           const _freezeBottomCornerSkip = row < s.freeze.rows;
           if (wT > 0 && wL > 0 && !skipLeft && !skipTop) {
-            ctx.fillStyle = rT?.color || rL?.color || '#444';
+            ctx.fillStyle = rT?.color || rL?.color || BORDER_COLOR;
             ctx.fillRect(x - wL, y - wT, wL, wT);
           }
           if (wT > 0 && wR > 0 && !skipRight && !skipTop && !_freezeRightCornerSkip) {
-            ctx.fillStyle = rT?.color || rR?.color || '#444';
+            ctx.fillStyle = rT?.color || rR?.color || BORDER_COLOR;
             ctx.fillRect(x + cw, y - wT, wR, wT);
           }
           if (wB > 0 && wL > 0 && !skipLeft && !skipBottom && !_freezeBottomCornerSkip) {
-            ctx.fillStyle = rB?.color || rL?.color || '#444';
+            ctx.fillStyle = rB?.color || rL?.color || BORDER_COLOR;
             ctx.fillRect(x - wL, y + rh, wL, wB);
           }
           if (wB > 0 && wR > 0 && !skipRight && !skipBottom && !_freezeRightCornerSkip && !_freezeBottomCornerSkip) {
-            ctx.fillStyle = rB?.color || rR?.color || '#444';
+            ctx.fillStyle = rB?.color || rR?.color || BORDER_COLOR;
             ctx.fillRect(x + cw, y + rh, wR, wB);
           }
         }
@@ -4066,7 +4068,9 @@ export function createInteractions(
       if (so.modelData.value && so.modelData.value.length > 0) {
         lastEmittedDataRef.value = JSON.stringify(so.modelData.value);
         so.sheets.value = so.modelData.value.map((smd) => {
-          const sh = so.mkSheet(smd.name, { colCount: smd.colCount, rowCount: smd.rowCount });
+          // 尺寸不再持久化，导入时按内容推导（含超默认 26×200 的数据）
+          const dims = deriveModelDims(smd, { colCount: s.props.colCount, rowCount: s.props.rowCount });
+          const sh = so.mkSheet(smd.name, dims);
           const { cells: migratedCells, styles: migratedStyles } = migrateCells(smd.cells);
           Object.assign(sh.cells, migratedCells);
           sh.styles = smd.styles ?? migratedStyles;
@@ -4081,13 +4085,13 @@ export function createInteractions(
           if (smd.colWidths) {
             for (const [c, w] of Object.entries(smd.colWidths)) {
               const ci = Number(c);
-              if (ci >= 0 && ci < (sh.colCount ?? s.colCount) && w >= 30) sh.colWidths[ci] = w;
+              if (ci >= 0 && ci < sh.colCount && w >= 30) sh.colWidths[ci] = w;
             }
           }
           if (smd.rowHeights) {
             for (const [r, h] of Object.entries(smd.rowHeights)) {
               const ri = Number(r);
-              if (ri >= 0 && ri < (sh.rowCount ?? s.rowCount) && h >= 24) sh.rowHeights[ri] = h;
+              if (ri >= 0 && ri < sh.rowCount && h >= 24) sh.rowHeights[ri] = h;
             }
           }
           if (smd.merges) {
@@ -4122,7 +4126,10 @@ export function createInteractions(
       nextTick(() => applySize());
     });
 
-    watch(() => s.props.theme, () => scheduleRender());
+    watch(() => s.props.theme, () => {
+      BORDER_COLOR = defaultBorderColor(s.props.theme);
+      scheduleRender();
+    });
     watch(() => ({ ...s.cells }), () => nextTick(() => so.emitModelData()), { deep: false });
     watch(() => ({ ...s.merges }), () => {
       nextTick(() => so.emitModelData());
@@ -4138,7 +4145,9 @@ export function createInteractions(
       const savedSel = s.selection.value ? { ...s.selection.value } : null;
       const savedActive = { ...s.activeCell.value };
       so.sheets.value = v.map((smd) => {
-        const sh = so.mkSheet(smd.name);
+        // 尺寸不再持久化，导入时按内容推导（含超默认 26×200 的数据）
+        const dims = deriveModelDims(smd, { colCount: s.props.colCount, rowCount: s.props.rowCount });
+        const sh = so.mkSheet(smd.name, dims);
         const { cells: migratedCells, styles: migratedStyles } = migrateCells(smd.cells);
         Object.assign(sh.cells, migratedCells);
         sh.styles = smd.styles ?? migratedStyles;
@@ -4153,13 +4162,13 @@ export function createInteractions(
         if (smd.colWidths) {
           for (const [c, w] of Object.entries(smd.colWidths)) {
             const ci = Number(c);
-            if (ci >= 0 && ci < s.colCount && w >= 30) sh.colWidths[ci] = w;
+            if (ci >= 0 && ci < sh.colCount && w >= 30) sh.colWidths[ci] = w;
           }
         }
         if (smd.rowHeights) {
           for (const [r, h] of Object.entries(smd.rowHeights)) {
             const ri = Number(r);
-            if (ri >= 0 && ri < s.rowCount && h >= 24) sh.rowHeights[ri] = h;
+            if (ri >= 0 && ri < sh.rowCount && h >= 24) sh.rowHeights[ri] = h;
           }
         }
         if (smd.merges) {

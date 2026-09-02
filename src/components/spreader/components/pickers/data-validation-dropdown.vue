@@ -261,7 +261,7 @@ watch(filtered, (list) => {
         @click="commit(startIdx + i)"
       >
         <span class="dvd__check">{{ isChecked(item) ? '✓' : '' }}</span>
-        <span class="dvd__label">{{ item === '' ? '（空）' : item }}</span>
+        <span class="dvd__label">{{ item === '' ? t(locale, 'emptyCellLabel') : item }}</span>
       </div>
       <div :style="{ height: padBottom + 'px' }" />
     </div>
@@ -279,13 +279,13 @@ watch(filtered, (list) => {
   position: fixed;
   z-index: 10004;
   box-sizing: border-box;
-  background: #fff;
-  border: 1px solid #ccc;
+  background: var(--sp-toolbar-bg, #fff);
+  border: 1px solid var(--sp-toolbar-border, #ccc);
   border-radius: 3px;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
   font-size: 13px;
-  color: #333;
+  color: var(--sp-toolbar-btn-color, #333);
   overflow: hidden;
   user-select: none;
 }
@@ -293,19 +293,19 @@ watch(filtered, (list) => {
   height: 33px;
   padding: 4px;
   box-sizing: border-box;
-  border-bottom: 1px solid #e6e6e6;
+  border-bottom: 1px solid var(--sp-toolbar-border, #e6e6e6);
 }
 .dvd__search-input {
   width: 100%;
   height: 24px;
   box-sizing: border-box;
-  border: 1px solid #c8c8c8;
+  border: 1px solid var(--sp-toolbar-border, #c8c8c8);
   border-radius: 2px;
   outline: none;
   padding: 0 6px;
   font-size: 13px;
-  color: #1a1a1a;
-  background: #fff;
+  color: var(--sp-toolbar-btn-color, #1a1a1a);
+  background: var(--sp-formula-bar-input-bg, #fff);
 }
 .dvd__search-input:focus {
   border-color: #0078d7;
@@ -325,7 +325,7 @@ watch(filtered, (list) => {
   overflow: hidden;
 }
 .dvd__item--active {
-  background: #e8f0fe;
+  background: var(--sp-toolbar-item-active-bg, #e8f0fe);
 }
 .dvd__item--checked {
   font-weight: 600;
@@ -333,7 +333,7 @@ watch(filtered, (list) => {
 .dvd__check {
   width: 14px;
   flex: none;
-  color: #0078d7;
+  color: var(--sp-toolbar-btn-active-color, #0078d7);
   font-size: 12px;
 }
 .dvd__label {
@@ -343,7 +343,7 @@ watch(filtered, (list) => {
 }
 .dvd__empty {
   padding: 8px 10px;
-  color: #999;
+  color: var(--sp-toolbar-text-muted, #999);
   font-size: 12px;
   text-align: center;
 }

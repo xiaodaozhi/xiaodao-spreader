@@ -501,12 +501,12 @@ const previewText = computed(() => {
   max-width: calc(100vw - 32px);
   max-height: calc(100vh - 48px);
   overflow-y: auto;
-  background: #fff;
-  border: 1px solid #d0d0d0;
+  background: var(--sp-toolbar-bg, #fff);
+  border: 1px solid var(--sp-toolbar-border, #d0d0d0);
   border-radius: 6px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
-  color: #1a1a1a;
+  color: var(--sp-toolbar-btn-color, #1a1a1a);
   user-select: none;
 }
 .nf-dialog__header {
@@ -514,7 +514,7 @@ const previewText = computed(() => {
   align-items: center;
   justify-content: space-between;
   padding: 10px 14px;
-  border-bottom: 1px solid #ececec;
+  border-bottom: 1px solid var(--sp-toolbar-border, #ececec);
 }
 .nf-dialog__title { font-size: 13px; font-weight: 600; }
 .nf-dialog__close {
@@ -525,12 +525,12 @@ const previewText = computed(() => {
   height: 22px;
   border: none;
   background: transparent;
-  color: #888;
+  color: var(--sp-toolbar-btn-color, #888);
   cursor: pointer;
   border-radius: 3px;
   padding: 0;
 }
-.nf-dialog__close:hover { background: #f0f0f0; color: #444; }
+.nf-dialog__close:hover { background: var(--sp-toolbar-btn-hover-bg, #f0f0f0); color: var(--sp-toolbar-btn-color, #444); }
 .nf-dialog__close svg { width: 14px; height: 14px; }
 .nf-dialog__body { padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
 .nf-field { display: flex; align-items: center; gap: 8px; }
@@ -539,11 +539,11 @@ const previewText = computed(() => {
 .nf-field__input {
   flex: 1;
   height: 26px;
-  border: 1px solid #c0c0c0;
+  border: 1px solid var(--sp-toolbar-border, #c0c0c0);
   border-radius: 3px;
-  background: #fff;
+  background: var(--sp-toolbar-bg, #fff);
   font-size: 12px;
-  color: #1a1a1a;
+  color: var(--sp-toolbar-btn-color, #1a1a1a);
   padding: 0 6px;
   outline: none;
   box-sizing: border-box;
@@ -554,12 +554,12 @@ const previewText = computed(() => {
 /* SpDropdown 在对话框中的表单风格 */
 .nf-field__dropdown { flex: 1; }
 .nf-field__dropdown :deep(.sp-dropdown__trigger) {
-  border: 1px solid #c0c0c0;
-  background: #fff;
-  color: #1a1a1a;
+  border: 1px solid var(--sp-toolbar-border, #c0c0c0);
+  background: var(--sp-toolbar-bg, #fff);
+  color: var(--sp-toolbar-btn-color, #1a1a1a);
   padding: 0 6px;
 }
-.nf-field__dropdown :deep(.sp-dropdown__trigger:hover) { background: #f5f5f5; }
+.nf-field__dropdown :deep(.sp-dropdown__trigger:hover) { background: var(--sp-toolbar-btn-hover-bg, #f5f5f5); }
 .nf-field__dropdown :deep(.sp-dropdown__trigger--open) {
   border-color: #0078d7;
   box-shadow: 0 0 0 1px rgba(0, 120, 215, 0.3);
@@ -567,11 +567,11 @@ const previewText = computed(() => {
 .nf-field__textarea {
   flex: 1;
   min-height: 44px;
-  border: 1px solid #c0c0c0;
+  border: 1px solid var(--sp-toolbar-border, #c0c0c0);
   border-radius: 3px;
-  background: #fff;
+  background: var(--sp-toolbar-bg, #fff);
   font-size: 12px;
-  color: #1a1a1a;
+  color: var(--sp-toolbar-btn-color, #1a1a1a);
   padding: 4px 6px;
   outline: none;
   box-sizing: border-box;
@@ -579,7 +579,7 @@ const previewText = computed(() => {
   font-family: "Consolas", "Courier New", monospace;
 }
 .nf-field__textarea:focus { border-color: #0078d7; box-shadow: 0 0 0 1px rgba(0, 120, 215, 0.3); }
-.nf-checkbox { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: #333; cursor: pointer; }
+.nf-checkbox { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--sp-toolbar-btn-color, #333); cursor: pointer; }
 .nf-checkbox input { margin: 0; cursor: pointer; }
 .nf-dialog__footer {
   display: flex;
@@ -587,13 +587,13 @@ const previewText = computed(() => {
   justify-content: space-between;
   gap: 8px;
   padding: 10px 14px;
-  border-top: 1px solid #ececec;
+  border-top: 1px solid var(--sp-toolbar-border, #ececec);
 }
 .nf-preview { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.nf-preview__label { font-size: 11px; color: #888; }
+.nf-preview__label { font-size: 11px; color: var(--sp-toolbar-btn-color, #888); }
 .nf-preview__value {
   font-size: 13px;
-  color: #1a1a1a;
+  color: var(--sp-toolbar-btn-color, #1a1a1a);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -603,15 +603,15 @@ const previewText = computed(() => {
 .nf-btn {
   height: 28px;
   padding: 0 16px;
-  border: 1px solid #ccc;
+  border: 1px solid var(--sp-toolbar-border, #ccc);
   border-radius: 3px;
-  background: #fff;
-  color: #333;
+  background: var(--sp-toolbar-bg, #fff);
+  color: var(--sp-toolbar-btn-color, #333);
   font-size: 12px;
   cursor: pointer;
   font-family: inherit;
 }
-.nf-btn:hover { background: #f0f0f0; }
+.nf-btn:hover { background: var(--sp-toolbar-btn-hover-bg, #f0f0f0); }
 .nf-btn--primary { border-color: #0078d7; background: #0078d7; color: #fff; }
 .nf-btn--primary:hover { background: #0069c0; }
 .nf-dialog-enter-active, .nf-dialog-leave-active { transition: opacity 0.14s ease-out; }

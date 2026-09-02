@@ -4,7 +4,7 @@ import { ref, type Ref } from 'vue';
 import { createCoreState, type CoreState } from '../src/components/spreader/composables/core-state';
 import { createUndoStyles } from '../src/components/spreader/composables/undo-styles';
 import { createSheetsOps } from '../src/components/spreader/composables/sheets-ops';
-import { HEADER_WIDTH, HEADER_HEIGHT, SB_SIZE, DEFAULT_COL_WIDTH, DEFAULT_ROW_HEIGHT } from '../src/components/spreader/core/constants';
+import { HEADER_WIDTH, HEADER_HEIGHT, SB_SIZE, DEFAULT_COL_WIDTH } from '../src/components/spreader/core/constants';
 import type { SheetModelData, SheetState } from '../src/components/spreader/core/types';
 
 // ============ 纯 core-state 测试辅助 ============
@@ -163,7 +163,7 @@ test('getFrozenMetrics 基于默认行高累加', () => {
   const s = freshState();
   s.setFreeze(3, 0);
   const m = s.getFrozenMetrics();
-  assert.equal(m.frozenRowsHeight, DEFAULT_ROW_HEIGHT * 3, '3 行默认高度 = 72');
+  assert.equal(m.frozenRowsHeight, s.AUTO_ROW_BASE * 3, '3 行默认高度（空行 = AUTO_ROW_BASE）');
   assert.equal(m.frozenColumnsWidth, 0);
 });
 
@@ -194,7 +194,7 @@ test('getFrozenMetrics 同时冻结行和列', () => {
   s.setFreeze(2, 2);
   const m = s.getFrozenMetrics();
   assert.equal(m.frozenColumnsWidth, 120 + DEFAULT_COL_WIDTH);
-  assert.equal(m.frozenRowsHeight, 30 + DEFAULT_ROW_HEIGHT);
+  assert.equal(m.frozenRowsHeight, 30 + s.AUTO_ROW_BASE);
 });
 
 // =================================================================
@@ -241,7 +241,7 @@ test('corner 区域位置与尺寸正确', () => {
   assert.equal(corner.x, HEADER_WIDTH);
   assert.equal(corner.y, HEADER_HEIGHT);
   assert.equal(corner.width, DEFAULT_COL_WIDTH * 3);
-  assert.equal(corner.height, DEFAULT_ROW_HEIGHT * 2);
+  assert.equal(corner.height, s.AUTO_ROW_BASE * 2);
   assert.equal(corner.scrollLeft, 0);
   assert.equal(corner.scrollTop, 0);
 });
@@ -252,7 +252,7 @@ test('body 区域起点扣除冻结尺寸', () => {
   const regions = s.getViewportRegions();
   const body = regions.find((r) => r.kind === 'body')!;
   const frozenW = DEFAULT_COL_WIDTH * 3;
-  const frozenH = DEFAULT_ROW_HEIGHT * 2;
+  const frozenH = s.AUTO_ROW_BASE * 2;
   assert.equal(body.x, HEADER_WIDTH + frozenW);
   assert.equal(body.y, HEADER_HEIGHT + frozenH);
   assert.equal(body.width, 800 - HEADER_WIDTH - SB_SIZE - frozenW);
@@ -292,12 +292,12 @@ test('cellToScreenRect 未冻结时 body 单元格受双向滚动影响', () => 
   const s = freshState();
   s.scrollX.value = 100;
   s.scrollY.value = 80;
-  // col 5 的逻辑 X = 5 * DEFAULT_COL_WIDTH = 500；row 4 的逻辑 Y = 4 * DEFAULT_ROW_HEIGHT = 96
+  // col 5 的逻辑 X = 5 * DEFAULT_COL_WIDTH = 500；row 4 的逻辑 Y = 4 * s.AUTO_ROW_BASE（空行高）
   const rect = s.cellToScreenRect(4, 5);
   assert.equal(rect.x, HEADER_WIDTH + 500 - 100);
-  assert.equal(rect.y, HEADER_HEIGHT + 96 - 80);
+  assert.equal(rect.y, HEADER_HEIGHT + 4 * s.AUTO_ROW_BASE - 80);
   assert.equal(rect.width, DEFAULT_COL_WIDTH);
-  assert.equal(rect.height, DEFAULT_ROW_HEIGHT);
+  assert.equal(rect.height, s.AUTO_ROW_BASE);
 });
 
 test('cellToScreenRect corner 单元格不受滚动影响', () => {
@@ -308,7 +308,7 @@ test('cellToScreenRect corner 单元格不受滚动影响', () => {
   // row 1 col 1 落在 corner（< freeze.rows=2 且 < freeze.cols=2）
   const rect = s.cellToScreenRect(1, 1);
   assert.equal(rect.x, HEADER_WIDTH + DEFAULT_COL_WIDTH * 1, 'corner X 不受 scrollX 影响');
-  assert.equal(rect.y, HEADER_HEIGHT + DEFAULT_ROW_HEIGHT * 1, 'corner Y 不受 scrollY 影响');
+  assert.equal(rect.y, HEADER_HEIGHT + s.AUTO_ROW_BASE * 1, 'corner Y 不受 scrollY 影响');
 });
 
 test('cellToScreenRect 冻结行单元格：Y 不受滚动，X 受横向滚动', () => {
@@ -330,7 +330,7 @@ test('cellToScreenRect 冻结列单元格：X 不受滚动，Y 受纵向滚动',
   // col 0 冻结（< 2），row 5 不冻结
   const rect = s.cellToScreenRect(5, 0);
   assert.equal(rect.x, HEADER_WIDTH + 0, '冻结列 X 不受 scrollX 影响');
-  assert.equal(rect.y, HEADER_HEIGHT + 5 * DEFAULT_ROW_HEIGHT - 200, '冻结列的非冻结行 Y 受 scrollY 影响');
+  assert.equal(rect.y, HEADER_HEIGHT + 5 * s.AUTO_ROW_BASE - 200, '冻结列的非冻结行 Y 受 scrollY 影响');
 });
 
 // =================================================================
@@ -349,8 +349,8 @@ test('screenToCell 命中 corner 区域（不叠加 scroll）', () => {
   s.setFreeze(2, 2);
   s.scrollX.value = 999;
   s.scrollY.value = 999;
-  // corner 内点击 col 1 row 1：屏幕 x = HEADER_WIDTH + 100, y = HEADER_HEIGHT + 24
-  const hit = s.screenToCell(HEADER_WIDTH + 100, HEADER_HEIGHT + 24);
+  // corner 内点击 col 1 row 1：屏幕 x = HEADER_WIDTH + 100, y = HEADER_HEIGHT + AUTO_ROW_BASE
+  const hit = s.screenToCell(HEADER_WIDTH + 100, HEADER_HEIGHT + s.AUTO_ROW_BASE);
   assert.ok(hit);
   assert.equal(hit!.col, 1);
   assert.equal(hit!.row, 1);
@@ -361,8 +361,8 @@ test('screenToCell 命中 body 区域（叠加 scroll）', () => {
   s.scrollX.value = 100;
   s.scrollY.value = 80;
   // 屏幕 x = HEADER_WIDTH + 400 → logicalX = 400 + 100 = 500 → col 5
-  // 屏幕 y = HEADER_HEIGHT + 16  → logicalY = 16 + 80 = 96 → row 4
-  const hit = s.screenToCell(HEADER_WIDTH + 400, HEADER_HEIGHT + 16);
+  // 屏幕 y = HEADER_HEIGHT + (4 * AUTO_ROW_BASE - 80) → logicalY = 4 * AUTO_ROW_BASE → row 4
+  const hit = s.screenToCell(HEADER_WIDTH + 400, HEADER_HEIGHT + 4 * s.AUTO_ROW_BASE - 80);
   assert.ok(hit);
   assert.equal(hit!.col, 5);
   assert.equal(hit!.row, 4);
@@ -615,7 +615,7 @@ test('冻结全部行：getFrozenMetrics 与 viewport 不产生负尺寸', () =>
   const s = freshState(5, 5);
   s.setFreeze(5, 0); // 冻结全部 5 行
   const m = s.getFrozenMetrics();
-  assert.equal(m.frozenRowsHeight, DEFAULT_ROW_HEIGHT * 5);
+  assert.equal(m.frozenRowsHeight, s.AUTO_ROW_BASE * 5);
   const regions = s.getViewportRegions();
   const body = regions.find((r) => r.kind === 'body')!;
   assert.ok(body.height >= 0, 'body height 不应为负');
@@ -651,7 +651,7 @@ test('空 Sheet（极小范围）冻结首行首列', () => {
   assert.deepEqual(s.getFreeze(), { rows: 1, cols: 1 });
   const m = s.getFrozenMetrics();
   assert.equal(m.frozenColumnsWidth, DEFAULT_COL_WIDTH);
-  assert.equal(m.frozenRowsHeight, DEFAULT_ROW_HEIGHT);
+  assert.equal(m.frozenRowsHeight, s.AUTO_ROW_BASE);
 });
 
 test('极端列宽下 getFrozenMetrics 正确累加', () => {

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, nextTick, onBeforeUnmount } from 'vue';
-import { useFloatMenuPosition } from '../../composables/useFloatMenuPosition';
+import { useFloatMenuPosition } from '../../composables/float-menu-position';
 import ColorPalette from './color-palette.vue';
 
 const props = withDefaults(defineProps<{
@@ -121,7 +121,7 @@ defineExpose({ open, openMenu, close });
 .color-picker__menu {
   position: fixed;
   z-index: 40000;
-  background: #fff;
+  background: var(--sp-toolbar-bg, #fff);
   border: 1px solid var(--sp-toolbar-border, #d0d0d0);
   border-radius: 4px;
   padding: 6px;

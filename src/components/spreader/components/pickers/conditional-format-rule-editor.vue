@@ -180,12 +180,12 @@ function validate(): boolean {
   rangeError.value = '';
   const ranges = parseRangeText(form.rangeText);
   if (!ranges) {
-    rangeError.value = '范围格式无效，例如 A1:B10';
+    rangeError.value = t(props.locale, 'cfRangeInvalid');
     return false;
   }
   // 纯文本/空白/重复规则无需值校验
   if (needsFormula.value && !form.formula.trim()) {
-    rangeError.value = '请输入公式';
+    rangeError.value = t(props.locale, 'cfFormulaRequired');
     return false;
   }
   return true;
@@ -552,9 +552,9 @@ function onCancel() {
   font-size: 20px;
   line-height: 1;
   cursor: pointer;
-  color: #888;
+  color: var(--sp-toolbar-btn-color, #888);
 }
-.cf-editor__close:hover { color: #333; }
+.cf-editor__close:hover { color: var(--sp-toolbar-btn-color, #333); }
 .cf-editor__body { padding: 12px 14px; }
 .cf-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
 .cf-hint {
@@ -564,16 +564,16 @@ function onCancel() {
   line-height: 1.5;
 }
 .cf-row--inline { justify-content: flex-start; gap: 18px; }
-.cf-label { width: 64px; flex: 0 0 auto; font-size: 13px; color: #666; }
+.cf-label { width: 64px; flex: 0 0 auto; font-size: 13px; color: var(--sp-toolbar-text-secondary, #666); }
 .cf-dropdown { flex: 1; min-width: 0; }
 /* SpDropdown 在对话框中的表单风格（同数字格式对话框） */
 .cf-dropdown :deep(.sp-dropdown__trigger) {
-  border: 1px solid #c0c0c0;
-  background: #fff;
-  color: #1a1a1a;
+  border: 1px solid var(--sp-toolbar-border, #c0c0c0);
+  background: var(--sp-toolbar-bg, #fff);
+  color: var(--sp-toolbar-btn-color, #1a1a1a);
   padding: 0 6px;
 }
-.cf-dropdown :deep(.sp-dropdown__trigger:hover) { background: #f5f5f5; }
+.cf-dropdown :deep(.sp-dropdown__trigger:hover) { background: var(--sp-toolbar-btn-hover-bg, #f5f5f5); }
 .cf-dropdown :deep(.sp-dropdown__trigger--open) {
   border-color: #0078d7;
   box-shadow: 0 0 0 1px rgba(0, 120, 215, 0.3);
@@ -581,12 +581,12 @@ function onCancel() {
 .cf-input {
   flex: 1;
   height: 28px;
-  border: 1px solid #c4c4c4;
+  border: 1px solid var(--sp-toolbar-border, #c4c4c4);
   border-radius: 3px;
   padding: 0 8px;
   font-size: 13px;
-  background: #fff;
-  color: #1a1a1a;
+  background: var(--sp-toolbar-bg, #fff);
+  color: var(--sp-toolbar-btn-color, #1a1a1a);
   box-sizing: border-box;
   outline: none;
 }
@@ -630,7 +630,7 @@ function onCancel() {
   box-sizing: border-box;
   border: 1px solid var(--sp-toolbar-border, #d0d0d0);
   border-radius: 3px;
-  background: #fff;
+  background: var(--sp-toolbar-bg, #fff);
   transition: background 0.12s ease, border-color 0.12s ease;
 }
 .cf-chk__tick {
@@ -663,14 +663,14 @@ function onCancel() {
 .cf-btn {
   height: 30px;
   padding: 0 16px;
-  border: 1px solid #c4c4c4;
+  border: 1px solid var(--sp-toolbar-border, #c4c4c4);
   border-radius: 3px;
-  background: #fff;
+  background: var(--sp-toolbar-bg, #fff);
   cursor: pointer;
   font-size: 13px;
-  color: #333;
+  color: var(--sp-toolbar-btn-color, #333);
 }
-.cf-btn:hover { background: #f0f0f0; }
+.cf-btn:hover { background: var(--sp-toolbar-btn-hover-bg, #f0f0f0); }
 .cf-btn--primary { border-color: #0078d7; background: #0078d7; color: #fff; }
 .cf-btn--primary:hover { background: #0069c0; }
 </style>

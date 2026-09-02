@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, nextTick, onBeforeUnmount } from 'vue';
 import { t } from '../../core/constants';
-import { useFloatMenuPosition } from '../../composables/useFloatMenuPosition';
+import { useFloatMenuPosition } from '../../composables/float-menu-position';
 
 export type CalcType = 'sum' | 'avg' | 'count';
 
@@ -134,7 +134,7 @@ defineExpose({ open, openMenu, close });
   position: fixed;
   z-index: 40000;
   min-width: 120px;
-  background: #fff;
+  background: var(--sp-toolbar-bg, #fff);
   border: 1px solid var(--sp-toolbar-border, #d0d0d0);
   border-radius: 4px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
@@ -160,7 +160,7 @@ defineExpose({ open, openMenu, close });
   white-space: nowrap;
   box-sizing: border-box;
 }
-.calc-picker__item:hover:not(.calc-picker__item--disabled) { background: #eef3f9; }
+.calc-picker__item:hover:not(.calc-picker__item--disabled) { background: var(--sp-toolbar-btn-hover-bg, #eef3f9); }
 .calc-picker__item--disabled { color: var(--sp-toolbar-btn-disabled-color, #bbb); cursor: default; }
 .calc-picker__label { flex: 1; overflow: hidden; text-overflow: ellipsis; }
 .menu-pop-enter-active, .menu-pop-leave-active { transition: opacity 0.12s ease-out, transform 0.12s ease-out; }

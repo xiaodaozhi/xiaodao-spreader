@@ -4,6 +4,7 @@ import { t } from '../../core/constants';
 import { colToLabel, getFloatBounds } from '../../core/utils';
 import { FILTER_BLANK } from '../../core/filter-core';
 import type { SheetFilter, FilterColumn, FilterCondition, FilterOperator } from '../../core/types';
+import SpDropdown from '../dropdown.vue';
 
 const props = withDefaults(defineProps<{
   /** 正在筛选的列（0-based） */
@@ -95,6 +96,24 @@ const OP_I18N: Record<FilterOperator, string> = {
   notBlank: 'filterNonBlank',
 };
 const currentOps = computed(() => (viewMode.value === 'text' ? TEXT_OPS : NUM_OPS));
+/** SpDropdown options（label 走 i18n，value 为 FilterOperator） */
+const operatorOptions = computed(() =>
+  currentOps.value.map((op) => ({ value: op, label: t(props.locale, OP_I18N[op]) })),
+);
+function onCondOpChange(v: string | number) {
+  condOp.value = v as FilterOperator;
+}
+/** 当前模式对应的本地化文案（用于条件视图右上角「文本筛选 / 数字筛选 / 日期筛选」徽标） */
+const MODE_I18N: Record<'text' | 'number' | 'date', string> = {
+  text: 'filterText',
+  number: 'filterNumber',
+  date: 'filterDate',
+};
+const currentModeLabel = computed(() => {
+  const m = viewMode.value;
+  const key = MODE_I18N[m as 'text' | 'number' | 'date'] ?? MODE_I18N.text;
+  return t(props.locale, key);
+});
 
 /** 该列当前筛选是否已生效（用于头部高亮标记） */
 const columnActive = computed(() => {
@@ -295,10 +314,18 @@ onBeforeUnmount(() => {
             class="filter-popup__item"
           >
             <input
+              class="filter-popup__item-input"
               type="checkbox"
               :checked="item.isBlank ? blankChecked : selected.has(item.key)"
               @change="item.isBlank ? toggleBlank() : toggleValue(item.key)"
             >
+            <span class="filter-popup__item-box">
+              <svg
+                class="filter-popup__item-tick"
+                viewBox="0 0 1024 1024"
+                fill="currentColor"
+              ><path d="M405 697L195 487l58-58 152 152 304-304 58 58z" /></svg>
+            </span>
             <span class="filter-popup__item-label">{{ item.label }}</span>
             <span
               v-if="item.isBlank"
@@ -339,40 +366,54 @@ onBeforeUnmount(() => {
       <!-- 条件模式 -->
       <template v-else>
         <div class="filter-popup__cond">
-          <button
-            class="filter-popup__cond-back"
-            @click="backToValues"
-          >
-            ← {{ t(locale, 'filterCustom') }}
-          </button>
-          <div class="filter-popup__cond-row">
-            <select
-              v-model="condOp"
-              class="filter-popup__cond-select"
+          <div class="filter-popup__cond-nav">
+            <button
+              type="button"
+              class="filter-popup__back"
+              @click="backToValues"
             >
-              <option
-                v-for="op in currentOps"
-                :key="op"
-                :value="op"
-              >
-                {{ t(locale, OP_I18N[op]) }}
-              </option>
-            </select>
+              <svg
+                class="filter-popup__back-icon"
+                viewBox="0 0 16 16"
+                aria-hidden="true"
+              ><path
+                d="M10 3l-5 5 5 5"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.6"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              /></svg>
+              <span>{{ t(locale, 'filterBack') }}</span>
+            </button>
+            <span class="filter-popup__cond-mode">{{ currentModeLabel }}</span>
           </div>
+          <div class="filter-popup__cond-title">
+            {{ t(locale, 'filterCustom') }}
+          </div>
+          <SpDropdown
+            class="filter-popup__cond-op"
+            :model-value="condOp"
+            :options="operatorOptions"
+            :title="t(locale, 'filterCustom')"
+            @change="onCondOpChange"
+          />
           <div
             v-if="condOp === 'between'"
-            class="filter-popup__cond-row"
+            class="filter-popup__cond-row filter-popup__cond-row--between"
           >
             <input
               v-model="condVal"
               class="filter-popup__cond-input"
               type="text"
+              @keydown.enter="applyCondition"
             >
             <span class="filter-popup__cond-and">{{ t(locale, 'filterAnd') }}</span>
             <input
               v-model="condVal2"
               class="filter-popup__cond-input"
               type="text"
+              @keydown.enter="applyCondition"
             >
           </div>
           <div
@@ -383,10 +424,16 @@ onBeforeUnmount(() => {
               v-model="condVal"
               class="filter-popup__cond-input"
               type="text"
-              :placeholder="viewMode === 'date' ? '2024-01-01' : ''"
+              :placeholder="viewMode === 'date' ? 'YYYY-MM-DD' : ''"
               @keydown.enter="applyCondition"
             >
           </div>
+          <p
+            v-if="viewMode === 'date'"
+            class="filter-popup__cond-hint"
+          >
+            {{ t(locale, 'filterDateHint') }}
+          </p>
         </div>
       </template>
 
@@ -421,13 +468,13 @@ onBeforeUnmount(() => {
   position: fixed;
   z-index: 10005;
   width: 248px;
-  background: #fff;
-  border: 1px solid #d0d0d0;
+  background: var(--sp-toolbar-bg, #fff);
+  border: 1px solid var(--sp-toolbar-border, #d0d0d0);
   border-radius: 4px;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.16);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
   font-size: 13px;
-  color: #333;
+  color: var(--sp-toolbar-btn-color, #333);
   user-select: none;
   overflow: hidden;
   transform-origin: top right;
@@ -437,7 +484,7 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 6px;
   padding: 8px 10px 6px;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--sp-toolbar-border, #eee);
 }
 .filter-popup__head-label {
   font-weight: 600;
@@ -455,10 +502,12 @@ onBeforeUnmount(() => {
   width: 100%;
   box-sizing: border-box;
   height: 26px;
-  border: 1px solid #ccc;
+  border: 1px solid var(--sp-toolbar-border, #ccc);
   border-radius: 3px;
   padding: 0 8px;
   font-size: 12px;
+  color: var(--sp-toolbar-btn-color, #1a1a1a);
+  background: var(--sp-formula-bar-input-bg, #fff);
   outline: none;
 }
 .filter-popup__search-input:focus { border-color: #0078d7; }
@@ -477,12 +526,24 @@ onBeforeUnmount(() => {
   padding: 2px 4px;
 }
 .filter-popup__tool:hover { text-decoration: underline; }
-.filter-popup__count { margin-left: auto; font-size: 11px; color: #999; }
+.filter-popup__count { margin-left: auto; font-size: 11px; color: var(--sp-toolbar-text-muted, #999); }
 .filter-popup__list {
   height: 252px;
   overflow-y: auto;
-  border-top: 1px solid #f0f0f0;
-  border-bottom: 1px solid #f0f0f0;
+  border-top: 1px solid var(--sp-toolbar-border, #f0f0f0);
+  border-bottom: 1px solid var(--sp-toolbar-border, #f0f0f0);
+  /* 自定义滚动条：dark 模式下用主题 thumb 色，避免浏览器默认浅色滚动条在深色背景上突兀 */
+  scrollbar-width: thin;
+  scrollbar-color: var(--sp-scroll-thumb, #c0c0c0) transparent;
+}
+.filter-popup__list::-webkit-scrollbar { width: 8px; height: 8px; }
+.filter-popup__list::-webkit-scrollbar-track { background: transparent; }
+.filter-popup__list::-webkit-scrollbar-thumb {
+  background: var(--sp-scroll-thumb, #c0c0c0);
+  border-radius: 4px;
+}
+.filter-popup__list::-webkit-scrollbar-thumb:hover {
+  background: var(--sp-scroll-thumb-hover, #a0a0a0);
 }
 .filter-popup__item {
   display: flex;
@@ -494,18 +555,61 @@ onBeforeUnmount(() => {
   cursor: pointer;
   white-space: nowrap;
 }
-.filter-popup__item:hover { background: #eef3f9; }
-.filter-popup__item input { margin: 0; flex-shrink: 0; }
+.filter-popup__item:hover { background: var(--sp-toolbar-btn-hover-bg, #eef3f9); }
+
+/* 自实现复选框：与查找栏同款（隐藏原生 input，视觉由 box + tick 呈现） */
+.filter-popup__item-input {
+  position: absolute;
+  width: 0;
+  height: 0;
+  margin: 0;
+  padding: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+.filter-popup__item-box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  border: 1px solid var(--sp-toolbar-border, #c8c8c8);
+  border-radius: 2px;
+  background: var(--sp-formula-bar-input-bg, #fff);
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.filter-popup__item-tick {
+  width: 11px;
+  height: 11px;
+  color: #fff;
+  opacity: 0;
+  transform: scale(0.5);
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+.filter-popup__item-input:checked + .filter-popup__item-box {
+  background: #0078d7;
+  border-color: #0078d7;
+}
+.filter-popup__item-input:checked + .filter-popup__item-box .filter-popup__item-tick {
+  opacity: 1;
+  transform: scale(1);
+}
+.filter-popup__item-input:focus-visible + .filter-popup__item-box {
+  outline: 2px solid rgba(0, 120, 215, 0.4);
+  outline-offset: 1px;
+}
 .filter-popup__item-label {
   overflow: hidden;
   text-overflow: ellipsis;
   font-size: 12px;
 }
-.filter-popup__item-note { font-size: 11px; color: #999; flex-shrink: 0; }
+.filter-popup__item-note { font-size: 11px; color: var(--sp-toolbar-text-muted, #999); flex-shrink: 0; }
 .filter-popup__empty {
   padding: 16px 10px;
   text-align: center;
-  color: #999;
+  color: var(--sp-toolbar-text-muted, #999);
   font-size: 12px;
 }
 .filter-popup__modes {
@@ -515,69 +619,165 @@ onBeforeUnmount(() => {
 }
 .filter-popup__mode {
   flex: 1;
-  border: 1px solid #e0e0e0;
-  background: #f7f7f7;
+  border: 1px solid var(--sp-toolbar-border, #e0e0e0);
+  background: var(--sp-toolbar-bg, #f7f7f7);
   border-radius: 3px;
   font-size: 12px;
-  color: #444;
+  color: var(--sp-toolbar-btn-color, #444);
   padding: 5px 0;
   cursor: pointer;
 }
-.filter-popup__mode:hover { background: #eef3f9; border-color: #c8d8f0; }
-.filter-popup__cond { padding: 8px 10px; }
-.filter-popup__cond-back {
-  border: none;
+.filter-popup__mode:hover {
+  background: var(--sp-toolbar-btn-hover-bg, #eef3f9);
+}
+
+/* ============ 条件视图（文本 / 数字 / 日期 自定义筛选）============ */
+.filter-popup__cond {
+  padding: 10px 12px 8px;
+}
+.filter-popup__cond-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.filter-popup__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px 0 6px;
+  border: 1px solid transparent;
+  border-radius: 3px;
   background: transparent;
-  color: #0078d7;
+  color: var(--sp-toolbar-btn-color, #444);
   font-size: 12px;
   cursor: pointer;
-  padding: 0;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.filter-popup__back:hover {
+  background: var(--sp-toolbar-btn-hover-bg, #eef3f9);
+  border-color: var(--sp-toolbar-border, #d0d0d0);
+}
+.filter-popup__back-icon {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  color: var(--sp-find-hint-color, #888);
+}
+.filter-popup__back:hover .filter-popup__back-icon { color: #0078d7; }
+.filter-popup__cond-mode {
+  font-size: 11px;
+  font-weight: 600;
+  color: #0078d7;
+  background: rgba(0, 120, 215, 0.12);
+  border-radius: 8px;
+  padding: 2px 8px;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+}
+.filter-popup__cond-title {
   margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--sp-toolbar-btn-color, #333);
+  letter-spacing: 0.2px;
 }
-.filter-popup__cond-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
-.filter-popup__cond-select {
+
+/* operator 下拉：复用项目内 SpDropdown，仅 :deep 重写 trigger 样式与弹窗上下文一致 */
+.filter-popup__cond-op { display: block; margin-bottom: 8px; }
+.filter-popup__cond-op :deep(.sp-dropdown__trigger) {
   width: 100%;
-  height: 26px;
-  border: 1px solid #ccc;
+  height: 28px;
+  border: 1px solid var(--sp-toolbar-border, #c4c4c4);
+  background: var(--sp-formula-bar-input-bg, #fff);
+  color: var(--sp-toolbar-btn-color, #1a1a1a);
+  padding: 0 8px;
+  box-sizing: border-box;
   border-radius: 3px;
-  font-size: 12px;
-  background: #fff;
-  outline: none;
+  font-size: 13px;
 }
+.filter-popup__cond-op :deep(.sp-dropdown__trigger:hover) {
+  border-color: #0078d7;
+  background: var(--sp-toolbar-btn-hover-bg, #f5f5f5);
+}
+.filter-popup__cond-op :deep(.sp-dropdown__trigger--open) {
+  border-color: #0078d7;
+  box-shadow: 0 0 0 1px rgba(0, 120, 215, 0.3);
+}
+.filter-popup__cond-op :deep(.sp-dropdown__caret) {
+  width: 10px;
+  height: 10px;
+  color: var(--sp-find-hint-color, #888);
+}
+
+.filter-popup__cond-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.filter-popup__cond-row--between { gap: 4px; }
 .filter-popup__cond-input {
   flex: 1;
   min-width: 0;
-  height: 26px;
-  border: 1px solid #ccc;
+  height: 28px;
+  border: 1px solid var(--sp-toolbar-border, #c4c4c4);
   border-radius: 3px;
-  padding: 0 6px;
-  font-size: 12px;
+  padding: 0 8px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--sp-toolbar-btn-color, #1a1a1a);
+  background: var(--sp-formula-bar-input-bg, #fff);
   box-sizing: border-box;
   outline: none;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
 }
-.filter-popup__cond-input:focus { border-color: #0078d7; }
-.filter-popup__cond-and { font-size: 12px; color: #666; }
+.filter-popup__cond-input:hover { border-color: #0078d7; }
+.filter-popup__cond-input:focus {
+  border-color: #0078d7;
+  box-shadow: 0 0 0 1px rgba(0, 120, 215, 0.3);
+}
+.filter-popup__cond-and {
+  font-size: 12px;
+  color: var(--sp-toolbar-text-secondary, #666);
+  flex: 0 0 auto;
+  padding: 0 2px;
+}
+.filter-popup__cond-hint {
+  margin: 4px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--sp-find-hint-color, #888);
+}
 .filter-popup__footer {
   display: flex;
   align-items: center;
   gap: 6px;
   padding: 8px 10px;
-  border-top: 1px solid #eee;
+  border-top: 1px solid var(--sp-toolbar-border, #eee);
 }
 .filter-popup__btn {
   height: 26px;
   padding: 0 12px;
-  border: 1px solid #d0d0d0;
+  border: 1px solid var(--sp-toolbar-border, #d0d0d0);
   border-radius: 3px;
-  background: #f7f7f7;
-  color: #333;
+  background: var(--sp-toolbar-bg, #f7f7f7);
+  color: var(--sp-toolbar-btn-color, #333);
   font-size: 12px;
   cursor: pointer;
 }
-.filter-popup__btn:hover { background: #eef3f9; }
+.filter-popup__btn:hover { background: var(--sp-toolbar-btn-hover-bg, #eef3f9); }
 .filter-popup__btn--primary { background: #0078d7; border-color: #0078d7; color: #fff; }
 .filter-popup__btn--primary:hover { background: #006cbe; }
-.filter-popup__btn--clear { color: #c62828; border-color: #e0c0c0; }
-.filter-popup__btn--clear:hover { background: #fdf0f0; }
+.filter-popup__btn--clear {
+  color: #ff6b6b;
+  border-color: var(--sp-toolbar-border, #d0d0d0);
+}
+.filter-popup__btn--clear:hover {
+  background: rgba(198, 40, 40, 0.18);
+  border-color: rgba(198, 40, 40, 0.45);
+}
 .filter-popup__footer-spacer { flex: 1; }
 </style>

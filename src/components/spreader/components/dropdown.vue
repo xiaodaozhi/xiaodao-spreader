@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue';
-import type { FontOption } from '../core/constants';
+import { t, type FontOption } from '../core/constants';
 import { getFloatBounds, cssRightFromX } from '../core/utils';
 
 const props = withDefaults(defineProps<{
   modelValue: string | number;
   options: FontOption[];
+  locale?: string;
   width?: string | number;
   menuWidth?: string | number;
   visibleCount?: number;
@@ -28,6 +29,7 @@ const props = withDefaults(defineProps<{
   boundaryEl?: HTMLElement | null;
 }>(), {
   width: 'auto',
+  locale: 'zh-CN',
   menuWidth: undefined,
   visibleCount: 8,
   title: '',
@@ -345,7 +347,7 @@ onBeforeUnmount(() => {
             v-if="searchable && !hasMatch"
             class="sp-dropdown__empty"
           >
-            无匹配
+            {{ t(locale, 'searchNoMatch') }}
           </div>
           <button
             v-if="scrollable"
@@ -413,7 +415,7 @@ onBeforeUnmount(() => {
   z-index: 40000;
   display: flex;
   flex-direction: column;
-  background: #fff;
+  background: var(--sp-toolbar-bg, #fff);
   border: 1px solid var(--sp-toolbar-border, #d0d0d0);
   border-radius: 4px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
@@ -438,8 +440,8 @@ onBeforeUnmount(() => {
   padding: 0;
   border-radius: 3px;
 }
-.sp-dropdown__nav:hover:not(:disabled) { background: #eef3f9; }
-.sp-dropdown__nav:disabled { color: #ccc; cursor: default; }
+.sp-dropdown__nav:hover:not(:disabled) { background: var(--sp-toolbar-btn-hover-bg, #eef3f9); }
+.sp-dropdown__nav:disabled { color: var(--sp-toolbar-btn-disabled-color, #ccc); cursor: default; }
 .sp-dropdown__nav svg { width: 10px; height: 10px; }
 .sp-dropdown__list {
   display: flex;
@@ -456,7 +458,8 @@ onBeforeUnmount(() => {
   border-radius: 3px;
   font-size: 12px;
   font-family: inherit;
-  color: #1a1a1a;
+  color: var(--sp-toolbar-btn-color, #1a1a1a);
+  background: var(--sp-formula-bar-input-bg, #fff);
   outline: none;
   box-sizing: border-box;
 }
@@ -467,7 +470,7 @@ onBeforeUnmount(() => {
 .sp-dropdown__empty {
   padding: 6px 8px;
   font-size: 12px;
-  color: #999;
+  color: var(--sp-toolbar-text-muted, #999);
   text-align: center;
 }
 .sp-dropdown__icon { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; }
@@ -489,8 +492,8 @@ onBeforeUnmount(() => {
   box-sizing: border-box;
   border-radius: 3px;
 }
-.sp-dropdown__item:hover { background: #eef3f9; }
-.sp-dropdown__item--disabled { color: #c9c9c9; cursor: default; }
+.sp-dropdown__item:hover { background: var(--sp-toolbar-btn-hover-bg, #eef3f9); }
+.sp-dropdown__item--disabled { color: var(--sp-toolbar-btn-disabled-color, #c9c9c9); cursor: default; }
 .sp-dropdown__item--disabled:hover { background: transparent; }
-.sp-dropdown__item--active { background: #e5f1fb; color: #0078d7; }
+.sp-dropdown__item--active { background: var(--sp-toolbar-item-active-bg, #e5f1fb); color: var(--sp-toolbar-btn-active-color, #0078d7); }
 </style>

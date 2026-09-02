@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   DEFAULT_BORDER_COLOR,
+  DARK_BORDER_COLOR,
   normalizeBorderColor,
   sameBorderColor,
   resolveBorderColor,
@@ -72,9 +73,12 @@ test('sameBorderColor: 大小写不敏感；空与 undefined 视为同一自动�
   assert.equal(sameBorderColor('#f00', '#0f0'), false);
 });
 
-test('resolveBorderColor: 自动 → 默认色 #444', () => {
+test('resolveBorderColor: 自动 → 主题默认色（light #444 / dark #aaa）', () => {
   assert.equal(resolveBorderColor(undefined), DEFAULT_BORDER_COLOR);
+  assert.equal(resolveBorderColor(undefined, 'light'), DEFAULT_BORDER_COLOR);
+  assert.equal(resolveBorderColor(undefined, 'dark'), DARK_BORDER_COLOR);
   assert.equal(resolveBorderColor('#abc'), '#abc');
+  assert.equal(resolveBorderColor('#abc', 'dark'), '#abc');
 });
 
 test('hasBorderLine: 仅 width>0 视为有边框', () => {

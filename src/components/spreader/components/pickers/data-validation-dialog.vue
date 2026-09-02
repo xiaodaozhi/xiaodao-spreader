@@ -730,9 +730,9 @@ function onErrorStyleChange(v: string | number) {
   font-size: 20px;
   line-height: 1;
   cursor: pointer;
-  color: #888;
+  color: var(--sp-toolbar-btn-color, #888);
 }
-.dv-editor__close:hover { color: #333; }
+.dv-editor__close:hover { color: var(--sp-toolbar-btn-color, #333); }
 .dv-editor__body {
   padding: 12px 14px;
   max-height: calc(100vh - 140px);
@@ -755,7 +755,7 @@ function onErrorStyleChange(v: string | number) {
 .dv-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
 .dv-row--top { align-items: flex-start; }
 .dv-row--inline { justify-content: flex-start; gap: 18px; }
-.dv-label { width: 64px; flex: 0 0 auto; font-size: 13px; color: #666; }
+.dv-label { width: 64px; flex: 0 0 auto; font-size: 13px; color: var(--sp-toolbar-text-secondary, #666); }
 .dv-hint {
   margin: -6px 0 10px 0;
   font-size: 12px;
@@ -765,12 +765,12 @@ function onErrorStyleChange(v: string | number) {
 .dv-dropdown { flex: 1; min-width: 0; }
 /* SpDropdown 在对话框中的表单风格（同条件格式规则编辑器） */
 .dv-dropdown :deep(.sp-dropdown__trigger) {
-  border: 1px solid #c0c0c0;
-  background: #fff;
-  color: #1a1a1a;
+  border: 1px solid var(--sp-toolbar-border, #c0c0c0);
+  background: var(--sp-toolbar-bg, #fff);
+  color: var(--sp-toolbar-btn-color, #1a1a1a);
   padding: 0 6px;
 }
-.dv-dropdown :deep(.sp-dropdown__trigger:hover) { background: #f5f5f5; }
+.dv-dropdown :deep(.sp-dropdown__trigger:hover) { background: var(--sp-toolbar-btn-hover-bg, #f5f5f5); }
 .dv-dropdown :deep(.sp-dropdown__trigger--open) {
   border-color: #0078d7;
   box-shadow: 0 0 0 1px rgba(0, 120, 215, 0.3);
@@ -779,24 +779,24 @@ function onErrorStyleChange(v: string | number) {
   flex: 1;
   min-width: 0;
   height: 28px;
-  border: 1px solid #c4c4c4;
+  border: 1px solid var(--sp-toolbar-border, #c4c4c4);
   border-radius: 3px;
   padding: 0 8px;
   font-size: 13px;
   font-family: inherit;
-  background: #fff;
-  color: #1a1a1a;
+  background: var(--sp-toolbar-bg, #fff);
+  color: var(--sp-toolbar-btn-color, #1a1a1a);
   box-sizing: border-box;
   outline: none;
 }
 .dv-input:focus { border-color: #0078d7; }
-.dv-input:disabled { background: #f5f5f5; color: #999; }
+.dv-input:disabled { background: var(--sp-toolbar-btn-hover-bg, #f5f5f5); color: var(--sp-toolbar-text-muted, #999); }
 .dv-input--area {
   height: auto;
   min-height: 46px;
   padding: 5px 8px;
   line-height: 1.5;
-  resize: vertical;
+  resize: none;
 }
 .dv-error { color: #d93025; font-size: 12px; margin: -4px 0 8px 72px; }
 
@@ -831,7 +831,7 @@ function onErrorStyleChange(v: string | number) {
   box-sizing: border-box;
   border: 1px solid var(--sp-toolbar-border, #d0d0d0);
   border-radius: 3px;
-  background: #fff;
+  background: var(--sp-toolbar-bg, #fff);
   transition: background 0.12s ease, border-color 0.12s ease;
 }
 .dv-chk__tick {
@@ -860,8 +860,8 @@ function onErrorStyleChange(v: string | number) {
   cursor: not-allowed;
 }
 .dv-chk--disabled .dv-chk__box {
-  background: #f5f5f5;
-  border-color: #d8d8d8;
+  background: var(--sp-toolbar-btn-hover-bg, #f5f5f5);
+  border-color: var(--sp-toolbar-border, #d8d8d8);
 }
 .dv-chk--disabled .dv-chk__input:checked + .dv-chk__box {
   background: #c4c4c4;
@@ -879,15 +879,15 @@ function onErrorStyleChange(v: string | number) {
 .dv-btn {
   height: 30px;
   padding: 0 16px;
-  border: 1px solid #c4c4c4;
+  border: 1px solid var(--sp-toolbar-border, #c4c4c4);
   border-radius: 3px;
-  background: #fff;
+  background: var(--sp-toolbar-bg, #fff);
   cursor: pointer;
   font-size: 13px;
-  color: #333;
+  color: var(--sp-toolbar-btn-color, #333);
   white-space: nowrap;
 }
-.dv-btn:hover { background: #f0f0f0; }
+.dv-btn:hover { background: var(--sp-toolbar-btn-hover-bg, #f0f0f0); }
 .dv-btn--primary { border-color: #0078d7; background: #0078d7; color: #fff; }
 .dv-btn--primary:hover { background: #0069c0; }
 .dv-btn--danger { color: #c5221f; }

@@ -261,7 +261,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocPointerdo
   font-size: 12px;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
   color: var(--sp-formula-bar-input-color, #1a1a1a);
-  background: #fff;
+  background: var(--sp-formula-bar-input-bg, #fff);
   outline: none;
   box-sizing: border-box;
 }
@@ -283,13 +283,13 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocPointerdo
 .find-bar__dropdown :deep(.sp-dropdown__trigger) {
   height: 26px;
   border: 1px solid var(--sp-toolbar-border);
-  background: #fff;
+  background: var(--sp-toolbar-bg, #fff);
   color: var(--sp-formula-bar-input-color, #1a1a1a);
   font-size: 12px;
   padding: 0 4px;
   border-radius: 2px;
 }
-.find-bar__dropdown :deep(.sp-dropdown__trigger:hover) { background: #f5f5f5; }
+.find-bar__dropdown :deep(.sp-dropdown__trigger:hover) { background: var(--sp-toolbar-btn-hover-bg, #f5f5f5); }
 .find-bar__dropdown :deep(.sp-dropdown__trigger--open) {
   border-color: var(--sp-toolbar-btn-active-color);
 }
@@ -324,7 +324,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocPointerdo
   box-sizing: border-box;
   border: 1px solid var(--sp-toolbar-border);
   border-radius: 2px;
-  background: #fff;
+  background: var(--sp-toolbar-bg, #fff);
   transition: background 0.12s ease, border-color 0.12s ease;
 }
 .find-bar__chk-tick {
@@ -395,7 +395,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocPointerdo
   z-index: 9999;
   min-width: 160px;
   padding: 4px 0;
-  background: #fff;
+  background: var(--sp-toolbar-bg, #fff);
   border: 1px solid var(--sp-toolbar-border);
   border-radius: 2px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);

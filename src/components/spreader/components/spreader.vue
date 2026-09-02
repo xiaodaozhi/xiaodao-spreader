@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, computed, nextTick, type Ref, type UnwrapRef } from 'vue';
+import { ref, reactive, computed, nextTick, watch, onBeforeUnmount, type Ref, type UnwrapRef } from 'vue';
 import { SB_SIZE, DEFAULT_NOTE_AUTHOR, t } from '../core/constants';
 import Toolbar from './toolbar.vue';
 import Tabbar from './tabbar.vue';
@@ -13,7 +13,7 @@ import ConditionalFormatRuleEditor from './pickers/conditional-format-rule-edito
 import DataValidationDialog from './pickers/data-validation-dialog.vue';
 import DataValidationDropdown from './pickers/data-validation-dropdown.vue';
 import DataValidationAlert from './pickers/data-validation-alert.vue';
-import DataValidationInputMessage from './data-validation-input-message.vue';
+import DataValidationInputMessage from './pickers/data-validation-input-message.vue';
 import NoteOverlay from './note-overlay.vue';
 import type {
   SheetModelData,
@@ -121,6 +121,23 @@ sheetsCtx.activeSheetIndex = sheetsOpsRaw.activeSheetIndex;
 sheetsCtx.saveSheet = sheetsOpsRaw.saveSheet;
 sheetsCtx.loadSheet = sheetsOpsRaw.loadSheet;
 sheetsCtx.mkSheet = sheetsOpsRaw.mkSheet;
+
+// 主题变量挂到 documentElement，使 Teleport 到 body 的下拉 / 右键菜单也能继承
+// （否则它们脱离 wrapper，永远走 CSS 变量兜底浅色，不随 dark 模式切换）
+function applyGlobalThemeVars() {
+  const el = document.documentElement;
+  const vars = sheetsOpsRaw.toolbarThemeVars.value;
+  for (const [k, v] of Object.entries(vars)) {
+    el.style.setProperty(k, v);
+  }
+}
+watch(() => sheetsOpsRaw.toolbarThemeVars.value, applyGlobalThemeVars, { immediate: true, deep: true });
+onBeforeUnmount(() => {
+  const el = document.documentElement;
+  for (const k of Object.keys(sheetsOpsRaw.toolbarThemeVars.value)) {
+    el.style.removeProperty(k);
+  }
+});
 
 const interactionsRaw = createInteractions(
   coreStateRaw,
@@ -646,7 +663,6 @@ const setDimInputRef = (el: unknown) => {
       :cached-border="bordersMerge.cachedBorder"
       :cached-border-color="bordersMerge.cachedBorderColor"
       :cached-border-line-style="bordersMerge.cachedBorderLineStyle"
-      :border-color="bordersMerge.BORDER_COLOR"
       :sort-menu-open="sortMenuOpen"
       :cached-sort-order="cachedSortOrder"
       :can-sort="canSort"
@@ -803,8 +819,8 @@ const setDimInputRef = (el: unknown) => {
         <button
           type="button"
           class="formula-bar__btn formula-bar__btn--cancel"
-          title="取消（Esc）"
-          aria-label="取消"
+          :title="t(coreState.locale, 'formulaBarCancel')"
+          :aria-label="t(coreState.locale, 'cancel')"
           @mousedown.prevent
           @click.stop="interactions.cancelFormulaBarEdit"
         >
@@ -826,8 +842,8 @@ const setDimInputRef = (el: unknown) => {
         <button
           type="button"
           class="formula-bar__btn formula-bar__btn--accept"
-          title="接受（Enter）"
-          aria-label="接受"
+          :title="t(coreState.locale, 'formulaBarAccept')"
+          :aria-label="t(coreState.locale, 'accept')"
           @mousedown.prevent
           @click.stop="interactions.acceptFormulaBarEdit"
         >
@@ -886,7 +902,7 @@ const setDimInputRef = (el: unknown) => {
       <button
         type="button"
         class="formula-bar__toggle"
-        :title="interactions.formulaBarExpanded ? '折叠为1行' : '展开为3行'"
+        :title="t(coreState.locale, interactions.formulaBarExpanded ? 'formulaBarCollapse' : 'formulaBarExpand')"
         @mousedown.prevent
         @click.stop="toggleFormulaBarExpanded"
       >
@@ -1268,7 +1284,7 @@ const setDimInputRef = (el: unknown) => {
           @click.stop
         >
           <div class="dim-panel__title">
-            {{ interactions.dimPanel.type === 'row' ? '行高' : '列宽' }}
+            {{ interactions.dimPanel.type === 'row' ? t(coreState.locale, 'rowHeight') : t(coreState.locale, 'colWidth') }}
           </div>
           <div class="dim-panel__body">
             <input
@@ -1296,13 +1312,13 @@ const setDimInputRef = (el: unknown) => {
               class="dim-panel__btn dim-panel__btn--primary"
               @click="interactions.applyDimPanel"
             >
-              确定
+              {{ t(coreState.locale, 'ok') }}
             </button>
             <button
               class="dim-panel__btn"
               @click="interactions.closeDimPanel"
             >
-              取消
+              {{ t(coreState.locale, 'cancel') }}
             </button>
           </div>
         </div>
@@ -1312,8 +1328,8 @@ const setDimInputRef = (el: unknown) => {
 </template>
 
 <style scoped>
-.spreadsheet-outer { flex: 1; display: flex; flex-direction: column; overflow: hidden; height: 100%; min-height: 400px; width: 100%; }
-.formula-bar { display: flex; align-items: flex-start; min-height: 36px; padding: 0; gap: 0; }
+.spreadsheet-outer { flex: 1; display: flex; flex-direction: column; overflow: hidden; height: 100%; min-height: 400px; width: 100%; background: var(--sp-toolbar-bg); }
+.formula-bar { display: flex; align-items: flex-start; min-height: 36px; padding: 0; gap: 0; background: var(--sp-formula-bar-bg); }
 .formula-bar--expanded { min-height: 72px; }
 .formula-bar__cell-label { width: 48px; min-width: 48px; height: 28px; line-height: 28px; margin-top: 4px; text-align: center; font-size: 12px; font-weight: 600; color: var(--sp-formula-bar-label-color); background: var(--sp-formula-bar-label-bg); border: 1px solid var(--sp-formula-bar-label-border); border-radius: 2px; user-select: none; }
 .formula-bar__buttons { display: inline-flex; align-items: stretch; margin-top: 4px; margin-left: 6px; height: 28px; border: 1px solid var(--sp-formula-bar-input-border); border-radius: 2px; overflow: hidden; background: var(--sp-formula-bar-input-bg); }
@@ -1333,7 +1349,7 @@ const setDimInputRef = (el: unknown) => {
 .formula-bar__input { flex: 1; min-height: 28px; height: 28px; line-height: 20px; margin-top: 4px; border: 1px solid var(--sp-formula-bar-input-border); border-radius: 2px; outline: none; padding: 3px 6px; margin-left: 4px; font-size: 13px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; color: var(--sp-formula-bar-input-color); background: var(--sp-formula-bar-input-bg); resize: none; overflow: hidden; box-sizing: border-box; }
 .formula-bar__input--expanded { height: 68px; overflow: auto; margin-bottom: 4px; }
 .formula-bar__input:focus { border-color: var(--sp-formula-bar-input-focus-border); box-shadow: 0 0 0 1px var(--sp-formula-bar-input-focus-shadow); }
-.formula-bar__toggle { width: 22px; min-width: 22px; height: 28px; margin-top: 4px; margin-left: 2px; margin-right: 2px; border: 1px solid var(--sp-formula-bar-input-border); border-radius: 2px; background: var(--sp-formula-bar-input-bg); color: var(--sp-formula-bar-input-color); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; padding: 0; user-select: none; }
+.formula-bar__toggle { width: 22px; min-width: 22px; height: 28px; margin-top: 4px; margin-left: 2px; border: 1px solid var(--sp-formula-bar-input-border); border-radius: 2px; background: var(--sp-formula-bar-input-bg); color: var(--sp-formula-bar-input-color); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; padding: 0; user-select: none; }
 .formula-bar__toggle:hover { background: var(--sp-scroll-btn-hover-bg, #e8e8e8); }
 .spreadsheet-wrapper { flex: 1; position: relative; overflow: hidden; background: var(--sp-wrapper-bg); }
 .grid-canvas { position: absolute; top: 0; left: 0; display: block; outline: none; cursor: cell; }
@@ -1362,15 +1378,15 @@ const setDimInputRef = (el: unknown) => {
 </style>
 
 <style>
-.context-menu { position: fixed; z-index: 10000; background: #fff; border: 1px solid #ccc; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); padding: 4px 0; min-width: 120px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; font-size: 13px; transform-origin: top left; }
-.context-menu__item { padding: 6px 12px; cursor: pointer; color: #333; white-space: nowrap; position: relative; display: flex; align-items: center; justify-content: space-between; }
-.context-menu__item:hover { background: #e8f0fe; }
-.context-menu__item--disabled { color: #bbb; cursor: default; }
+.context-menu { position: fixed; z-index: 10000; background: var(--sp-toolbar-bg, #fff); border: 1px solid var(--sp-toolbar-border, #ccc); border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); padding: 4px 0; min-width: 120px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; font-size: 13px; transform-origin: top left; }
+.context-menu__item { padding: 6px 12px; cursor: pointer; color: var(--sp-toolbar-btn-color, #333); white-space: nowrap; position: relative; display: flex; align-items: center; justify-content: space-between; }
+.context-menu__item:hover { background: var(--sp-toolbar-btn-hover-bg, #e8f0fe); }
+.context-menu__item--disabled { color: var(--sp-toolbar-btn-disabled-color, #bbb); cursor: default; }
 .context-menu__item--disabled:hover { background: transparent; }
-.context-menu__arrow { margin-left: 8px; margin-right: -2px; width: 12px; height: 12px; fill: #888; flex: none; }
+.context-menu__arrow { margin-left: 8px; margin-right: -2px; width: 12px; height: 12px; fill: var(--sp-toolbar-btn-color, #888); flex: none; }
 /* top:-5px = 向下弹出时相对父项上移 1px 后的对齐值；向上弹出时由 interactions.ts 的
    predictCtxSubmenuDir() inline 写 bottom:-5px（等距下移）。两处需保持同步。 */
-.context-submenu { display: none; position: absolute; left: 100%; top: -5px; background: #fff; border: 1px solid #ccc; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); padding: 4px 0; min-width: 100px; z-index: 10001; }
+.context-submenu { display: none; position: absolute; left: 100%; top: -5px; background: var(--sp-toolbar-bg, #fff); border: 1px solid var(--sp-toolbar-border, #ccc); border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); padding: 4px 0; min-width: 100px; z-index: 10001; }
 .context-submenu--left { left: auto; right: 100%; }
 .context-menu__item:not(.context-menu__item--disabled):hover > .context-submenu { display: block; }
 .context-submenu .context-menu__item { justify-content: flex-start; }
@@ -1378,16 +1394,16 @@ const setDimInputRef = (el: unknown) => {
 .menu-pop-enter-from, .menu-pop-leave-to { opacity: 0; transform: scale(0.9); }
 
 /* 行高/列宽浮动设置栏 */
-.dim-panel { position: fixed; z-index: 10002; width: 220px; background: #fff; border: 1px solid #ccc; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); padding: 10px 12px; box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; user-select: none; transform-origin: top left; }
-.dim-panel__title { font-size: 13px; font-weight: 600; color: #333; margin-bottom: 8px; }
+.dim-panel { position: fixed; z-index: 10002; width: 220px; background: var(--sp-toolbar-bg, #fff); border: 1px solid var(--sp-toolbar-border, #ccc); border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); padding: 10px 12px; box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; user-select: none; transform-origin: top left; }
+.dim-panel__title { font-size: 13px; font-weight: 600; color: var(--sp-toolbar-btn-color, #333); margin-bottom: 8px; }
 .dim-panel__body { display: flex; align-items: center; gap: 6px; }
-.dim-panel__input { flex: 1; height: 26px; border: 1px solid #c0c0c0; border-radius: 3px; outline: none; padding: 0 6px; font-size: 13px; color: #1a1a1a; background: #fff; box-sizing: border-box; }
+.dim-panel__input { flex: 1; height: 26px; border: 1px solid var(--sp-toolbar-border, #c0c0c0); border-radius: 3px; outline: none; padding: 0 6px; font-size: 13px; color: var(--sp-toolbar-btn-color, #1a1a1a); background: var(--sp-toolbar-bg, #fff); box-sizing: border-box; }
 .dim-panel__input:focus { border-color: #0078d7; box-shadow: 0 0 0 1px rgba(0, 120, 215, 0.3); }
 .dim-panel__input--error { border-color: #d93025; box-shadow: 0 0 0 1px rgba(217, 48, 37, 0.3); }
 .dim-panel__error { margin-top: 6px; font-size: 12px; color: #d93025; line-height: 1.4; }
 .dim-panel__footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
-.dim-panel__btn { height: 26px; padding: 0 14px; border: 1px solid #ccc; border-radius: 3px; background: #fff; color: #333; font-size: 13px; cursor: pointer; }
-.dim-panel__btn:hover { background: #f0f0f0; }
+.dim-panel__btn { height: 26px; padding: 0 14px; border: 1px solid var(--sp-toolbar-border, #ccc); border-radius: 3px; background: var(--sp-toolbar-bg, #fff); color: var(--sp-toolbar-btn-color, #333); font-size: 13px; cursor: pointer; }
+.dim-panel__btn:hover { background: var(--sp-toolbar-btn-hover-bg, #f0f0f0); }
 .dim-panel__btn--primary { border-color: #0078d7; background: #0078d7; color: #fff; }
 .dim-panel__btn--primary:hover { background: #0069c0; }
 

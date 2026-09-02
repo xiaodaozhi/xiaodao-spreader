@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, nextTick, onBeforeUnmount } from 'vue';
 import { t } from '../../core/constants';
-import { useFloatMenuPosition } from '../../composables/useFloatMenuPosition';
+import { useFloatMenuPosition } from '../../composables/float-menu-position';
 import type { SortOrder } from '../../core/sort-core';
 import { SORT_OPTIONS, SORT_BARS, SORT_ARROW_PATHS } from '../../core/sort-icon';
 
@@ -138,7 +138,7 @@ defineExpose({ open, openMenu, close });
 .sort-picker__menu {
   position: fixed;
   z-index: 40000;
-  background: #fff;
+  background: var(--sp-toolbar-bg, #fff);
   border: 1px solid var(--sp-toolbar-border, #d0d0d0);
   border-radius: 4px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
@@ -164,7 +164,7 @@ defineExpose({ open, openMenu, close });
   white-space: nowrap;
   box-sizing: border-box;
 }
-.sort-picker__item:hover { background: #eef3f9; }
+.sort-picker__item:hover { background: var(--sp-toolbar-btn-hover-bg, #eef3f9); }
 .sort-picker__icon { width: 18px; height: 18px; flex-shrink: 0; }
 .sort-picker__label { flex: 1; overflow: hidden; text-overflow: ellipsis; }
 .menu-pop-enter-active, .menu-pop-leave-active { transition: opacity 0.12s ease-out, transform 0.12s ease-out; }

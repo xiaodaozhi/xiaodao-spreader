@@ -190,15 +190,15 @@ function onSecondary() {
 .dv-alert__btn {
   height: 30px;
   padding: 0 16px;
-  border: 1px solid #c4c4c4;
+  border: 1px solid var(--sp-toolbar-border, #c4c4c4);
   border-radius: 3px;
-  background: #fff;
+  background: var(--sp-toolbar-bg, #fff);
   cursor: pointer;
   font-size: 13px;
-  color: #333;
+  color: var(--sp-toolbar-btn-color, #333);
   white-space: nowrap;
 }
-.dv-alert__btn:hover { background: #f0f0f0; }
+.dv-alert__btn:hover { background: var(--sp-toolbar-btn-hover-bg, #f0f0f0); }
 .dv-alert__btn--primary { border-color: #0078d7; background: #0078d7; color: #fff; }
 .dv-alert__btn--primary:hover { background: #0069c0; }
 </style>

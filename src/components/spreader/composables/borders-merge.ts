@@ -9,7 +9,6 @@ import type { SelectionRange, BorderStyle, BorderSide, DataValidationRule } from
 import { translateDvRange } from '../core/data-validation';
 import { setCellBorderSide as _setCellBorderSidePool } from '../core/border-pool';
 import {
-  DEFAULT_BORDER_COLOR,
   forceAllSidesBorder,
   forceBorderSide,
   forEachBorderTarget,
@@ -26,7 +25,7 @@ import type { BorderLineStyle } from '../core/border-style';
 export interface BordersMergeState {
   // 边框
   cachedBorder: Ref<BorderType>;
-  /** 当前色板选中的边框颜色；'' 表示「自动」（渲染回退到 DEFAULT_BORDER_COLOR） */
+  /** 当前色板选中的边框颜色；'' 表示「自动」（渲染回退到主题默认边框色） */
   cachedBorderColor: Ref<string>;
   /** 当前笔刷线型（solid/dashed/dotted）；作为「边框绘制/应用操作」的默认线型 */
   cachedBorderLineStyle: Ref<BorderLineStyle>;
@@ -35,7 +34,6 @@ export interface BordersMergeState {
   /** 当前选区在「当前边框类型作用域」内的统一边框线型；混合或无线条时返回 '' */
   selBorderLineStyle: ComputedRef<string>;
   borderMenuOpen: Ref<boolean>;
-  BORDER_COLOR: string;
   onBorderChange: (bt: BorderType) => void;
   onBorderColorChange: (color: string) => void;
   /** 选择线型：更新默认线型 + 立即改选区已存在边框（不创建新边框） */
@@ -90,7 +88,7 @@ export function createBordersMerge(
 ): BordersMergeState {
   // ============ 边框 ============
   const cachedBorder = ref<BorderType>('none');
-  /** 当前色板选中的边框颜色；'' = 自动（渲染回退 DEFAULT_BORDER_COLOR） */
+  /** 当前色板选中的边框颜色；'' = 自动（渲染回退到主题默认边框色） */
   const cachedBorderColor = ref('');
   /** 当前笔刷线型：作为「边框绘制/应用操作」的默认线型（solid/dashed/dotted） */
   const cachedBorderLineStyle = ref<BorderLineStyle>('solid');
@@ -148,7 +146,7 @@ export function createBordersMerge(
    *
    * 与颜色的关系（Excel 行为）：每条命中的边都用「当前笔刷色」覆盖，
    * 无论该边原来有没有颜色、是什么颜色；色板为「自动」（''）时删除 color 字段，
-   * 渲染回退到 DEFAULT_BORDER_COLOR。
+   * 渲染回退到主题默认边框色（defaultBorderColor）。
    *  - 该边原本不存在 → 创建出来并上当前笔刷色；
    *  - 该边原本存在（含其他颜色）→ 整体覆盖为当前笔刷色 + 当前线宽；
    *  - 仅线型样式（虚线等）保留，不强制改。
@@ -162,7 +160,7 @@ export function createBordersMerge(
 
     const { startCol: sC, startRow: sR, endCol: eC, endRow: eR } = sel;
     const range: SelectionRange = { startCol: sC, startRow: sR, endCol: eC, endRow: eR };
-    // 当前笔刷色：'' = 自动（渲染回退 DEFAULT_BORDER_COLOR）
+    // 当前笔刷色：'' = 自动（渲染回退到主题默认边框色）
     const penColor = cachedBorderColor.value || undefined;
     const getSide = (col: number, row: number, side: BorderSideKey) => getCellBorderSideNew(col, row, side);
 
@@ -769,7 +767,6 @@ export function createBordersMerge(
     selBorderColor,
     selBorderLineStyle,
     borderMenuOpen,
-    BORDER_COLOR: DEFAULT_BORDER_COLOR,
     onBorderChange,
     onBorderColorChange,
     onBorderLineStyleChange,

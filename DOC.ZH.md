@@ -37,52 +37,62 @@ xiaodao-spreader/
         └── spreader/
             ├── index.ts                # 统一桶导出: 组件 + 类型
             ├── components/
-            │   ├── spreader.vue        # 主组件（Canvas 渲染 + 全部交互逻辑）
-            │   ├── toolbar.vue         # 带溢出下拉的工具栏
-            │   ├── tabbar.vue          # Sheet 标签栏
-            │   ├── dropdown.vue        # 通用下拉组件
+            │   ├── spreader.vue         # 入口组件：模板 + 样式 + 组合
+            │   ├── toolbar.vue          # 工具栏（带溢出下拉）
+            │   ├── tabbar.vue           # Sheet 标签栏
+            │   ├── dropdown.vue         # 通用下拉组件
             │   ├── find-replace-bar.vue # 查找/替换栏 UI
+            │   ├── note-overlay.vue     # 批注查看/编辑浮层（view + edit 双模）
             │   └── pickers/
-            │       ├── border-picker.vue          # 边框选择器
-            │       ├── calc-picker.vue            # 求和 / 平均值 / 计数选择器
-            │       ├── color-picker.vue           # 文字 / 填充颜色选择器
-            │       ├── merge-picker.vue           # 合并单元格选择器
-            │       ├── sort-picker.vue            # 排序下拉
-            │       ├── sort-confirm-dialog.vue    # Excel 风格排序提醒对话框
-            │       ├── number-format-dialog.vue   # 数字格式自定义对话框
-            │       ├── insert-function-dialog.vue # 插入函数对话框
-            │       ├── filter-popup.vue           # 自动筛选面板（值 / 文本 / 数值 / 日期 + 搜索 + 空值 + 多列 AND）
-            │       ├── conditional-format-menu.vue       # 条件格式工具栏下拉（预设 + 新建 / 管理 / 清除规则）
-            │       ├── conditional-format-rule-editor.vue # 条件格式「新建规则 / 编辑规则」对话框
+            │       ├── border-picker.vue                  # 边框选择器（按边类型 / 颜色 / 线型 + 子菜单）
+            │       ├── calc-picker.vue                    # 求和 / 平均值 / 计数选择器
+            │       ├── color-palette.vue                  # 文字 / 填充 / 边框共用的色板（单一数据源）
+            │       ├── color-picker.vue                   # 文字 / 填充颜色选择器
             │       ├── conditional-format-manager.vue     # 条件格式「管理规则」对话框
-            │       ├── data-validation-dialog.vue    # 数据验证设置对话框（设置 / 输入信息 / 出错警告 / 应用于）
-            │       ├── data-validation-dropdown.vue  # 数据验证列表下拉（搜索 + 虚拟列表 + 键盘）
-            │       ├── data-validation-alert.vue    # 数据验证出错警告（Stop / Warning / Information）
-            │       └── outline-picker.vue          # 工具栏「分组」下拉（添加 / 取消 / 清除分组，展开 / 折叠）
+            │       ├── conditional-format-menu.vue        # 条件格式工具栏下拉（预设 + 新建 / 管理 / 清除规则）
+            │       ├── conditional-format-rule-editor.vue # 条件格式「新建 / 编辑规则」对话框
+            │       ├── data-validation-alert.vue          # 数据验证出错警告（Stop / Warning / Information）
+            │       ├── data-validation-dialog.vue         # 数据验证设置对话框
+            │       ├── data-validation-dropdown.vue       # 数据验证列表下拉（搜索 + 虚拟列表 + 键盘）
+            │       ├── data-validation-input-message.vue  # 数据验证输入信息提示气泡（选中单元格时显示）
+            │       ├── filter-popup.vue                   # 自动筛选面板（值 / 文本 / 数值 / 日期 + 搜索 + 空值 + 多列 AND）
+            │       ├── insert-function-dialog.vue         # 插入函数对话框
+            │       ├── merge-picker.vue                   # 合并单元格选择器
+            │       ├── number-format-dialog.vue           # 数字格式对话框
+            │       ├── outline-picker.vue                 # 工具栏「分组」下拉（添加 / 取消 / 清除分组，展开 / 折叠）
+            │       ├── sort-confirm-dialog.vue            # Excel 风格排序提醒对话框
+            │       └── sort-picker.vue                    # 排序下拉
             ├── composables/
-            │   ├── core-state.ts      # Props、cells/merges/selection、字体度量、导航、行列分组状态
-            │   ├── undo-styles.ts      # 撤销/重做、格式刷、字体/对齐/颜色
-            │   ├── borders-merge.ts    # 边框操作、合并操作、剪贴板、求和/平均/计数
-            │   ├── sheets-ops.ts      # 行列操作、多 Sheet、v-model emit、主题、refs
-            │   ├── find-replace.ts    # 查找/替换状态与交互（依赖 Vue）
-            │   ├── useFloatMenuPosition.ts # 工具栏下拉菜单共享定位（右锚 + 上下翻向夹紧）
-            │   └── interactions.ts    # 渲染器、公式栏、标签栏、右键菜单、滚动条、事件
+            │   ├── borders-merge.ts       # 边框操作、合并操作、剪贴板、求和/平均/计数
+            │   ├── core-state.ts          # Props、cells/merges/selection、字体度量、导航、行列分组状态
+            │   ├── find-replace.ts        # 查找/替换状态与交互（依赖 Vue）
+            │   ├── interactions.ts        # 渲染器、公式栏、标签栏、右键菜单、滚动条、事件
+            │   ├── sheets-ops.ts          # 行列操作、多 Sheet、v-model emit、主题、refs
+            │   ├── undo-styles.ts         # 撤销/重做、格式刷、字体/对齐/颜色
+            │   └── float-menu-position.ts # 工具栏下拉菜单共享定位（右锚 + 上下翻向夹紧）
             └── core/
-                ├── constants.ts       # 布局常量、i18n 文案、主题配色
-                ├── types.ts           # 全部类型定义
-                ├── style-pool.ts      # 样式池：去重、注册、解析、迁移、GC
-                ├── border-pool.ts     # 边框池：去重、注册、解析、迁移、GC
-                ├── border-resolve.ts  # 公共边冲突解析（resolveSharedBorder）
-                ├── border-color.ts    # 按边边框颜色：颜色与线型解耦、改色计划
-                ├── border-style.ts    # 边框线型（实线/虚线/点线）：归一化与 dash 图案
-                ├── formula.ts         # 公式引擎（解析、求值、依赖追踪）
-                ├── find-replace-core.ts # 查找/替换纯算法（零 Vue 依赖，可单测）
-                ├── sort-core.ts       # 排序纯算法（零 Vue 依赖，可单测）
-                ├── autofill.ts        # 自动填充纯引擎（模式推断、填充柄逻辑，零 Vue 依赖）
-                ├── outline-core.ts     # 行列分组纯引擎（校验 / 平移 / 折叠，零 Vue 依赖）
-                ├── number-format.ts    # 数字格式引擎（Excel 风格显示格式化）
-                ├── theme.ts           # 主题 CSS 变量构建
-                └── utils.ts           # 纯工具函数（列标转换、命中测试等）
+                ├── autofill.ts               # 自动填充纯引擎（模式推断、填充柄逻辑，零 Vue 依赖）
+                ├── border-color.ts           # 按边边框颜色：颜色与线型解耦、改色计划
+                ├── border-icon.ts            # 边框图标单一数据源（toolbar + picker）
+                ├── border-pool.ts            # 边框池：去重、注册、解析、迁移、GC
+                ├── border-resolve.ts         # 公共边冲突解析（resolveSharedBorder）
+                ├── border-style.ts           # 边框线型（实线/虚线/点线）：归一化与 dash 图案
+                ├── conditional-formatting.ts # 条件格式引擎（条件求值 + 规则缓存，纯逻辑）
+                ├── constants.ts              # 布局常量、i18n 文案、主题配色
+                ├── data-validation.ts        # 数据验证引擎（纯逻辑）
+                ├── filter-core.ts            # 自动筛选引擎（级联候选值，纯逻辑）
+                ├── find-replace-core.ts      # 查找/替换纯算法（零 Vue 依赖，可单测）
+                ├── formula.ts                # 公式引擎（解析、求值、依赖追踪）
+                ├── model-dims.ts             # 模型尺寸由内容推导（纯逻辑）
+                ├── notes.ts                  # 批注池管理：CRUD、持久化、Undo 集成
+                ├── number-format.ts          # 数字格式引擎（Excel 风格显示格式化）
+                ├── outline-core.ts           # 行列分组纯引擎（校验 / 平移 / 折叠，零 Vue 依赖）
+                ├── sort-core.ts              # 排序纯算法（零 Vue 依赖，可单测）
+                ├── sort-icon.ts              # 排序图标单一数据源（toolbar + picker）
+                ├── style-pool.ts             # 样式池：去重、注册、解析、迁移、GC
+                ├── theme.ts                  # 主题 CSS 变量构建
+                ├── types.ts                  # 全部类型定义
+                └── utils.ts                  # 纯工具函数（列标转换、命中测试等）
 ```
 
 **依赖方向**：`App.vue → spreader/index.ts → spreader.vue → composables/* + core/*`
@@ -163,10 +173,8 @@ interface SheetModelData {
   cells: Record<string, { value: string; styleId?: number; style?: CellStyle }>
   colWidths?: Record<number, number>
   rowHeights?: Record<number, number>
-  /** 逻辑列数（0 基，不含）。省略时默认为 26。 */
-  colCount?: number
-  /** 逻辑行数（0 基，不含）。省略时默认为 200。 */
-  rowCount?: number
+  // 网格尺寸（colCount/rowCount）不持久化：加载时按内容推导（deriveModelDims），
+  // 结果至少为 props 默认 26×200，并按数据 / 自定义行列尺寸 / 各类规则范围扩展
 }
 
 // 工作表内部运行时状态
@@ -266,13 +274,14 @@ SCROLL_STEP   = 50   (每次点击滚动量)
 FILL_HANDLE_SIZE       = 6   (填充柄视觉尺寸，px)
 FILL_HANDLE_HIT_PADDING = 4   (填充柄命中区扩展，px)
 DEFAULT_COL_WIDTH  = 100
-DEFAULT_ROW_HEIGHT = 24
 MIN_COL_WIDTH  = 30
 MIN_ROW_HEIGHT = 24
 
 默认逻辑范围：200 行 × 26 列
 通过 ensureCapacity(minCol, minRow) 动态扩展，缓冲步长（8 列 / 32 行）
 ```
+
+行高由字号驱动：空行高度（也是自动行高的下限）= `AUTO_ROW_BASE = round(2 × BASE_CELL_VPAD + 默认字号行高)`，随 `DEFAULT_FONT_SIZE` 变化，不再是固定常量。
 
 ### 5.1 Canvas 布局平面
 
@@ -821,7 +830,7 @@ dims: { colCount: number; rowCount: number }
 
 - 由 `colCount`/`rowCount` prop 初始化（默认：26 列、200 行）。
 - 单调增长，不会自动缩小（仅在显式 sheet 重置/加载时可缩减）。
-- 以 `colCount`/`rowCount` 字段持久化到 `SheetModelData`，支持保存/加载往返。
+- 逻辑尺寸**不持久化**到 `SheetModelData`：加载/重新导入时由 `deriveModelDims`（`core/model-dims.ts`）按内容推导（单元格、合并区、自定义行列尺寸、筛选/条件格式/数据验证范围、分组），并至少取 props 默认尺寸。运行时仅因滚动/导航扩展出的空区域（无数据、无自定义尺寸）不会在保存/加载后保留。
 
 ### 20.2 ensureCapacity(minCol, minRow)
 
@@ -872,7 +881,7 @@ function findLastDataExtents(): { lastCol: number; lastRow: number }
 - 扩展逻辑范围**不会创建空单元格**，单元格仅在有实际数据时才存储。
 - `colWidths`/`rowHeights` 数组以默认值（100px / 24px）填充新范围。
 - 撤销/重做快照包含 `colCount`/`rowCount`，确保范围扩展/缩减可正确回退。
-- Sheet 序列化（`SheetModelData`）包含 `colCount?`/`rowCount?` 用于持久化。
+- `SheetModelData` **不包含** `colCount`/`rowCount`：加载时按内容推导（见 20.1）。因此仅因滚动/导航扩展出的空网格不会在序列化往返后残留；而实际数据、合并区与自定义行列尺寸总能恢复出足够大的网格。
 
 ### 20.6 列名转换
 
@@ -1266,7 +1275,7 @@ data-validation-dropdown.vue：单元格内列表下拉，含搜索、虚拟列�
 
 data-validation-alert.vue：Stop / Warning / Information 警告对话框，与条件格式共用同一套视觉语言。
 
-data-validation-input-message.vue：选中单元格且 showInputMessage 为真时显示的输入信息提示气泡（纯信息类，留在组件根目录而非 pickers/）。
+data-validation-input-message.vue：选中单元格且 showInputMessage 为真时显示的输入信息提示气泡。与其它数据验证组件同置于 pickers/ 目录。
 
 ### 26.8 持久化与撤销
 

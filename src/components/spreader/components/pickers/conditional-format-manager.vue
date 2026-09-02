@@ -244,11 +244,11 @@ function previewStyle(r: ConditionalFormattingRule): Record<string, string> {
 }
 .cf-manager__title { font-weight: 600; font-size: 14px; flex: 1; }
 .cf-manager__close {
-  border: none; background: transparent; font-size: 20px; line-height: 1; cursor: pointer; color: #888;
+  border: none; background: transparent; font-size: 20px; line-height: 1; cursor: pointer; color: var(--sp-toolbar-btn-color, #888);
 }
-.cf-manager__close:hover { color: #333; }
+.cf-manager__close:hover { color: var(--sp-toolbar-btn-color, #333); }
 .cf-manager__new { margin-left: auto; }
-.cf-manager__empty { padding: 30px 14px; text-align: center; color: #999; font-size: 13px; }
+.cf-manager__empty { padding: 30px 14px; text-align: center; color: var(--sp-toolbar-text-muted, #999); font-size: 13px; }
 .cf-manager__list { overflow-y: auto; padding: 8px; }
 .cf-rule {
   display: flex;
@@ -263,14 +263,14 @@ function previewStyle(r: ConditionalFormattingRule): Record<string, string> {
 .cf-rule__main { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .cf-rule__preview {
   width: 34px; height: 24px;
-  border: 1px solid #ccc;
+  border: 1px solid var(--sp-toolbar-border, #ccc);
   border-radius: 3px;
   display: flex; align-items: center; justify-content: center;
   font-size: 12px; font-weight: 600; flex: 0 0 auto;
 }
 .cf-rule__info { min-width: 0; }
 .cf-rule__summary { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.cf-rule__range { font-size: 12px; color: #888; margin-top: 2px; }
+.cf-rule__range { font-size: 12px; color: var(--sp-toolbar-btn-color, #888); margin-top: 2px; }
 .cf-rule__actions { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
 .cf-chk {
   display: flex;
@@ -302,7 +302,7 @@ function previewStyle(r: ConditionalFormattingRule): Record<string, string> {
   box-sizing: border-box;
   border: 1px solid var(--sp-toolbar-border, #d0d0d0);
   border-radius: 3px;
-  background: #fff;
+  background: var(--sp-toolbar-bg, #fff);
   transition: background 0.12s ease, border-color 0.12s ease;
 }
 .cf-chk__tick {
@@ -327,29 +327,29 @@ function previewStyle(r: ConditionalFormattingRule): Record<string, string> {
 }
 .cf-mini {
   width: 26px; height: 26px;
-  border: 1px solid #c4c4c4;
+  border: 1px solid var(--sp-toolbar-border, #c4c4c4);
   border-radius: 3px;
-  background: #fff;
+  background: var(--sp-toolbar-bg, #fff);
   cursor: pointer;
-  color: #333;
+  color: var(--sp-toolbar-btn-color, #333);
   display: inline-flex;
   align-items: center;
   justify-content: center;
 }
 .cf-mini svg { display: block; width: 14px; height: 14px; }
-.cf-mini:hover { background: #f0f0f0; }
+.cf-mini:hover { background: var(--sp-toolbar-btn-hover-bg, #f0f0f0); }
 
 .cf-btn {
   height: 30px;
   padding: 0 14px;
-  border: 1px solid #c4c4c4;
+  border: 1px solid var(--sp-toolbar-border, #c4c4c4);
   border-radius: 3px;
-  background: #fff;
+  background: var(--sp-toolbar-bg, #fff);
   cursor: pointer;
   font-size: 13px;
-  color: #333;
+  color: var(--sp-toolbar-btn-color, #333);
 }
-.cf-btn:hover { background: #f0f0f0; }
+.cf-btn:hover { background: var(--sp-toolbar-btn-hover-bg, #f0f0f0); }
 .cf-btn--primary { border-color: #0078d7; background: #0078d7; color: #fff; }
 .cf-btn--primary:hover { background: #0069c0; }
 </style>

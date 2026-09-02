@@ -4,7 +4,6 @@ import type { ThemeColors } from './types';
 export const HEADER_WIDTH = 52;
 export const HEADER_HEIGHT = 24;
 export const DEFAULT_COL_WIDTH = 100;
-export const DEFAULT_ROW_HEIGHT = 24;
 export const MIN_COL_WIDTH = 30;
 export const MIN_ROW_HEIGHT = 24;
 export const MAX_COL_WIDTH = 1000;
@@ -121,6 +120,15 @@ export const i18n: Record<string, Record<string, string>> = {
     fnDescStdev: '估算基于样本的标准偏差（忽略文本与逻辑值）',
     ok: '确定',
     cancel: '取消',
+    accept: '接受',
+    formulaBarAccept: '接受（Enter）',
+    formulaBarCancel: '取消（Esc）',
+    formulaBarExpand: '展开为3行',
+    formulaBarCollapse: '折叠为1行',
+    searchNoMatch: '无匹配',
+    emptyCellLabel: '（空）',
+    cfRangeInvalid: '范围格式无效，例如 A1:B10',
+    cfFormulaRequired: '请输入公式',
     dimNumberError: '请输入数字',
     dimRangeError: '请输入 {min}~{max} 之间的数值',
     colorAutomatic: '自动',
@@ -260,6 +268,8 @@ export const i18n: Record<string, Record<string, string>> = {
     filterBetween: '介于',
     filterAnd: '与',
     filterCustom: '自定义筛选',
+    filterBack: '返回',
+    filterDateHint: '支持日期格式：YYYY-MM-DD、YYYY/MM/DD、YYYY年M月D日',
     filterNoData: '无数据',
     filterFilteredCount: '共 {n} 项',
     filterActive: '筛选中',
@@ -524,6 +534,15 @@ export const i18n: Record<string, Record<string, string>> = {
     fnDescStdev: 'Estimates the sample standard deviation of a supplied set of values',
     ok: 'OK',
     cancel: 'Cancel',
+    accept: 'Accept',
+    formulaBarAccept: 'Accept (Enter)',
+    formulaBarCancel: 'Cancel (Esc)',
+    formulaBarExpand: 'Expand to 3 rows',
+    formulaBarCollapse: 'Collapse to 1 row',
+    searchNoMatch: 'No matches',
+    emptyCellLabel: '(blank)',
+    cfRangeInvalid: 'Invalid range format, e.g. A1:B10',
+    cfFormulaRequired: 'Please enter a formula',
     dimNumberError: 'Please enter a number',
     dimRangeError: 'Please enter a value between {min} and {max}',
     colorAutomatic: 'Automatic',
@@ -663,6 +682,8 @@ export const i18n: Record<string, Record<string, string>> = {
     filterBetween: 'Between',
     filterAnd: 'And',
     filterCustom: 'Custom Filter',
+    filterBack: 'Back',
+    filterDateHint: 'Date formats: YYYY-MM-DD, YYYY/MM/DD, YYYY/M/D',
     filterNoData: 'No data',
     filterFilteredCount: '{n} items',
     filterActive: 'Filtering',
@@ -846,7 +867,7 @@ export function t(locale: string, key: string): string {
 
 // ============ 字体常量 ============
 export const DEFAULT_FONT_FAMILY = '-apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif';
-export const DEFAULT_FONT_SIZE = 10;
+export const DEFAULT_FONT_SIZE = 16;
 
 export interface FontOption {
   label: string;
@@ -1007,6 +1028,9 @@ export const lightTheme: ThemeColors = {
   toolbarBtnHoverBg: '#e6e6e6',
   toolbarBtnDisabledColor: '#b0b0b0',
   toolbarBtnActiveColor: '#0078d7',
+  toolbarTextSecondary: '#666',
+  toolbarTextMuted: '#999',
+  toolbarItemActiveBg: '#e5f1fb',
   findMatchBg: 'rgba(255, 213, 79, 0.45)',
   findActiveBg: 'rgba(255, 179, 0, 0.75)',
 };
@@ -1061,13 +1085,16 @@ export const darkTheme: ThemeColors = {
   scrollBtnColor: '#999',
   scrollBtnHoverBg: '#3d3d3d',
   scrollBtnActiveBg: '#4d4d4d',
-  scrollTrackBg: 'rgba(255,255,255,0.05)',
+  scrollTrackBg: 'rgba(0,0,0,0.25)',
   toolbarBg: '#2a2a2a',
   toolbarBorder: '#3e3e3e',
   toolbarBtnColor: '#ccc',
   toolbarBtnHoverBg: '#3a3a3a',
   toolbarBtnDisabledColor: '#666',
   toolbarBtnActiveColor: '#4ea1ff',
+  toolbarTextSecondary: '#aaa',
+  toolbarTextMuted: '#888',
+  toolbarItemActiveBg: 'rgba(78, 161, 255, 0.16)',
   findMatchBg: 'rgba(255, 213, 79, 0.35)',
   findActiveBg: 'rgba(255, 179, 0, 0.6)',
 };

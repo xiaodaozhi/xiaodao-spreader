@@ -2,7 +2,7 @@
 import { ref, watch, nextTick, onMounted, onBeforeUnmount } from 'vue';
 import { t } from '../../core/constants';
 import { getFloatBounds, cssRightFromX } from '../../core/utils';
-import { useFloatMenuPosition } from '../../composables/useFloatMenuPosition';
+import { useFloatMenuPosition } from '../../composables/float-menu-position';
 
 const props = withDefaults(defineProps<{
   locale: string;
@@ -568,7 +568,7 @@ onBeforeUnmount(() => {
 .cf-menu {
   position: fixed;
   z-index: 40000;
-  background: #fff;
+  background: var(--sp-toolbar-bg, #fff);
   border: 1px solid var(--sp-toolbar-border, #d0d0d0);
   border-radius: 4px;
   box-shadow: 0 4px 12px rgba(0,0,0,0.12);
@@ -591,15 +591,15 @@ onBeforeUnmount(() => {
   height: 18px;
   border: none;
   background: transparent;
-  color: #888;
+  color: var(--sp-toolbar-btn-color, #888);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 3px;
 }
-.cf-menu__nav:hover:not(:disabled) { background: #eef3f9; }
-.cf-menu__nav:disabled { color: #d5d5d5; cursor: default; }
+.cf-menu__nav:hover:not(:disabled) { background: var(--sp-toolbar-btn-hover-bg, #eef3f9); }
+.cf-menu__nav:disabled { color: var(--sp-toolbar-btn-disabled-color, #d5d5d5); cursor: default; }
 .cf-menu__nav svg { width: 10px; height: 10px; }
 .cf-menu__item {
   display: flex;
@@ -617,15 +617,15 @@ onBeforeUnmount(() => {
   border-radius: 3px;
   box-sizing: border-box;
 }
-.cf-menu__item:hover { background: #eef3f9; }
-.cf-menu__item--disabled { color: #c9c9c9; cursor: default; }
+.cf-menu__item:hover { background: var(--sp-toolbar-btn-hover-bg, #eef3f9); }
+.cf-menu__item--disabled { color: var(--sp-toolbar-btn-disabled-color, #c9c9c9); cursor: default; }
 .cf-menu__item--disabled:hover { background: transparent; }
 .cf-menu__item--sub { position: relative; }
-.cf-menu__arrow { width: 12px; height: 12px; flex: none; fill: #888; }
+.cf-menu__arrow { width: 12px; height: 12px; flex: none; fill: var(--sp-toolbar-btn-color, #888); }
 .cf-menu__sep { height: 1px; background: var(--sp-toolbar-border, #e0e0e0); margin: 3px 4px; }
 .cf-submenu-wrap {
   position: fixed;
-  background: #fff;
+  background: var(--sp-toolbar-bg, #fff);
   border: 1px solid var(--sp-toolbar-border, #d0d0d0);
   border-radius: 4px;
   box-shadow: 0 4px 12px rgba(0,0,0,0.12);
@@ -652,15 +652,15 @@ onBeforeUnmount(() => {
   height: 18px;
   border: none;
   background: transparent;
-  color: #888;
+  color: var(--sp-toolbar-btn-color, #888);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 3px;
 }
-.cf-subnav:hover:not(:disabled) { background: #eef3f9; }
-.cf-subnav:disabled { color: #d5d5d5; cursor: default; }
+.cf-subnav:hover:not(:disabled) { background: var(--sp-toolbar-btn-hover-bg, #eef3f9); }
+.cf-subnav:disabled { color: var(--sp-toolbar-btn-disabled-color, #d5d5d5); cursor: default; }
 .cf-subnav svg { width: 10px; height: 10px; }
 .cf-menu__subitem {
   display: block;
@@ -675,8 +675,8 @@ onBeforeUnmount(() => {
   border-radius: 3px;
   box-sizing: border-box;
 }
-.cf-menu__subitem:hover { background: #eef3f9; }
-.cf-menu__subitem--disabled { color: #c9c9c9; cursor: default; }
+.cf-menu__subitem:hover { background: var(--sp-toolbar-btn-hover-bg, #eef3f9); }
+.cf-menu__subitem--disabled { color: var(--sp-toolbar-btn-disabled-color, #c9c9c9); cursor: default; }
 .cf-menu__subitem--disabled:hover { background: transparent; }
 
 .cf-pop-enter-active, .cf-pop-leave-active { transition: opacity 0.12s ease-out, transform 0.12s ease-out; }

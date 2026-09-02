@@ -1233,9 +1233,6 @@ export function createSheetsOps(
         if (hv !== undefined && hv !== null) rh[i] = hv;
       }
       if (Object.keys(rh).length) smd.rowHeights = rh;
-      // 输出逻辑有效范围：仅当与默认值不同时输出，保持旧数据兼容
-      if (sh.colCount !== 26) smd.colCount = sh.colCount;
-      if (sh.rowCount !== 200) smd.rowCount = sh.rowCount;
       // 输出冻结窗格：仅在非零时输出，保持旧数据兼容
       if (sh.freeze.rows !== 0 || sh.freeze.cols !== 0) {
         smd.freeze = { rows: sh.freeze.rows, cols: sh.freeze.cols };

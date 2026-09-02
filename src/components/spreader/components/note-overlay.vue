@@ -9,6 +9,7 @@
  *  - 不产生常驻 DOM：仅当有 active note（view/edit）时挂载单个实例。
  */
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount, type CSSProperties } from 'vue';
+import { t } from '../core/constants';
 
 type NoteMode = 'view' | 'edit';
 type Anchor = { x: number; y: number; width: number; height: number };
@@ -135,23 +136,23 @@ function save() {
   >
     <template v-if="mode === 'view'">
       <div class="note-overlay__header">
-        <span class="note-overlay__author">{{ note?.author || author || (locale === 'en-US' ? 'Unnamed' : '未命名') }}</span>
+        <span class="note-overlay__author">{{ note?.author || author || t(locale, 'noteUnnamed') }}</span>
         <button
           type="button"
           class="note-overlay__icon"
-          :title="locale === 'en-US' ? 'Close' : '关闭'"
+          :title="t(locale, 'findClose')"
           @click="emit('close')"
         >
           ×
         </button>
       </div>
       <div class="note-overlay__body">
-        {{ note?.text || (locale === 'en-US' ? '（Empty）' : '（无内容）') }}
+        {{ note?.text || t(locale, 'noteEmpty') }}
       </div>
     </template>
     <template v-else>
       <div class="note-overlay__header">
-        <span class="note-overlay__author">{{ author || (locale === 'en-US' ? 'Unnamed' : '未命名') }}</span>
+        <span class="note-overlay__author">{{ author || t(locale, 'noteUnnamed') }}</span>
       </div>
       <textarea
         v-model="draft"
@@ -167,14 +168,14 @@ function save() {
           class="note-overlay__btn note-overlay__btn--ghost"
           @click="emit('close')"
         >
-          {{ locale === 'en-US' ? 'Cancel' : '取消' }}
+          {{ t(locale, 'cancel') }}
         </button>
         <button
           type="button"
           class="note-overlay__btn note-overlay__btn--primary"
           @click="save"
         >
-          {{ locale === 'en-US' ? 'Save' : '保存' }}
+          {{ t(locale, 'noteSave') }}
         </button>
       </div>
     </template>
@@ -190,7 +191,7 @@ function save() {
   min-width: 200px;
   max-width: 320px;
   min-height: 60px;
-  border: 1px solid #b8bcc4;
+  border: 1px solid var(--sp-toolbar-border, #b8bcc4);
   border-radius: 4px;
   box-shadow: 0 3px 12px rgba(0, 0, 0, 0.2);
   padding: 6px 8px 4px;
@@ -203,8 +204,8 @@ function save() {
   color: #333;
 }
 .note-overlay--edit {
-  background: #fff;
-  color: #333;
+  background: var(--sp-toolbar-bg, #fff);
+  color: var(--sp-toolbar-btn-color, #333);
 }
 .note-overlay__header {
   display: flex;
@@ -239,13 +240,13 @@ function save() {
 .note-overlay__editor {
   width: 100%;
   box-sizing: border-box;
-  border: 1px solid #c6ccd6;
+  border: 1px solid var(--sp-toolbar-border, #c6ccd6);
   border-radius: 3px;
   font: inherit;
   line-height: 1.5;
   padding: 5px 6px;
-  color: #333;
-  background: #fff;
+  color: var(--sp-toolbar-btn-color, #333);
+  background: var(--sp-formula-bar-input-bg, #fff);
   resize: none;
   min-height: 64px;
   max-height: 192px;
@@ -263,13 +264,13 @@ function save() {
   margin-top: 6px;
 }
 .note-overlay__btn {
-  border: 1px solid #c6ccd6;
+  border: 1px solid var(--sp-toolbar-border, #c6ccd6);
   border-radius: 3px;
   padding: 3px 12px;
   font-size: 12px;
   cursor: pointer;
-  background: #fff;
-  color: #333;
+  background: var(--sp-toolbar-bg, #fff);
+  color: var(--sp-toolbar-btn-color, #333);
 }
 .note-overlay__btn--primary {
   background: #4c8bf5;
@@ -277,7 +278,7 @@ function save() {
   color: #fff;
 }
 .note-overlay__btn--ghost:hover {
-  background: #f0f0f0;
+  background: var(--sp-toolbar-btn-hover-bg, #f0f0f0);
 }
 .note-overlay__btn--primary:hover {
   background: #3f7be8;

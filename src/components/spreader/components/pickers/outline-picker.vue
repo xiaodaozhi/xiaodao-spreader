@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, nextTick, onBeforeUnmount } from 'vue';
 import { t } from '../../core/constants';
-import { useFloatMenuPosition } from '../../composables/useFloatMenuPosition';
+import { useFloatMenuPosition } from '../../composables/float-menu-position';
 
 const props = withDefaults(defineProps<{
   modelOpen?: boolean;
@@ -143,7 +143,7 @@ defineExpose({ open, openMenu, close });
 .outline-picker__menu {
   position: fixed;
   z-index: 40000;
-  background: #fff;
+  background: var(--sp-toolbar-bg, #fff);
   border: 1px solid var(--sp-toolbar-border, #d0d0d0);
   border-radius: 4px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
@@ -174,8 +174,8 @@ defineExpose({ open, openMenu, close });
   border-radius: 3px;
   box-sizing: border-box;
 }
-.outline-picker__item--open { background: #eef3f9; }
-.outline-picker__item:hover { background: #eef3f9; }
+.outline-picker__item--open { background: var(--sp-toolbar-btn-hover-bg, #eef3f9); }
+.outline-picker__item:hover { background: var(--sp-toolbar-btn-hover-bg, #eef3f9); }
 .outline-picker__label { flex: 1; }
 .outline-picker__arrow { width: 12px; height: 12px; flex-shrink: 0; transform: rotate(-90deg); opacity: 0.7; }
 /* 分隔线：与 .cf-menu__sep 同构（1px 实线，margin 3px 4px） */

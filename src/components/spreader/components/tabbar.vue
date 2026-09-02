@@ -402,7 +402,7 @@ onBeforeUnmount(() => {
 .tab-list-menu { position: fixed; display: flex; flex-direction: column; background: var(--sp-toolbar-bg, #fff); border: 1px solid var(--sp-toolbar-border, #d8d8d8); border-radius: 4px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12); padding: 4px; z-index: 1000; transform-origin: bottom left; min-width: 140px; max-width: 260px; box-sizing: border-box; }
 .tab-list-menu__nav { display: flex; align-items: center; justify-content: center; height: 15px; min-height: 15px; border: none; background: transparent; color: var(--sp-toolbar-btn-color, #666); cursor: pointer; padding: 0; border-radius: 3px; }
 .tab-list-menu__nav:hover:not(:disabled) { background: var(--sp-toolbar-btn-hover-bg, #eef3f9); }
-.tab-list-menu__nav:disabled { color: #ccc; cursor: default; }
+.tab-list-menu__nav:disabled { color: var(--sp-toolbar-btn-disabled-color, #ccc); cursor: default; }
 .tab-list-menu__nav svg { width: 10px; height: 10px; }
 .tab-list-menu__list { display: flex; flex-direction: column; overflow: hidden; touch-action: none; }
 .tab-list-menu__item { display: flex; align-items: center; gap: 4px; width: 100%; height: 28px; padding: 0 6px 0 10px; border: none; background: transparent; color: var(--sp-toolbar-btn-color, #444); font-size: 13px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; cursor: pointer; white-space: nowrap; border-radius: 3px; box-sizing: border-box; }

@@ -1,5 +1,6 @@
 import { computed, type ComputedRef } from 'vue';
 import { lightTheme, darkTheme } from './constants';
+import { DEFAULT_BORDER_COLOR, DARK_BORDER_COLOR } from './border-color';
 import type { ThemeColors } from './types';
 
 export function useTheme(theme: ComputedRef<'light' | 'dark'>): ComputedRef<ThemeColors> {
@@ -58,5 +59,12 @@ export function buildOuterStyle(
   style['--sp-toolbar-btn-hover-bg'] = colors.toolbarBtnHoverBg;
   style['--sp-toolbar-btn-disabled-color'] = colors.toolbarBtnDisabledColor;
   style['--sp-toolbar-btn-active-color'] = colors.toolbarBtnActiveColor;
+  // 次级 / 弱化文本（对话框 label、空状态提示），随主题切换
+  style['--sp-toolbar-text-secondary'] = colors.toolbarTextSecondary;
+  style['--sp-toolbar-text-muted'] = colors.toolbarTextMuted;
+  // 下拉 / 右键菜单选中项底色，随主题切换
+  style['--sp-toolbar-item-active-bg'] = colors.toolbarItemActiveBg;
+  // 默认（自动）边框色：随主题切换，dark 下更亮以保证在深色背景可见
+  style['--sp-border-default'] = colors === darkTheme ? DARK_BORDER_COLOR : DEFAULT_BORDER_COLOR;
   return style;
 }

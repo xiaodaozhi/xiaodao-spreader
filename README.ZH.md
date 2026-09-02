@@ -169,10 +169,8 @@ interface SheetModelData {
   freeze?: { rows: number; cols: number };
   colWidths?: Record<number, number>;
   rowHeights?: Record<number, number>;
-  /** 逻辑列数（0 基，不含）。省略时默认为 26。 */
-  colCount?: number;
-  /** 逻辑行数（0 基，不含）。省略时默认为 200。 */
-  rowCount?: number;
+  // 网格尺寸（colCount/rowCount）不持久化：加载时按内容推导（deriveModelDims），
+  // 至少 props 默认 26×200，并按数据 / 自定义行列尺寸 / 各类规则范围扩展
   /** 单元格批注池：按 noteId 存放 CellNote，cell.noteId 引用之；与 cell value/style 完全独立 */
   notes?: Record<string, CellNote>;
 }
@@ -223,45 +221,62 @@ src/
     └── spreader/
         ├── index.ts                  # 统一导出口: 组件 + 类型（barrel）
         ├── components/
-        │   ├── spreader.vue          # 入口组件: 模板 + 样式 + 组合
-        │   ├── toolbar.vue           # 工具栏（含溢出下拉）
-        │   ├── tabbar.vue            # Sheet 标签栏
-        │   ├── dropdown.vue          # 通用下拉组件
-        │   ├── find-replace-bar.vue  # 查找替换栏 UI
-        │   └── note-overlay.vue    # 批注查看/编辑浮层（view + edit 双模）
+        │   ├── spreader.vue         # 入口组件：模板 + 样式 + 组合
+        │   ├── toolbar.vue          # 工具栏（带溢出下拉）
+        │   ├── tabbar.vue           # Sheet 标签栏
+        │   ├── dropdown.vue         # 通用下拉组件
+        │   ├── find-replace-bar.vue # 查找/替换栏 UI
+        │   ├── note-overlay.vue     # 批注查看/编辑浮层（view + edit 双模）
         │   └── pickers/
-        │       ├── colorPicker.vue       # 文字 / 填充颜色选择器
-        │       ├── borderPicker.vue      # 边框选择器
-        │       ├── mergePicker.vue       # 合并单元格选择器
-        │       ├── numberFormatDialog.vue # 数字格式自定义对话框
-        │       ├── sortPicker.vue        # 排序下拉
-        │       ├── sortConfirmDialog.vue # Excel 风格排序提醒对话框
-        │       ├── calcPicker.vue        # 求和 / 平均值 / 计数选择器
-        │       └── insertFunctionDialog.vue # 插入函数对话框
+        │       ├── border-picker.vue                  # 边框选择器（按边类型 / 颜色 / 线型 + 子菜单）
+        │       ├── calc-picker.vue                    # 求和 / 平均值 / 计数选择器
+        │       ├── color-palette.vue                  # 文字 / 填充 / 边框共用的色板（单一数据源）
+        │       ├── color-picker.vue                   # 文字 / 填充颜色选择器
+        │       ├── conditional-format-manager.vue     # 条件格式「管理规则」对话框
+        │       ├── conditional-format-menu.vue        # 条件格式工具栏下拉（预设 + 新建 / 管理 / 清除规则）
+        │       ├── conditional-format-rule-editor.vue # 条件格式「新建 / 编辑规则」对话框
+        │       ├── data-validation-alert.vue          # 数据验证出错警告（Stop / Warning / Information）
+        │       ├── data-validation-dialog.vue         # 数据验证设置对话框
+        │       ├── data-validation-dropdown.vue       # 数据验证列表下拉（搜索 + 虚拟列表 + 键盘）
+        │       ├── data-validation-input-message.vue  # 数据验证输入信息提示气泡（选中单元格时显示）
+        │       ├── filter-popup.vue                   # 自动筛选面板（值 / 文本 / 数值 / 日期 + 搜索 + 空值 + 多列 AND）
+        │       ├── insert-function-dialog.vue         # 插入函数对话框
+        │       ├── merge-picker.vue                   # 合并单元格选择器
+        │       ├── number-format-dialog.vue           # 数字格式对话框
+        │       ├── outline-picker.vue                 # 工具栏「分组」下拉（添加 / 取消 / 清除分组，展开 / 折叠）
+        │       ├── sort-confirm-dialog.vue            # Excel 风格排序提醒对话框
+        │       └── sort-picker.vue                    # 排序下拉
         ├── composables/
-        │   ├── core-state.ts        # Props、cells/merges/selection、字体度量、导航
-        │   ├── undo-styles.ts       # 撤销重做、格式刷、字体/对齐/颜色
-        │   ├── borders-merge.ts     # 边框操作、合并操作、剪贴板、求和
-        │   ├── sheets-ops.ts        # 行列增删、多 Sheet、v-model 发射、主题、refs
-        │   ├── find-replace.ts      # 查找替换状态与交互（依赖 Vue）
-        │   └── notes.ts           # 批注池管理：CRUD、持久化、Undo 集成
-        │   └── interactions.ts      # 渲染器、编辑栏、标签栏、右键菜单、滚动条、事件
+        │   ├── borders-merge.ts       # 边框操作、合并操作、剪贴板、求和/平均/计数
+        │   ├── core-state.ts          # Props、cells/merges/selection、字体度量、导航、行列分组状态
+        │   ├── find-replace.ts        # 查找/替换状态与交互（依赖 Vue）
+        │   ├── interactions.ts        # 渲染器、公式栏、标签栏、右键菜单、滚动条、事件
+        │   ├── sheets-ops.ts          # 行列操作、多 Sheet、v-model emit、主题、refs
+        │   ├── undo-styles.ts         # 撤销/重做、格式刷、字体/对齐/颜色
+        │   └── float-menu-position.ts # 工具栏下拉菜单共享定位（右锚 + 上下翻向夹紧）
         └── core/
-            ├── constants.ts         # 布局常量、国际化、主题调色板
-            ├── types.ts             # 全部类型定义
-            ├── style-pool.ts        # 样式池：去重、注册、解析、迁移、GC
-            ├── border-pool.ts       # 边框池：去重、注册、解析、迁移、GC
-            ├── border-resolve.ts    # 公共边冲突解析（resolveSharedBorder）
-            ├── border-color.ts      # 按边边框颜色：颜色与线型解耦、改色计划
-            ├── border-style.ts      # 边框线型（实线/虚线/点线）：归一化与 dash 图案
-            ├── formula.ts           # 公式引擎（解析、计算、依赖、缓存）
-            ├── find-replace-core.ts # 查找替换纯算法（零 Vue 依赖，可单测）
-            ├── sort-core.ts         # 排序纯算法（零 Vue 依赖，可单测）
-            ├── autofill.ts          # 自动填充纯引擎（模式推断、填充柄逻辑，零 Vue 依赖）
-            ├── number-format.ts     # 数字格式引擎（Excel 风格显示格式化）
-            ├── conditional-formatting.ts # 条件格式引擎（条件求值、规则缓存、公式引用平移）
-            ├── theme.ts             # 主题 CSS 变量构建
-            └── utils.ts             # 纯工具函数（列标签、命中测试、尺寸解析）
+            ├── autofill.ts               # 自动填充纯引擎（模式推断、填充柄逻辑，零 Vue 依赖）
+            ├── border-color.ts           # 按边边框颜色：颜色与线型解耦、改色计划
+            ├── border-icon.ts            # 边框图标单一数据源（toolbar + picker）
+            ├── border-pool.ts            # 边框池：去重、注册、解析、迁移、GC
+            ├── border-resolve.ts         # 公共边冲突解析（resolveSharedBorder）
+            ├── border-style.ts           # 边框线型（实线/虚线/点线）：归一化与 dash 图案
+            ├── conditional-formatting.ts # 条件格式引擎（条件求值 + 规则缓存，纯逻辑）
+            ├── constants.ts              # 布局常量、i18n 文案、主题配色
+            ├── data-validation.ts        # 数据验证引擎（纯逻辑）
+            ├── filter-core.ts            # 自动筛选引擎（级联候选值，纯逻辑）
+            ├── find-replace-core.ts      # 查找/替换纯算法（零 Vue 依赖，可单测）
+            ├── formula.ts                # 公式引擎（解析、求值、依赖追踪）
+            ├── model-dims.ts             # 模型尺寸由内容推导（纯逻辑）
+            ├── notes.ts                  # 批注池管理：CRUD、持久化、Undo 集成
+            ├── number-format.ts          # 数字格式引擎（Excel 风格显示格式化）
+            ├── outline-core.ts           # 行列分组纯引擎（校验 / 平移 / 折叠，零 Vue 依赖）
+            ├── sort-core.ts              # 排序纯算法（零 Vue 依赖，可单测）
+            ├── sort-icon.ts              # 排序图标单一数据源（toolbar + picker）
+            ├── style-pool.ts             # 样式池：去重、注册、解析、迁移、GC
+            ├── theme.ts                  # 主题 CSS 变量构建
+            ├── types.ts                  # 全部类型定义
+            └── utils.ts                  # 纯工具函数（列标转换、命中测试等）
 ```
 
 ### 设计原则
@@ -482,7 +497,7 @@ CF 引擎的 `shiftFormulaRefsSafe` 复用公式引擎的 `shiftFormulaRefs` 函
 | `data-validation-dialog.vue` | 工具栏「数据验证」对话框：类型/运算符/值、列表来源、输入信息、出错警告、应用范围；保存时校验最小值/最大值字面量 |
 | `data-validation-dropdown.vue` | 单元格内列表下拉：虚拟列表、搜索框、完整键盘操作（↑ ↓ / Home / End / PageUp / PageDown / Enter / Esc） |
 | `data-validation-alert.vue` | 停止 / 警告 / 信息 警告框 |
-| `data-validation-input-message.vue` | 悬停提示气泡，显示规则的输入信息（位于 `components/`，不在 `pickers/`） |
+| `data-validation-input-message.vue` | 悬停提示气泡，显示规则的输入信息 |
 
 ### 持久化与撤销
 

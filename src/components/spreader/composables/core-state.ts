@@ -1,5 +1,5 @@
 import { ref, reactive, computed, watchEffect, shallowRef, type ComputedRef, type Ref } from 'vue';
-import { HEADER_HEIGHT, HEADER_WIDTH, SB_SIZE, DEFAULT_COL_WIDTH, DEFAULT_ROW_HEIGHT, MAX_ROW_HEIGHT, DEFAULT_FONT_FAMILY, DEFAULT_FONT_SIZE, t } from '../core/constants';
+import { HEADER_HEIGHT, HEADER_WIDTH, SB_SIZE, DEFAULT_COL_WIDTH, MAX_ROW_HEIGHT, DEFAULT_FONT_FAMILY, DEFAULT_FONT_SIZE, t } from '../core/constants';
 import { FormulaDeps, clearEvalCache, computeCellValue, parseFormulaRefs } from '../core/formula';
 import { formatNumber, isGeneralFormat, parseDateTimeInput, parseNumericText } from '../core/number-format';
 import { applyAutoFillPlan, validateMergeCompatibility } from '../core/autofill';
@@ -205,6 +205,8 @@ export interface CoreState {
 
   // 字体度量
   BASE_CELL_VPAD: number;
+  /** 空行高度 = 自动行高下限 = round(BASE_CELL_VPAD*2 + 默认字号行高)，随 DEFAULT_FONT_SIZE 变化 */
+  AUTO_ROW_BASE: number;
   fontMetricsCache: Map<string, { ascent: number; descent: number }>;
   fontMetricsCanvas: HTMLCanvasElement | null;
   measureFontMetrics: (family: string, size: number, weight: string, style: string) => { ascent: number; descent: number };
@@ -383,9 +385,13 @@ export function createCoreState(
   },
   defaults: { rowCount: number; colCount: number; theme: 'light' | 'dark'; locale: string },
 ): CoreState {
+  // 行列数下限：rowCount 至少 26 行、colCount 至少 200 列
+  const MIN_ROW_COUNT = 200;
+  const MIN_COL_COUNT = 26;
+
   const props = reactive({
-    rowCount: rawProps.rowCount ?? defaults.rowCount,
-    colCount: rawProps.colCount ?? defaults.colCount,
+    rowCount: Math.max(MIN_ROW_COUNT, rawProps.rowCount ?? defaults.rowCount),
+    colCount: Math.max(MIN_COL_COUNT, rawProps.colCount ?? defaults.colCount),
     width: rawProps.width,
     height: rawProps.height,
     theme: rawProps.theme ?? defaults.theme,
@@ -394,8 +400,8 @@ export function createCoreState(
 
   // 同步外部 props 变化到内部 reactive props
   watchEffect(() => {
-    props.rowCount = rawProps.rowCount ?? defaults.rowCount;
-    props.colCount = rawProps.colCount ?? defaults.colCount;
+    props.rowCount = Math.max(MIN_ROW_COUNT, rawProps.rowCount ?? defaults.rowCount);
+    props.colCount = Math.max(MIN_COL_COUNT, rawProps.colCount ?? defaults.colCount);
     props.width = rawProps.width;
     props.height = rawProps.height;
     props.theme = rawProps.theme ?? defaults.theme;
@@ -633,18 +639,19 @@ export function createCoreState(
   }
 
   // ============ 高 DPI 字号缩放 ============
-  // 基于默认字体的实际行高（ascent + descent）计算内边距，
-  // 确保单行默认文本的自动行高 = DEFAULT_ROW_HEIGHT，与空行一致。
+  // 字号驱动行高：单元格内边距为固定值，空行高度与自动行高下限 = AUTO_ROW_BASE
+  // （默认字号的单行天然行高 + 上下内边距），随 DEFAULT_FONT_SIZE 自然变化。
   const _defMetrics = measureFontMetrics(DEFAULT_FONT_FAMILY, DEFAULT_FONT_SIZE, 'normal', 'normal');
   const _defLineH = _defMetrics.ascent + _defMetrics.descent;
-  const BASE_CELL_VPAD = Math.max(0, (DEFAULT_ROW_HEIGHT - _defLineH) / 2);
+  const BASE_CELL_VPAD = 3;
+  const AUTO_ROW_BASE = Math.round(BASE_CELL_VPAD * 2 + _defLineH);
 
   // 先声明 cellKey、findMerge、cellFontSize 等在后面会赋值的引用
   let cellKeyFn: (c: number, r: number) => string = (c, r) => `${c},${r}`;
   let findMergeFn: (c: number, r: number) => { range: SelectionRange; anchor: string } | null = () => null;
   let cellFontSizeFn: (c: number, r: number) => number = () => DEFAULT_FONT_SIZE;
   let colPositionsRef: ComputedRef<number[]> = computed(() => [0]);
-  let getRowHeightFn: (r: number) => number = () => DEFAULT_ROW_HEIGHT;
+  let getRowHeightFn: (r: number) => number = () => AUTO_ROW_BASE;
   let expandSelectionForMergesFn: (sC: number, sR: number, eC: number, eR: number) => SelectionRange = (sC, sR, eC, eR) => ({
     startCol: Math.min(sC, eC), startRow: Math.min(sR, eR),
     endCol: Math.max(sC, eC), endRow: Math.max(sR, eR),
@@ -730,7 +737,7 @@ export function createCoreState(
     if (isRowHidden(r)) return 0;
     const h = rowHeights.value[r];
     if (h !== undefined && h !== null && h > 0) return h;
-    if (!rowsWithData.value.has(r)) return DEFAULT_ROW_HEIGHT;
+    if (!rowsWithData.value.has(r)) return AUTO_ROW_BASE;
     let maxFs = DEFAULT_FONT_SIZE;
     let maxAsc: number;
     let maxDesc: number;
@@ -779,7 +786,7 @@ export function createCoreState(
     // 必须与 Canvas 渲染使用的 lineH 保持一致，避免文字被截断或空白过大
     const lineH = maxAsc + maxDesc;
     const calculated = BASE_CELL_VPAD * 2 + maxLines * lineH;
-    const finalHeight = Math.min(MAX_ROW_HEIGHT, Math.max(DEFAULT_ROW_HEIGHT, Math.round(calculated)));
+    const finalHeight = Math.min(MAX_ROW_HEIGHT, Math.max(AUTO_ROW_BASE, Math.round(calculated)));
     return finalHeight;
   }
   getRowHeightFn = getRowHeight;
@@ -2354,6 +2361,7 @@ export function createCoreState(
     scrollCellIntoView,
 
     BASE_CELL_VPAD,
+    AUTO_ROW_BASE,
     fontMetricsCache,
     fontMetricsCanvas,
     measureFontMetrics,
