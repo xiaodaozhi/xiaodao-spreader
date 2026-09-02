@@ -948,19 +948,19 @@ const freezeOptions = computed<FontOption[]>(() => {
               fill="currentColor"
             ><path d="M180.053 361.387a32 32 0 0 1 45.227 0L512 648.107l286.72-286.72a32 32 0 1 1 45.227 45.227l-309.334 309.333a32 32 0 0 1-45.226 0L180.053 406.613a32 32 0 0 1 0-45.226z" /></svg>
           </button>
-            <BorderPicker
-              :model-open="borderMenuOpen"
-              :locale="locale"
-              :current-border="cachedBorder"
-              :current-color="cachedBorderColor"
-              :current-line-style="cachedBorderLineStyle"
-              :trigger-el="borderArrowRef"
-              :boundary-el="boundaryEl"
-              @update:model-open="coordToolbarMenu('border', $event)"
-              @change="emit('border-change', $event)"
-              @change-color="emit('border-color-change', $event)"
-              @change-line-style="emit('border-line-style-change', $event)"
-            />
+          <BorderPicker
+            :model-open="borderMenuOpen"
+            :locale="locale"
+            :current-border="cachedBorder"
+            :current-color="cachedBorderColor"
+            :current-line-style="cachedBorderLineStyle"
+            :trigger-el="borderArrowRef"
+            :boundary-el="boundaryEl"
+            @update:model-open="coordToolbarMenu('border', $event)"
+            @change="emit('border-change', $event)"
+            @change-color="emit('border-color-change', $event)"
+            @change-line-style="emit('border-line-style-change', $event)"
+          />
         </div>
       </div>
     </Teleport>

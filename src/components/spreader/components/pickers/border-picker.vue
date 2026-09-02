@@ -14,11 +14,11 @@ import {
   CORNER_DOT_CY,
 } from '../../core/border-icon';
 import { borderLineDash, normalizeBorderLineStyle, type BorderLineStyle } from '../../core/border-style';
+import type { BorderType } from '../../core/border-icon';
 
 // 类型与图标定义已收敛到 core/border-icon.ts（toolbar 主按钮共用同一份），
 // 此处 re-export 仅为兼容既有的 `from './pickers/border-picker.vue'` 导入
 export type { BorderType } from '../../core/border-icon';
-import type { BorderType } from '../../core/border-icon';
 
 const props = withDefaults(defineProps<{
   modelOpen?: boolean;
@@ -293,10 +293,19 @@ defineExpose({ open, openMenu, close });
             @mouseenter="enterLineSub($event)"
             @mouseleave="leaveLineSub"
           >
-            <span class="border-picker__line-icon" aria-hidden="true">
-              <svg viewBox="0 0 40 20" class="border-picker__line-svg">
+            <span
+              class="border-picker__line-icon"
+              aria-hidden="true"
+            >
+              <svg
+                viewBox="0 0 40 20"
+                class="border-picker__line-svg"
+              >
                 <line
-                  x1="2" y1="10" x2="38" y2="10"
+                  x1="2"
+                  y1="10"
+                  x2="38"
+                  y2="10"
                   stroke="currentColor"
                   stroke-width="2"
                   stroke-dasharray="none"
@@ -393,9 +402,15 @@ defineExpose({ open, openMenu, close });
             :title="t(locale, opt.i18nKey)"
             @click="onLineStyleChange(opt.key)"
           >
-            <svg viewBox="0 0 64 20" class="border-picker__line-preview">
+            <svg
+              viewBox="0 0 64 20"
+              class="border-picker__line-preview"
+            >
               <line
-                x1="3" y1="10" x2="61" y2="10"
+                x1="3"
+                y1="10"
+                x2="61"
+                y2="10"
                 stroke="currentColor"
                 stroke-width="2"
                 :stroke-dasharray="linePreviewDash(opt.key) || 'none'"
