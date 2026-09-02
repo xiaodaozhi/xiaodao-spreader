@@ -61,8 +61,11 @@ function toggleListMenu() {
   const r = el.getBoundingClientRect();
   const b = getFloatBounds(props.boundaryEl);
   listMenuPos.value = {
-    left: r.left,
-    bottom: b.bottom - r.top + 4,
+    left: Math.max(b.left, r.left),
+    // CSS bottom 以视口底边为基准：菜单底边锚定按钮顶部上方 4px，自然向上生长。
+    // 不能用 b.bottom：它是 wrapper 底边的 clientY 坐标，而 wrapper 底边在 tabbar
+    // 之上，误用会把菜单底边推到视口最底，整体盖住 tabbar 与本按钮。
+    bottom: window.innerHeight - r.top + 4,
   };
   // 活动项居中显示
   const idx = props.activeSheetIndex;
