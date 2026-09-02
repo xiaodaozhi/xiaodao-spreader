@@ -13,6 +13,7 @@ import {
   CORNER_DOT_CX,
   CORNER_DOT_CY,
 } from '../../core/border-icon';
+import { borderLineDash, normalizeBorderLineStyle, type BorderLineStyle } from '../../core/border-style';
 
 // 类型与图标定义已收敛到 core/border-icon.ts（toolbar 主按钮共用同一份），
 // 此处 re-export 仅为兼容既有的 `from './pickers/border-picker.vue'` 导入
@@ -25,6 +26,8 @@ const props = withDefaults(defineProps<{
   currentBorder?: BorderType;
   /** 当前选区在「当前边框类型作用域」内的统一边框颜色；'' = 自动（混合 / 无线条） */
   currentColor?: string;
+  /** 当前选中的边框线型（用于线型子菜单高亮）；'' = 未选中（混合 / 无线条） */
+  currentLineStyle?: string;
   triggerEl?: HTMLElement | null;
   /** 边界基准元素（通常是表格容器 wrapper）：菜单不得越出其可视区，见 getFloatBounds */
   boundaryEl?: HTMLElement | null;
@@ -33,6 +36,7 @@ const props = withDefaults(defineProps<{
   locale: 'zh-CN',
   currentBorder: 'none',
   currentColor: '',
+  currentLineStyle: '',
   triggerEl: null,
   boundaryEl: null,
 });
@@ -42,6 +46,8 @@ const emit = defineEmits<{
   (e: 'change', v: BorderType): void;
   /** 边框颜色变更：沿用当前边框类型作用到已存在的边，不创建新边框 */
   (e: 'changeColor', v: string): void;
+  /** 边框线型变更：更新默认线型 + 立即改选区已存在边框，不创建新边框 */
+  (e: 'change-line-style', v: BorderLineStyle): void;
 }>();
 
 const open = ref(false);
@@ -156,6 +162,72 @@ function onColorChange(v: string) {
   close();
 }
 
+// ---- 边框线型子菜单：与边框颜色子菜单同构（hover 展开、按角落方向弹出）----
+const LINE_STYLES: { key: BorderLineStyle; i18nKey: string }[] = [
+  { key: 'solid', i18nKey: 'lineSolid' },
+  { key: 'dashed', i18nKey: 'lineDashed' },
+  { key: 'dotted', i18nKey: 'lineDotted' },
+];
+
+const lineSub = ref(false);
+const lineSubRef = ref<HTMLElement | null>(null);
+const lineSubDir = ref<'left' | 'right'>('right');
+const lineSubUp = ref(false);
+let lineSubTimer: ReturnType<typeof setTimeout> | undefined;
+const lineSubPos = ref<SubPos>({ top: 0 });
+
+/** 返回某线型的预览 dash（与 Canvas 实际绘制共用同一套参数），solid 返回 undefined */
+function linePreviewDash(style: BorderLineStyle): string | undefined {
+  const d = borderLineDash(style, 2);
+  return d ? `${d[0]} ${d[1]}` : undefined;
+}
+function isLineActive(style: BorderLineStyle): boolean {
+  return normalizeBorderLineStyle(props.currentLineStyle) === style;
+}
+
+function enterLineSub(e: MouseEvent) {
+  clearTimeout(lineSubTimer);
+  lineSub.value = true;
+  nextTick(() => {
+    const el = e.currentTarget instanceof HTMLElement ? e.currentTarget : null;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const subEl = lineSubRef.value?.closest('.border-submenu-wrap') as HTMLElement | null;
+    if (!subEl) return;
+    const b = getFloatBounds(props.boundaryEl);
+    const subW = subEl.offsetWidth;
+    const subH = subEl.offsetHeight;
+    const wantRight = r.right + subW + 8 > b.right;
+    const dir: 'left' | 'right' = wantRight ? 'left' : 'right';
+    const overflowDown = r.top + subH > b.bottom - 8;
+    const ideal = overflowDown ? r.bottom + 5 - subH : r.top - 5;
+    const lower = Math.min(b.top + 8, ideal);
+    const top = Math.max(lower, Math.min(b.bottom - subH - 8, ideal));
+    lineSubDir.value = dir;
+    lineSubUp.value = overflowDown;
+    lineSubPos.value = dir === 'right'
+      ? { left: r.right + 4, top }
+      : { right: cssRightFromX(r.left - 4), top };
+  });
+}
+
+function leaveLineSub() {
+  clearTimeout(lineSubTimer);
+  lineSubTimer = setTimeout(() => {
+    lineSub.value = false;
+  }, 150);
+}
+
+function enterLinePanel() {
+  clearTimeout(lineSubTimer);
+}
+
+function onLineStyleChange(v: BorderLineStyle) {
+  lineSub.value = false;
+  emit('change-line-style', v);
+  close();
+}
+
 onBeforeUnmount(() => {
   document.removeEventListener('pointerdown', onClickOutside);
   clearTimeout(colorSubTimer);
@@ -214,6 +286,32 @@ defineExpose({ open, openMenu, close });
 
           <div class="border-picker__divider" />
 
+          <!-- 边框线型：作为子菜单项，hover 展开实际线型预览面板（参考边框颜色子菜单） -->
+          <div
+            class="border-picker__item border-picker__item--sub"
+            :class="{ 'border-picker__item--sub-open': lineSub }"
+            @mouseenter="enterLineSub($event)"
+            @mouseleave="leaveLineSub"
+          >
+            <span class="border-picker__line-icon" aria-hidden="true">
+              <svg viewBox="0 0 40 20" class="border-picker__line-svg">
+                <line
+                  x1="2" y1="10" x2="38" y2="10"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-dasharray="none"
+                  stroke-linecap="butt"
+                />
+              </svg>
+            </span>
+            <span class="border-picker__item--sub-label">{{ t(locale, 'borderLineStyle') }}</span>
+            <svg
+              class="border-picker__arrow"
+              viewBox="0 0 1024 1024"
+              fill="currentColor"
+            ><path d="M361.387 180.053a32 32 0 0 0 0 45.227L648.107 512l-286.72 286.72a32 32 0 1 0 45.227 45.227l309.333-309.334a32 32 0 0 0 0-45.226L406.613 180.053a32 32 0 0 0-45.226 0z" /></svg>
+          </div>
+
           <!-- 边框颜色：作为子菜单项，hover 展开色板（参考条件格式「清除规则」子菜单） -->
           <div
             class="border-picker__item border-picker__item--sub"
@@ -265,6 +363,47 @@ defineExpose({ open, openMenu, close });
             :locale="locale"
             @pick="onColorChange"
           />
+        </div>
+      </Transition>
+    </Teleport>
+
+    <!-- 边框线型子菜单面板：独立 Teleport，避免被 border-picker__menu 裁掉 -->
+    <Teleport to="body">
+      <Transition name="border-sub-pop">
+        <div
+          v-if="open && lineSub"
+          ref="lineSubRef"
+          class="border-submenu-wrap"
+          :class="{ 'border-submenu-wrap--left': lineSubDir === 'left', 'border-submenu-wrap--up': lineSubUp }"
+          :style="{
+            left: lineSubPos.left !== undefined ? lineSubPos.left + 'px' : undefined,
+            right: lineSubPos.right !== undefined ? lineSubPos.right + 'px' : undefined,
+            top: lineSubPos.top + 'px',
+          }"
+          @click.stop
+          @mousedown.prevent
+          @mouseenter="enterLinePanel"
+          @mouseleave="leaveLineSub"
+        >
+          <button
+            v-for="opt in LINE_STYLES"
+            :key="opt.key"
+            class="border-picker__line-item"
+            :class="{ 'border-picker__line-item--active': isLineActive(opt.key) }"
+            :title="t(locale, opt.i18nKey)"
+            @click="onLineStyleChange(opt.key)"
+          >
+            <svg viewBox="0 0 64 20" class="border-picker__line-preview">
+              <line
+                x1="3" y1="10" x2="61" y2="10"
+                stroke="currentColor"
+                stroke-width="2"
+                :stroke-dasharray="linePreviewDash(opt.key) || 'none'"
+                :stroke-linecap="opt.key === 'dotted' ? 'round' : 'butt'"
+              />
+            </svg>
+            <span class="border-picker__line-label">{{ t(locale, opt.i18nKey) }}</span>
+          </button>
         </div>
       </Transition>
     </Teleport>
@@ -337,6 +476,37 @@ defineExpose({ open, openMenu, close });
 .border-submenu-wrap--left { transform-origin: top right; }
 .border-submenu-wrap--up { transform-origin: bottom left; }
 .border-submenu-wrap--left.border-submenu-wrap--up { transform-origin: bottom right; }
+
+/* 边框线型子菜单项（面板内每行：实际线型预览 + 文案，高亮当前选中） */
+.border-picker__line-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 4px 8px;
+  border: none;
+  background: transparent;
+  color: var(--sp-toolbar-btn-color, #444);
+  cursor: pointer;
+  border-radius: 3px;
+  font-size: 12px;
+  text-align: left;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+  box-sizing: border-box;
+}
+.border-picker__line-item:hover { background: #eef3f9; }
+.border-picker__line-item--active { background: #e3edf9; }
+.border-picker__line-item--active:hover { background: #d5e4f7; }
+.border-picker__line-preview {
+  width: 64px;
+  height: 20px;
+  flex: 0 0 auto;
+  color: var(--sp-toolbar-btn-color, #444);
+}
+.border-picker__line-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 边框线型子菜单触发器里的静态实线图标 */
+.border-picker__line-icon { width: 16px; height: 16px; flex-shrink: 0; display: inline-flex; align-items: center; }
+.border-picker__line-svg { width: 40px; height: 20px; color: var(--sp-toolbar-btn-color, #444); }
 
 .menu-pop-enter-active, .menu-pop-leave-active { transition: opacity 0.12s ease-out, transform 0.12s ease-out; }
 .menu-pop-enter-from, .menu-pop-leave-to { opacity: 0; transform: scaleY(0.85); }

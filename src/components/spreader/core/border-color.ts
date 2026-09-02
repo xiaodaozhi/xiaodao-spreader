@@ -13,6 +13,7 @@
 
 import type { BorderSide, BorderStyle, SelectionRange } from './types';
 import type { BorderType } from './border-icon';
+import { normalizeBorderLineStyle, type BorderLineStyle } from './border-style';
 
 /** 默认边框颜色：BorderSide.color 缺失（自动）时的回退色 */
 export const DEFAULT_BORDER_COLOR = '#444';
@@ -99,22 +100,40 @@ export function withBorderWidth(
 }
 
 /**
+ * 仅替换线型（solid/dashed/dotted），保留已有 width / color。
+ * style 为 'solid'（默认线型）时删除 style 字段，使数据与旧版完全一致、不残留冗余属性，
+ * 也避免 solid 边框在 BorderPool 中产生与「无 style」不同的去重 key。
+ */
+export function withBorderStyle(side: BorderSide, style: BorderLineStyle): BorderSide {
+  const next: BorderSide = { ...side };
+  if (style === 'solid') delete next.style;
+  else next.style = style;
+  return next;
+}
+
+/**
  * 强制设置线宽与颜色（用于「点击边框类型按钮」场景）：
  * 无论该边是否已存在，都把 width 与 color 设为给定值，color 为自动时删除 color 字段。
  * 与 withBorderWidth 的区别：withBorderWidth 在边已存在且有颜色时保留旧颜色；
  * 这里按 Excel 行为，用当前笔刷色覆盖该边（点「上边框」即把上边设为当前色）。
- * 仅线型样式（style 虚线等）保留，不强制改。
+ * 仅线型样式（style 虚线等）保留，不强制改；当传入 lineStyle 时则统一应用该线型
+ * （solid 会清掉 style 字段，使「用实线笔刷重画旧虚线边」回到 solid）。
  */
 export function forceBorderSide(
   side: BorderSide | undefined,
   width: number,
   color?: string,
+  lineStyle?: BorderLineStyle,
 ): BorderSide {
   const next: BorderSide = side ? { ...side } : {};
   next.width = width;
   const c = normalizeBorderColor(color);
   if (c === undefined) delete next.color;
   else next.color = c;
+  if (lineStyle !== undefined) {
+    if (lineStyle === 'solid') delete next.style;
+    else next.style = lineStyle;
+  }
   return next;
 }
 
@@ -248,6 +267,7 @@ export function buildAllSidesBorder(
 /**
  * 为 'all' 生成整格边框（四边一次性替换），逐边强制设为给定线宽与颜色（覆盖原有颜色）。
  * 用于「点击『所有框线』按钮」：统一用当前笔刷色覆盖四条边框。
+ * lineStyle 透传：统一应用当前笔刷线型（solid 清 style 字段）。
  */
 export function forceAllSidesBorder(
   col: number,
@@ -255,10 +275,11 @@ export function forceAllSidesBorder(
   width: number,
   color: string | undefined,
   getSide: (col: number, row: number, side: BorderSideKey) => BorderSide | undefined,
+  lineStyle?: BorderLineStyle,
 ): BorderStyle {
   const border: BorderStyle = {};
   for (const side of BORDER_SIDE_KEYS) {
-    border[side] = forceBorderSide(getSide(col, row, side), width, color);
+    border[side] = forceBorderSide(getSide(col, row, side), width, color, lineStyle);
   }
   return border;
 }
@@ -289,6 +310,63 @@ export function resolveSelectionBorderColor(
       return;
     }
     if (!sameBorderColor(first, v)) mixed = true;
+  });
+  if (mixed || !seen) return undefined;
+  return first;
+}
+
+/**
+ * 计算「改线型」的逐边写入计划。
+ *
+ * 约束（对应需求）：
+ *  - 只命中已经存在的边框（width > 0），绝不因此创建出新的边框；
+ *  - 线型无变化（含缺省 solid）的边不产生写入；
+ *  - 每条实际边独立成条，相邻单元格的共享边各自记录自己那一份，不做任何跨单元格同步；
+ *  - 仅改 style，width / color 原样保留，线型与颜色互不干扰。
+ */
+export function planBorderStyleChanges(
+  bt: BorderType,
+  range: SelectionRange,
+  style: BorderLineStyle,
+  getSide: (col: number, row: number, side: BorderSideKey) => BorderSide | undefined,
+): BorderWrite[] {
+  const out: BorderWrite[] = [];
+  forEachBorderTarget(bt, range, ({ col, row, side }) => {
+    const cur = getSide(col, row, side);
+    if (!hasBorderLine(cur)) return; // 不存在的边框不创建
+    const next = withBorderStyle(cur!, style);
+    if (normalizeBorderLineStyle(cur!.style) === style) return; // 无实际变化
+    out.push({ col, row, side, next });
+  });
+  return out;
+}
+
+/**
+ * 读取选区在「当前边框类型作用域」内的统一边框线型：
+ *  - 所有被命中的边线型一致 → 返回该线型；
+ *  - 存在不同线型，或命中的边为空 → 返回 undefined（混合 / 无线条，UI 按未选中处理）。
+ *
+ * 只统计真实存在的边框。旧数据（无 style 字段）统一按 'solid' 计，不会把结果拉成混合。
+ */
+export function resolveSelectionBorderLineStyle(
+  bt: BorderType,
+  range: SelectionRange,
+  getSide: (col: number, row: number, side: BorderSideKey) => BorderSide | undefined,
+): BorderLineStyle | undefined {
+  let first: BorderLineStyle | undefined;
+  let seen = false;
+  let mixed = false;
+  forEachBorderTarget(bt, range, ({ col, row, side }) => {
+    if (mixed) return;
+    const cur = getSide(col, row, side);
+    if (!hasBorderLine(cur)) return; // 不存在的边不参与
+    const v = normalizeBorderLineStyle(cur!.style);
+    if (!seen) {
+      first = v;
+      seen = true;
+      return;
+    }
+    if (v !== first) mixed = true;
   });
   if (mixed || !seen) return undefined;
   return first;

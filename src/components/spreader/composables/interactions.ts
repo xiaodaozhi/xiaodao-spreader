@@ -7,6 +7,7 @@ import { formatNumber, shouldAlignRightByDefault, NF_INVALID_VALUE, isFormatOver
 import { migrateCells } from '../core/style-pool';
 import { migrateBordersInStyles } from '../core/border-pool';
 import { DEFAULT_BORDER_COLOR } from '../core/border-color';
+import { normalizeBorderLineStyle, borderLineDash, type BorderLineStyle } from '../core/border-style';
 import type { BordersMergeState } from './borders-merge';
 import type { SheetsOpsState } from './sheets-ops';
 import type { ContextMenuItem, BorderSide, ThemeColors, SelectionRange, FilterColumn, SheetFilter, CellData, DataValidationRule } from '../core/types';
@@ -245,6 +246,45 @@ export function createInteractions(
   }
 
   const BORDER_COLOR = DEFAULT_BORDER_COLOR;
+
+  /**
+   * 绘制单条单元格边框边（top / bottom / left / right）。
+   *  - solid：沿用原 fillRect 实现，保持与历史渲染像素完全一致（不引入回归）；
+   *  - dashed / dotted：改用 stroke + setLineDash 实际绘制虚线 / 点线。
+   * 本函数只绘制「单元格边框」，不触碰网格线 / 选区框 / 冻结分隔线等非单元格边框，
+   * 因此不会影响它们的绘制。
+   */
+  function paintBorderEdge(
+    ctx: CanvasRenderingContext2D,
+    x1: number, y1: number, x2: number, y2: number,
+    width: number, color: string, style: BorderLineStyle,
+  ): void {
+    const dash = borderLineDash(style, width);
+    if (!dash) {
+      // solid：与历史 fillRect 行为完全一致
+      if (y1 === y2) ctx.fillRect(x1, y1, x2 - x1, width);
+      else ctx.fillRect(x1, y1, width, y2 - y1);
+      return;
+    }
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.lineCap = style === 'dotted' ? 'round' : 'butt';
+    ctx.setLineDash(dash);
+    ctx.beginPath();
+    if (y1 === y2) {
+      const cy = y1 + width / 2;
+      ctx.moveTo(x1, cy);
+      ctx.lineTo(x2, cy);
+    } else {
+      const cx = x1 + width / 2;
+      ctx.moveTo(cx, y1);
+      ctx.lineTo(cx, y2);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
   /** 单元格内下拉箭头的命中/绘制宽度 */
   const DV_DROPDOWN_W = 14;
   // ---- 行列分组（Outline）绘制常量 ----
@@ -605,20 +645,16 @@ export function createInteractions(
           const wB = rB?.width ?? 0;
           const wR = rR?.width ?? 0;
           if (wT > 0) {
-            rCtx.fillStyle = rT?.color || BORDER_COLOR;
-            rCtx.fillRect(x, y, cw, wT);
+            paintBorderEdge(rCtx, x, y, x + cw, y, wT, rT?.color || BORDER_COLOR, normalizeBorderLineStyle(rT?.style));
           }
           if (wB > 0) {
-            rCtx.fillStyle = rB?.color || BORDER_COLOR;
-            rCtx.fillRect(x, y + rh - wB, cw, wB);
+            paintBorderEdge(rCtx, x, y + rh - wB, x + cw, y + rh - wB, wB, rB?.color || BORDER_COLOR, normalizeBorderLineStyle(rB?.style));
           }
           if (wL > 0) {
-            rCtx.fillStyle = rL?.color || BORDER_COLOR;
-            rCtx.fillRect(x, y, wL, rh);
+            paintBorderEdge(rCtx, x, y, x, y + rh, wL, rL?.color || BORDER_COLOR, normalizeBorderLineStyle(rL?.style));
           }
           if (wR > 0) {
-            rCtx.fillStyle = rR?.color || BORDER_COLOR;
-            rCtx.fillRect(x + cw - wR, y, wR, rh);
+            paintBorderEdge(rCtx, x + cw - wR, y, x + cw - wR, y + rh, wR, rR?.color || BORDER_COLOR, normalizeBorderLineStyle(rR?.style));
           }
           // 角方块
           const skipLeft = col > 0 && s.isColumnCollapsed(col - 1);
@@ -786,8 +822,8 @@ export function createInteractions(
         const resolved = resolveSharedBorder(neighborBottom, ownBorder.top, 'cell', 'merge');
         if (resolved && resolved.width && resolved.width > 0) {
           const sxSeg = cc < s.freeze.cols ? (HW + cP[cc]!) : (HW + cP[cc]! - sx);
-          ctx.fillStyle = resolved.color || BORDER_COLOR;
-          ctx.fillRect(sxSeg, y, (cP[cc + 1] ?? 0) - cP[cc]!, resolved.width);
+          const segW = (cP[cc + 1] ?? 0) - cP[cc]!;
+          paintBorderEdge(ctx, sxSeg, y, sxSeg + segW, y, resolved.width, resolved.color || BORDER_COLOR, normalizeBorderLineStyle(resolved.style));
         }
       }
       if (!skipBottomAll) {
@@ -798,8 +834,9 @@ export function createInteractions(
           const resolved = resolveSharedBorder(ownBorder.bottom, neighborTop, 'merge', 'cell');
           if (resolved && resolved.width && resolved.width > 0) {
             const sxSeg = cc < s.freeze.cols ? (HW + cP[cc]!) : (HW + cP[cc]! - sx);
-            ctx.fillStyle = resolved.color || BORDER_COLOR;
-            ctx.fillRect(sxSeg, y + rh - resolved.width, (cP[cc + 1] ?? 0) - cP[cc]!, resolved.width);
+            const segW = (cP[cc + 1] ?? 0) - cP[cc]!;
+            const yy = y + rh - resolved.width;
+            paintBorderEdge(ctx, sxSeg, yy, sxSeg + segW, yy, resolved.width, resolved.color || BORDER_COLOR, normalizeBorderLineStyle(resolved.style));
           }
         }
       }
@@ -811,8 +848,7 @@ export function createInteractions(
         if (resolved && resolved.width && resolved.width > 0) {
           const sySeg = rr < s.freeze.rows ? (HH + rP[rr]!) : (HH + rP[rr]! - sy);
           const rhSeg = rP[rr + 1]! - rP[rr]!;
-          ctx.fillStyle = resolved.color || BORDER_COLOR;
-          ctx.fillRect(ax, sySeg, resolved.width, rhSeg);
+          paintBorderEdge(ctx, ax, sySeg, ax, sySeg + rhSeg, resolved.width, resolved.color || BORDER_COLOR, normalizeBorderLineStyle(resolved.style));
         }
       }
       if (!skipRightAll) {
@@ -824,8 +860,8 @@ export function createInteractions(
           if (resolved && resolved.width && resolved.width > 0) {
             const sySeg = rr < s.freeze.rows ? (HH + rP[rr]!) : (HH + rP[rr]! - sy);
             const rhSeg = rP[rr + 1]! - rP[rr]!;
-            ctx.fillStyle = resolved.color || BORDER_COLOR;
-            ctx.fillRect(ax + aw - resolved.width, sySeg, resolved.width, rhSeg);
+            const xx = ax + aw - resolved.width;
+            paintBorderEdge(ctx, xx, sySeg, xx, sySeg + rhSeg, resolved.width, resolved.color || BORDER_COLOR, normalizeBorderLineStyle(resolved.style));
           }
         }
       }
@@ -1362,20 +1398,16 @@ export function createInteractions(
           const wB = rB?.width ?? 0;
           const wR = rR?.width ?? 0;
           if (wT > 0) {
-            ctx.fillStyle = rT?.color || '#444';
-            ctx.fillRect(x, y, cw, wT);
+            paintBorderEdge(ctx, x, y, x + cw, y, wT, rT?.color || '#444', normalizeBorderLineStyle(rT?.style));
           }
           if (wB > 0) {
-            ctx.fillStyle = rB?.color || '#444';
-            ctx.fillRect(x, y + rh - wB, cw, wB);
+            paintBorderEdge(ctx, x, y + rh - wB, x + cw, y + rh - wB, wB, rB?.color || '#444', normalizeBorderLineStyle(rB?.style));
           }
           if (wL > 0) {
-            ctx.fillStyle = rL?.color || '#444';
-            ctx.fillRect(x, y, wL, rh);
+            paintBorderEdge(ctx, x, y, x, y + rh, wL, rL?.color || '#444', normalizeBorderLineStyle(rL?.style));
           }
           if (wR > 0) {
-            ctx.fillStyle = rR?.color || '#444';
-            ctx.fillRect(x + cw - wR, y, wR, rh);
+            paintBorderEdge(ctx, x + cw - wR, y, x + cw - wR, y + rh, wR, rR?.color || '#444', normalizeBorderLineStyle(rR?.style));
           }
           // 角方块（与 body 区一致，含折叠侧跳过）
           const skipLeft = col > 0 && s.isColumnCollapsed(col - 1);

@@ -73,6 +73,8 @@ xiaodao-spreader/
                 ├── style-pool.ts      # 样式池：去重、注册、解析、迁移、GC
                 ├── border-pool.ts     # 边框池：去重、注册、解析、迁移、GC
                 ├── border-resolve.ts  # 公共边冲突解析（resolveSharedBorder）
+                ├── border-color.ts    # 按边边框颜色：颜色与线型解耦、改色计划
+                ├── border-style.ts    # 边框线型（实线/虚线/点线）：归一化与 dash 图案
                 ├── formula.ts         # 公式引擎（解析、求值、依赖追踪）
                 ├── find-replace-core.ts # 查找/替换纯算法（零 Vue 依赖，可单测）
                 ├── sort-core.ts       # 排序纯算法（零 Vue 依赖，可单测）
@@ -715,7 +717,7 @@ Canvas CSS 坐标（逻辑像素）
 
 ### 18.1 数据结构
 
-- `BorderSide`：单边边框 `{ width?, color?, style?, owner? }`（`style` 预留：solid/dashed/dotted；`owner` 可选，由边框/选区操作写入，作为公共边解析时的渲染优先级标记）。
+- `BorderSide`：单边边框 `{ width?, color?, style?, owner? }`（`style` 为线型 `solid` / `dashed` / `dotted`，与 `color`/`width` 解耦；旧数据缺 `style` 一律按 `solid` 处理，且 `solid` 不写 `style` 键，使其去重键与历史空边框数据一致；`owner` 可选，由边框/选区操作写入，作为公共边解析时的渲染优先级标记）。
 - `BorderStyle`：四边组合 `{ top?, right?, bottom?, left? }`，各边独立存储。
 - `CellStyle.borderId`：样式通过 `borderId`（`borders` 数组下标）引用边框；`0` 或省略表示无边框。
 - 旧版内联属性（`borderTopWidth` / `borderBottomWidth` / `borderLeftWidth` / `borderRightWidth` / `borderColor`）标注 `@deprecated`，仅用于迁移历史数据。
@@ -760,6 +762,14 @@ Canvas CSS 坐标（逻辑像素）
 - `SheetModelData` / `SheetState` / `UndoSnapshot` 均新增 `borders: BorderStyle[]`。
 - `migrateBordersInStyles(styles)`：将旧版内联边框属性迁移为 `borders` 池 + `borderId` 机制。
 - 加载时：若 `smd.borders` 存在则直接使用；否则对 `styles` 执行迁移。
+
+### 18.6 线型（实线 / 虚线 / 点线）
+
+- **按边属性**：线型写在每条独立边的 `BorderSide.style` 上，与 `color`/`width` 解耦，改线型绝不覆盖其余二者。
+- **画笔模型**：边框下拉框的「线型」子菜单设置当前画笔线型；随后的边框操作（上/下/左/右/外框/全部）将其应用到对应边。单独选线型也会更新选区**已存在**边的线型，但绝不凭空创建不存在的边框。
+- **冲突规则**：改线型会在受影响边写入 `owner: true`，因此公共边优先级沿用既有 `resolveSharedBorder` owner 规则，不修改相邻单元格。
+- **渲染**：`interactions.ts` 经 `paintBorderEdge` 绘制虚线/点线（实线保留原 `fillRect` 路径，网格线与选区框不受影响）。
+- **纯逻辑**：`core/border-style.ts` 提供 `normalizeBorderLineStyle`（旧数据默认 `solid`）与 `borderLineDash`（按线型/宽度的 dash 图案）；`core/border-color.ts` 提供 `withBorderStyle` / `planBorderStyleChanges` / `resolveSelectionBorderLineStyle`。均与 Vue/Canvas 解耦并具备单元测试。
 
 ---
 

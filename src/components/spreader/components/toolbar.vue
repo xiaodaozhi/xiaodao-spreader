@@ -308,6 +308,8 @@ const props = defineProps<{
   cachedBorder: BorderType;
   /** 当前色板选中的边框颜色；'' = 自动（缺省回退默认边框色）。仅用于边框颜色菜单项的色块与色板高亮，不反映选区边框色 */
   cachedBorderColor: string;
+  /** 当前笔刷线型（solid/dashed/dotted）；仅用于边框线型子菜单高亮，不反映选区边框线型 */
+  cachedBorderLineStyle: string;
   /** 默认边框颜色（渲染回退色） */
   borderColor: string;
   sortMenuOpen: boolean;
@@ -352,7 +354,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'undo' | 'redo' | 'paint-format' | 'clear-format' | 'font-size-blur' | 'font-size-toggle' | 'font-size-step-up' | 'font-size-step-down' | 'bold-toggle' | 'italic-toggle' | 'underline-toggle' | 'strikethrough-toggle' | 'apply-text-color' | 'apply-fill-color' | 'apply-border' | 'apply-sort' | 'wrap-toggle' | 'apply-merge' | 'calc-sum' | 'calc-avg' | 'calc-count' | 'find' | 'increase-decimals' | 'decrease-decimals' | 'toggle-filter' | 'cf-new-rule' | 'cf-manage' | 'open-data-validation'): void;
   (e: 'font-family-change' | 'font-size-change' | 'h-align-change' | 'v-align-change', v: string | number): void;
-  (e: 'font-size-input' | 'text-color-change' | 'fill-color-change' | 'border-color-change' | 'number-format-change' | 'freeze-change' | 'cf-preset' | 'outline-action', v: string): void;
+  (e: 'font-size-input' | 'text-color-change' | 'fill-color-change' | 'border-color-change' | 'border-line-style-change' | 'number-format-change' | 'freeze-change' | 'cf-preset' | 'outline-action', v: string): void;
   (e: 'font-size-keydown', ev: KeyboardEvent): void;
   (e: 'update:font-size-menu-open' | 'update:text-color-menu-open' | 'update:fill-color-menu-open' | 'update:border-menu-open' | 'update:sort-menu-open' | 'update:outline-menu-open' | 'update:merge-menu-open' | 'update:calc-menu-open' | 'update:cf-menu-open' | 'update:freeze-menu-open' | 'update:font-menu-open' | 'update:h-align-menu-open' | 'update:v-align-menu-open' | 'update:num-fmt-menu-open', v: boolean): void;
   (e: 'border-change', v: BorderType): void;
@@ -951,11 +953,13 @@ const freezeOptions = computed<FontOption[]>(() => {
               :locale="locale"
               :current-border="cachedBorder"
               :current-color="cachedBorderColor"
+              :current-line-style="cachedBorderLineStyle"
               :trigger-el="borderArrowRef"
               :boundary-el="boundaryEl"
               @update:model-open="coordToolbarMenu('border', $event)"
               @change="emit('border-change', $event)"
               @change-color="emit('border-color-change', $event)"
+              @change-line-style="emit('border-line-style-change', $event)"
             />
         </div>
       </div>

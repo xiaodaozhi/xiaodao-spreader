@@ -14,10 +14,13 @@ import {
   forceBorderSide,
   forEachBorderTarget,
   planBorderColorChanges,
+  planBorderStyleChanges,
   resolveSelectionBorderColor,
+  resolveSelectionBorderLineStyle,
   BORDER_SIDE_KEYS,
   type BorderSideKey,
 } from '../core/border-color';
+import type { BorderLineStyle } from '../core/border-style';
 
 // ============ 共享 BordersMerge 接口 ============
 export interface BordersMergeState {
@@ -25,12 +28,18 @@ export interface BordersMergeState {
   cachedBorder: Ref<BorderType>;
   /** 当前色板选中的边框颜色；'' 表示「自动」（渲染回退到 DEFAULT_BORDER_COLOR） */
   cachedBorderColor: Ref<string>;
+  /** 当前笔刷线型（solid/dashed/dotted）；作为「边框绘制/应用操作」的默认线型 */
+  cachedBorderLineStyle: Ref<BorderLineStyle>;
   /** 当前选区在「当前边框类型作用域」内的统一边框颜色；混合或无线条时返回 '' */
   selBorderColor: ComputedRef<string>;
+  /** 当前选区在「当前边框类型作用域」内的统一边框线型；混合或无线条时返回 '' */
+  selBorderLineStyle: ComputedRef<string>;
   borderMenuOpen: Ref<boolean>;
   BORDER_COLOR: string;
   onBorderChange: (bt: BorderType) => void;
   onBorderColorChange: (color: string) => void;
+  /** 选择线型：更新默认线型 + 立即改选区已存在边框（不创建新边框） */
+  onBorderLineStyleChange: (style: BorderLineStyle) => void;
   setCellBorderSide: (col: number, row: number, side: 'top' | 'right' | 'bottom' | 'left', borderSide: BorderSide | undefined) => void;
   applyBorderToCell: (col: number, row: number, border: BorderStyle) => void;
   applyCachedBorder: () => void;
@@ -83,6 +92,8 @@ export function createBordersMerge(
   const cachedBorder = ref<BorderType>('none');
   /** 当前色板选中的边框颜色；'' = 自动（渲染回退 DEFAULT_BORDER_COLOR） */
   const cachedBorderColor = ref('');
+  /** 当前笔刷线型：作为「边框绘制/应用操作」的默认线型（solid/dashed/dotted） */
+  const cachedBorderLineStyle = ref<BorderLineStyle>('solid');
   const borderMenuOpen = ref(false);
 
   /** 读取某 grid 坐标某条边的 BorderSide（合并区统一重定向到锚点） */
@@ -170,7 +181,7 @@ export function createBordersMerge(
         for (let r = sR; r <= eR; r++) {
           const m = s.findMerge(c, r);
           if (m && (c !== m.range.startCol || r !== m.range.startRow)) continue;
-          const b = forceAllSidesBorder(c, r, 1, penColor, getSide);
+          const b = forceAllSidesBorder(c, r, 1, penColor, getSide, cachedBorderLineStyle.value);
           // 标记 owner：本次操作显式写入的边界边，公共边解析时优先于相邻单元格旧 border
           for (const sk of BORDER_SIDE_KEYS) if (b[sk]) b[sk]!.owner = true;
           applyBorderToCell(c, r, b);
@@ -182,7 +193,7 @@ export function createBordersMerge(
       forEachBorderTarget(bt, range, ({ col, row, side }) => {
         const cur = getSide(col, row, side);
         // 标记 owner：选区外框/上边框/左边框等边界边，本次操作显式写入 → 公共边解析优先
-        const nb = forceBorderSide(cur, width, penColor);
+        const nb = forceBorderSide(cur, width, penColor, cachedBorderLineStyle.value);
         nb.owner = true;
         setCellBorderSideNew(col, row, side, nb);
       });
@@ -235,6 +246,50 @@ export function createBordersMerge(
     s.emitModelData?.();
   }
 
+  /**
+   * 应用一个「边框线型」操作（与颜色子菜单同构：先更新默认线型，再立即作用于已存在边框）。
+   *
+   * 与颜色的关系（同样满足解耦与「不创建」约束）：
+   *  - 仅更新默认线型 cachedBorderLineStyle，供后续左/右/上/下/外框/全部等操作使用；
+   *  - 同时沿用当前边框类型（cachedBorder）的作用边集合，给「已经存在」的边改线型：
+   *      · 不存在的边框不会被创建出来（满足「单独选线型不创建边框」）；
+   *      · 每条实际边独立更新，相邻单元格共享边各改各的，互不同步；
+   *      · width / color 原样保留，线型与颜色互不干扰。
+   */
+  function onBorderLineStyleChange(style: BorderLineStyle) {
+    cachedBorderLineStyle.value = style;
+    const sel = s.selection.value;
+    if (!sel) return;
+    const range: SelectionRange = {
+      startCol: Math.min(sel.startCol, sel.endCol),
+      startRow: Math.min(sel.startRow, sel.endRow),
+      endCol: Math.max(sel.startCol, sel.endCol),
+      endRow: Math.max(sel.startRow, sel.endRow),
+    };
+    // 作用边枚举策略与颜色子菜单一致：pen ≠ none 沿用该类型，否则作用于所有已存在边
+    const enumerate: BorderType = cachedBorder.value === 'none' ? 'all' : cachedBorder.value;
+    // 先出计划再落盘：没有任何实际改动时不污染撤销栈
+    const writes = planBorderStyleChanges(
+      enumerate,
+      range,
+      style,
+      (col, row, side) => getCellBorderSideNew(col, row, side),
+    );
+    if (writes.length === 0) {
+      // 即使没有已存在边框可改，默认线型也已更新；刷新渲染以反映菜单高亮（无数据变化）
+      s.scheduleRender?.();
+      return;
+    }
+    us.saveUndo();
+    for (const w of writes) {
+      // 标记 owner：本次改线型操作显式命中的边，公共边解析时优先于相邻单元格旧 border
+      w.next.owner = true;
+      setCellBorderSideNew(w.col, w.row, w.side, w.next);
+    }
+    s.scheduleRender?.();
+    s.emitModelData?.();
+  }
+
   /** 当前选区边框的统一颜色（用于边框下拉菜单里的色板高亮）：
    *  - pen ≠ none 时只统计该类型的作用边；
    *  - pen = none（直接选中已带边框的示例单元格）时统计选区内所有已存在的边；
@@ -244,6 +299,20 @@ export function createBordersMerge(
     if (!sel) return '';
     const bt: BorderType = cachedBorder.value === 'none' ? 'all' : cachedBorder.value;
     return resolveSelectionBorderColor(
+      bt,
+      sel,
+      (col, row, side) => getCellBorderSideNew(col, row, side),
+    ) ?? '';
+  });
+
+  /** 当前选区边框的统一线型（用于边框下拉菜单里线型子菜单的高亮）：
+   *  - pen ≠ none 时只统计该类型的作用边；pen = none 时统计选区内所有已存在的边；
+   *  混合 / 无线条时返回 ''（UI 按未选中处理）。 */
+  const selBorderLineStyle = computed<string>(() => {
+    const sel = s.selection.value;
+    if (!sel) return '';
+    const bt: BorderType = cachedBorder.value === 'none' ? 'all' : cachedBorder.value;
+    return resolveSelectionBorderLineStyle(
       bt,
       sel,
       (col, row, side) => getCellBorderSideNew(col, row, side),
@@ -696,11 +765,14 @@ export function createBordersMerge(
   return {
     cachedBorder,
     cachedBorderColor,
+    cachedBorderLineStyle,
     selBorderColor,
+    selBorderLineStyle,
     borderMenuOpen,
     BORDER_COLOR: DEFAULT_BORDER_COLOR,
     onBorderChange,
     onBorderColorChange,
+    onBorderLineStyleChange,
     setCellBorderSide: setCellBorderSideNew,
     applyBorderToCell,
     applyCachedBorder,

@@ -73,6 +73,8 @@ xiaodao-spreader/
                 ├── style-pool.ts      # Style pool: dedup, registration, resolve, migration, GC
                 ├── border-pool.ts     # Border pool: dedup, registration, resolve, migration, GC
                 ├── border-resolve.ts  # Shared-border conflict resolution (resolveSharedBorder)
+                ├── border-color.ts    # Per-side border color: decouple color from line type, plan color changes
+                ├── border-style.ts    # Border line type (solid/dashed/dotted): normalize + dash pattern
                 ├── formula.ts         # Formula engine (parsing, evaluation, dependency tracking)
                 ├── find-replace-core.ts # Find/replace pure algorithms (zero Vue deps, unit-testable)
                 ├── sort-core.ts       # Sort pure algorithms (zero Vue deps, unit-testable)
@@ -716,7 +718,7 @@ Located in `spreader/core/border-pool.ts` and `spreader/core/border-resolve.ts`.
 
 ### 18.1 Data Structures
 
-- `BorderSide`: a single border side `{ width?, color?, style?, owner? }` (`style` reserved for solid/dashed/dotted; `owner` optional, set by explicit border/selection operations as a render-time priority hint for shared-edge resolution).
+- `BorderSide`: a single border side `{ width?, color?, style?, owner? }` (`style` is the line type `solid` / `dashed` / `dotted`, decoupled from `color`/`width`; legacy borders with no `style` default to `solid`, and `solid` stores no `style` key so its dedup key matches historical empty-border data; `owner` optional, set by explicit border/selection operations as a render-time priority hint for shared-edge resolution).
 - `BorderStyle`: a four-side combination `{ top?, right?, bottom?, left? }`, each side stored independently.
 - `CellStyle.borderId`: a style references a border via `borderId` (index into `borders`); `0` or omitted means no border.
 - Legacy inline props (`borderTopWidth` / `borderBottomWidth` / `borderLeftWidth` / `borderRightWidth` / `borderColor`) are marked `@deprecated`, used only for migrating historical data.
@@ -761,6 +763,14 @@ When the renderer draws borders and corner blocks, every adjacent edge goes thro
 - `SheetModelData` / `SheetState` / `UndoSnapshot` all add `borders: BorderStyle[]`.
 - `migrateBordersInStyles(styles)`: migrates legacy inline border props into the `borders` pool + `borderId` mechanism.
 - On load: if `smd.borders` exists it is used directly; otherwise migration runs over `styles`.
+
+### 18.6 Line Type (solid / dashed / dotted)
+
+- **Per-side property**: line type is set on each `BorderSide.style`, independent of `color`/`width`; changing it never overwrites the others.
+- **Pen model**: the border picker's **Line Type** submenu sets the active pen line type; subsequent border operations (top / bottom / left / right / outside / all) apply it to the corresponding edges. Selecting a line type also updates the selection's *existing* edges, but never creates a border that isn't there.
+- **Conflict rule**: changing a line type writes `owner: true` on the affected side, so shared-edge priority follows the existing `resolveSharedBorder` owner rule; neighbor cells are not mutated.
+- **Rendering**: `interactions.ts` draws dashed/dotted borders through `paintBorderEdge` (solid keeps the original `fillRect` path so grid lines and the selection frame are unaffected).
+- **Pure logic**: `core/border-style.ts` provides `normalizeBorderLineStyle` (legacy default `solid`) and `borderLineDash` (dash pattern per style/width); `core/border-color.ts` provides `withBorderStyle` / `planBorderStyleChanges` / `resolveSelectionBorderLineStyle`. All are Vue/Canvas-free and unit-tested.
 
 ---
 

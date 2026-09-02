@@ -174,6 +174,10 @@ export const i18n: Record<string, Record<string, string>> = {
     colorCyan: '青色',
     // 边框
     borderColor: '边框颜色',
+    borderLineStyle: '边框线型',
+    lineSolid: '实线',
+    lineDashed: '虚线',
+    lineDotted: '点线',
     // 数字格式（Number Format）
     numberFormat: '数字格式',
     nfGeneral: '常规',
@@ -573,6 +577,10 @@ export const i18n: Record<string, Record<string, string>> = {
     colorCyan: 'Cyan',
     // Border
     borderColor: 'Border Color',
+    borderLineStyle: 'Line Style',
+    lineSolid: 'Solid',
+    lineDashed: 'Dashed',
+    lineDotted: 'Dotted',
     // Number Format
     numberFormat: 'Number Format',
     nfGeneral: 'General',
