@@ -295,7 +295,7 @@ export function clearNumberFormatCache(): void {
 // ============ 数值格式化 ============
 /**
  * 按 0/#/? 占位符格式化非科学计数的数字。
- * —— 使用 Intl.NumberFormat 代替手写 String(abs).split('.')：
+ * 使用 Intl.NumberFormat 代替手写 String(abs).split('.')：
  *    Number.toString 对 abs ≥ 1e+21 / < 1e-6 会强制输出科学计数字符串（如 1.1111111111111111e+24），
  *    直接 split('.') 会得到错误的 intPart 和带 'e' 的 fracPart，显示成"小写 e + 16 位小数"的垃圾字符串。
  *    Intl.NumberFormat 的 format() 始终按"完整十进制"输出（大数不转科学计数），正好匹配 Excel 的 #,##0.00 / 0 / #,##0 等格式。

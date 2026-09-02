@@ -527,7 +527,7 @@ Canvas CSS 坐标（逻辑像素）
 - **自动筛选（AutoFilter）**: *已实现，见[第 23 节](#23-自动筛选autofilter)*
 - **数据验证（Data Validation）**: *已实现，见[第 26 节](#26-数据验证data-validation)*
 - **行列分组（Outline / Grouping）**: *已实现，见[第 27 节](#27-行列分组outline-grouping)*
-- **触屏与移动端交互**: *已实现 —— 每个鼠标路径都有对称触屏路径（选择 / 右键菜单 / 筛选命中 / 列宽行高 / 框选 / 格式刷 / tab 菜单；浮层支持点外部关闭）。见[第 24 节](#24-触屏与移动端交互)。*
+- **触屏与移动端交互**: *已实现 - 每个鼠标路径都有对称触屏路径（选择 / 右键菜单 / 筛选命中 / 列宽行高 / 框选 / 格式刷 / tab 菜单；浮层支持点外部关闭）。见[第 24 节](#24-触屏与移动端交互)。*
 - **图表**
 
 ### 13.4 性能优化
@@ -1172,7 +1172,7 @@ condition 类型覆盖七个变体：cellIs（单元格值阈值比较）、text
 
 ### 25.2 条件求值
 
-顶层入口 evaluateCondition(rule, col, row, ctx)。cellIs / text* / blank* 通过 ctx.getCell 取单元格原始值直接比较。duplicate / unique / topBottom / aboveBelow 走 CfValueCache（25.3）。formula 条件用公式引擎导出的 evalCondition 求值——正则求值器不会处理顶层比较运算符（会跳过大于号），所以 CF 引擎有专门分支。公式相对于规则锚点解释，绝对引用保持固定，相对引用随范围平移。
+顶层入口 evaluateCondition(rule, col, row, ctx)。cellIs / text* / blank* 通过 ctx.getCell 取单元格原始值直接比较。duplicate / unique / topBottom / aboveBelow 走 CfValueCache（25.3）。formula 条件用公式引擎导出的 evalCondition 求值：正则求值器不会处理顶层比较运算符（会跳过大于号），所以 CF 引擎有专门分支。公式相对于规则锚点解释，绝对引用保持固定，相对引用随范围平移。
 
 ### 25.3 频率缓存
 
@@ -1186,7 +1186,7 @@ shiftFormulaRefsSafe 复用公式引擎的 shiftFormulaRefs，因此 dollar sign
 
 resolveConditionalFormatting 在 spreader.vue 的 drawCells 内按视口单元格逐个调用。遍历范围包含该单元格的启用规则，按优先级升序求值，命中则将 format 属性合并到累加器，stopIfTrue 命中则提前终止。合并方向：高优先级规则对冲突属性获胜，低优先级规则填充未设置的属性。
 
-applyCfFormat 将临时 cfStyle 合成到基础解析样式上。CF 可覆盖 backgroundColor、color、fontWeight、fontStyle、underline、strikethrough，border、numberFormat、数字对齐故意不在 CF format 类型中——对齐 Excel 语义。
+applyCfFormat 将临时 cfStyle 合成到基础解析样式上。CF 可覆盖 backgroundColor、color、fontWeight、fontStyle、underline、strikethrough，border、numberFormat、数字对齐故意不在 CF format 类型中：对齐 Excel 语义。
 
 合并单元格：CF 只对锚点求值一次，结果传播到整个合并区域，匹配 Excel 行为。
 
@@ -1228,7 +1228,7 @@ type 联合覆盖八种变体：any（无约束，对话框选中它即清除该
 
 ### 26.2 验证引擎
 
-evaluateDataValidationRule(rule, value, col, row, ctx) 是单规则入口。allowBlank 优先级最高：空值在未被显式禁用时直接放行（默认 true，等同 Excel）。各类型求值复用 parseNumericText / parseDateTimeInput，因此字面量条件与实时输入共用同一套解析。between / notBetween 用 Math.min / Math.max，min/max 顺序颠倒也能正确判定。同一范围的多个规则必须全部通过——validateCellValue 以 rules.every() 聚合，最严重（级别最高）的失败规则决定弹窗内容。
+evaluateDataValidationRule(rule, value, col, row, ctx) 是单规则入口。allowBlank 优先级最高：空值在未被显式禁用时直接放行（默认 true，等同 Excel）。各类型求值复用 parseNumericText / parseDateTimeInput，因此字面量条件与实时输入共用同一套解析。between / notBetween 用 Math.min / Math.max，min/max 顺序颠倒也能正确判定。同一范围的多个规则必须全部通过：validateCellValue 以 rules.every() 聚合，最严重（级别最高）的失败规则决定弹窗内容。
 
 ### 26.3 范围索引
 
@@ -1240,11 +1240,11 @@ DataValidationIndex 是覆盖全部规则范围的行分带空间索引。findRu
 
 ### 26.5 原子粘贴 / 自动填充
 
-粘贴与自动填充先算出全部候选值，调用 validateCells()，只要存在 stop 级违规就整次取消——绝不部分写入。复制（内部剪贴板）携带相交的验证规则并平移覆盖目标区域；外部纯文本粘贴只写值。
+粘贴与自动填充先算出全部候选值，调用 validateCells()，只要存在 stop 级违规就整次取消，绝不部分写入。复制（内部剪贴板）携带相交的验证规则并平移覆盖目标区域；外部纯文本粘贴只写值。
 
 ### 26.6 行列增删时的范围平移
 
-adjustDvRangeForInsert / adjustDvRangeForDelete 复用条件格式同一套传播逻辑。动态 ensureCapacity 扩展不会自动扩大验证范围——这与「插入行」语义刻意区分。
+adjustDvRangeForInsert / adjustDvRangeForDelete 复用条件格式同一套传播逻辑。动态 ensureCapacity 扩展不会自动扩大验证范围：这与「插入行」语义刻意区分。
 
 ### 26.7 UI 组件
 

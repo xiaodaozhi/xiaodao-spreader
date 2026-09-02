@@ -692,7 +692,7 @@ test('合并单元格跨冻结列 + 隐藏列：cellToScreenRect 几何正确', 
   assert.equal(rA.width, 7 * aW);
   assert.equal(rA.y, HEADER_HEIGHT);
 
-  // F1（非 anchor、body 列、合并内）：cellToScreenRect 返回「子矩形」——
+  // F1（非 anchor、body 列、合并内）：cellToScreenRect 返回「子矩形」-
   // x = HW + A 宽度（隐藏列宽为 0，F 紧贴在冻结分隔线右）；width = cP[11]-cP[5]
   assert.equal(rF.x, HEADER_WIDTH + aW);
   assert.equal(rF.width, 6 * aW);
@@ -732,7 +732,7 @@ test('冻结首列 + scrollX>0：合并内 body 列的 cellToScreenRect 正确�
   assert.equal(mergedWidth, 7 * DEFAULT_COL_WIDTH - sx, '合并宽度 = K1 右边界 - A1 左边界（body 部分已减 sx）');
 });
 
-// 本次修复核心：跨冻结线合并的「逻辑宽」cP[endCol+1]-cP[startCol] 不随 scrollX 变化——
+// 本次修复核心：跨冻结线合并的「逻辑宽」cP[endCol+1]-cP[startCol] 不随 scrollX 变化-
 // drawMergedCells 用它做文本布局（换行/溢出/对齐）与冻结段背景，保证 A1 冻结段
 // 位置+宽度恒定完整，不会随滚动缩小或变空。
 test('跨冻结线合并：逻辑宽与冻结段位置不随 scrollX 变化', () => {

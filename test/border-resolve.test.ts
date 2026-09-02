@@ -71,6 +71,48 @@ test('merge 不无条件覆盖 cell（同宽时 first 优先，无论 source）'
   assert.deepEqual(resolveSharedBorder(thickMerge, cellBorder, 'merge', 'cell'), thickMerge);
 });
 
+// ============ owner 优先级（修复：选区边框被相邻单元格旧 border 覆盖） ============
+
+test('owner：仅 first 带 owner → first 优先（同宽也优先）', () => {
+  const first: BorderSide = { width: 1, color: '#f00', owner: true };
+  const second: BorderSide = { width: 1, color: '#0f0' };
+  assert.deepEqual(resolveSharedBorder(first, second), first);
+  assert.equal(resolveSharedBorder(first, second)?.color, '#f00');
+});
+
+test('owner：仅 second 带 owner → second 优先（修复选区上/左边框被旧 border 覆盖）', () => {
+  // 渲染时 top 边调用为 resolveSharedBorder(neighbors.top, ownBorder.top)：
+  // first=相邻上方单元格 bottom（旧色，无 owner），second=选区顶行 top（本次操作写入，owner）
+  const first: BorderSide = { width: 1, color: '#0a0' }; // 相邻上方旧 border
+  const second: BorderSide = { width: 1, color: '#f00', owner: true }; // 选区操作边
+  assert.deepEqual(resolveSharedBorder(first, second), second);
+  assert.equal(resolveSharedBorder(first, second)?.color, '#f00');
+});
+
+test('owner：仅一侧 owner 时，即使 owner 侧更细也优先（本次操作边覆盖旧边）', () => {
+  const first: BorderSide = { width: 2, color: '#0a0' }; // 相邻上方粗旧 border
+  const second: BorderSide = { width: 1, color: '#f00', owner: true }; // 选区细边，本次操作
+  assert.deepEqual(resolveSharedBorder(first, second), second);
+  assert.equal(resolveSharedBorder(first, second)?.width, 1); // 使用选区边线宽
+  assert.equal(resolveSharedBorder(first, second)?.color, '#f00');
+});
+
+test('owner：两侧都带 owner → 沿用既有规则（width 大者优先，同宽取 first）', () => {
+  const first: BorderSide = { width: 1, color: '#f00', owner: true };
+  const second: BorderSide = { width: 1, color: '#0f0', owner: true };
+  // 选区内部公共边：两侧都是本次操作写入 → 走既有冲突规则
+  assert.deepEqual(resolveSharedBorder(first, second), first);
+  const thickFirst: BorderSide = { width: 2, color: '#0f0', owner: true };
+  assert.deepEqual(resolveSharedBorder(first, thickFirst), thickFirst);
+});
+
+test('owner：两侧都不带 owner → 沿用既有规则（行为不变，旧数据兼容）', () => {
+  // 选区外普通公共边：两侧皆无 owner（旧数据/未操作）→ 渲染结果不变
+  const first: BorderSide = { width: 1, color: '#f00' };
+  const second: BorderSide = { width: 1, color: '#0f0' };
+  assert.deepEqual(resolveSharedBorder(first, second), first);
+});
+
 // ============ 便捷函数 ============
 
 test('resolveSharedBorderWidth 返回宽度', () => {

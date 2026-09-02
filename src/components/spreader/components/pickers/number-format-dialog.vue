@@ -461,7 +461,7 @@ const previewText = computed(() => {
           <div class="nf-dialog__footer">
             <div class="nf-preview">
               <span class="nf-preview__label">{{ t(locale, 'nfPreview') }}</span>
-              <span class="nf-preview__value">{{ previewText || '—' }}</span>
+              <span class="nf-preview__value">{{ previewText || '-' }}</span>
             </div>
             <div class="nf-dialog__actions">
               <button

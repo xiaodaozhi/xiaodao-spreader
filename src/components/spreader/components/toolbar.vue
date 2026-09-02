@@ -203,7 +203,7 @@ function onDocPointerdown(e: PointerEvent) {
   if ((target as HTMLElement).closest?.('.overflow-menu-wrap')) return;
   if (moreBtnEl.value?.contains(target)) return;
   // CF 弹层（condition format Teleport 到 body 的菜单）、ColorPicker 弹层、SpDropdown 弹层都可能在 body 上，
-  // 只要点在弹层内部就不关闭溢出菜单——否则点击子菜单选色/选条件时会把溢出菜单先关掉
+  // 只要点在弹层内部就不关闭溢出菜单，否则点击子菜单选色/选条件时会把溢出菜单先关掉
   if ((target as HTMLElement).closest?.('.cf-menu, .sp-dropdown__menu, .color-picker__menu, .outline-picker__menu, .border-picker__menu, .calc-picker__menu, .merge-picker__menu, .sort-picker__menu')) return;
   skipCloseAnim.value = true;
   overflowOpen.value = false;
@@ -306,6 +306,10 @@ const props = defineProps<{
   cachedFillColor: string;
   borderMenuOpen: boolean;
   cachedBorder: BorderType;
+  /** 当前色板选中的边框颜色；'' = 自动（缺省回退默认边框色）。仅用于边框颜色菜单项的色块与色板高亮，不反映选区边框色 */
+  cachedBorderColor: string;
+  /** 默认边框颜色（渲染回退色） */
+  borderColor: string;
   sortMenuOpen: boolean;
   cachedSortOrder: SortOrder;
   canSort: boolean;
@@ -341,14 +345,14 @@ const props = defineProps<{
   canIncreaseDecimals: boolean;
   canDecreaseDecimals: boolean;
   /** 边界基准元素（通常是表格容器 wrapper）：弹出菜单不得越出其可视区。
-   *  组件嵌入宿主 Vue 页面时必需——否则菜单会越界盖住宿主内容。缺省时退化为纯视口判定。 */
+   *  组件嵌入宿主 Vue 页面时必需，否则菜单会越界盖住宿主内容。缺省时退化为纯视口判定。 */
   boundaryEl?: HTMLElement | null;
 }>();
 
 const emit = defineEmits<{
   (e: 'undo' | 'redo' | 'paint-format' | 'clear-format' | 'font-size-blur' | 'font-size-toggle' | 'font-size-step-up' | 'font-size-step-down' | 'bold-toggle' | 'italic-toggle' | 'underline-toggle' | 'strikethrough-toggle' | 'apply-text-color' | 'apply-fill-color' | 'apply-border' | 'apply-sort' | 'wrap-toggle' | 'apply-merge' | 'calc-sum' | 'calc-avg' | 'calc-count' | 'find' | 'increase-decimals' | 'decrease-decimals' | 'toggle-filter' | 'cf-new-rule' | 'cf-manage' | 'open-data-validation'): void;
   (e: 'font-family-change' | 'font-size-change' | 'h-align-change' | 'v-align-change', v: string | number): void;
-  (e: 'font-size-input' | 'text-color-change' | 'fill-color-change' | 'number-format-change' | 'freeze-change' | 'cf-preset' | 'outline-action', v: string): void;
+  (e: 'font-size-input' | 'text-color-change' | 'fill-color-change' | 'border-color-change' | 'number-format-change' | 'freeze-change' | 'cf-preset' | 'outline-action', v: string): void;
   (e: 'font-size-keydown', ev: KeyboardEvent): void;
   (e: 'update:font-size-menu-open' | 'update:text-color-menu-open' | 'update:fill-color-menu-open' | 'update:border-menu-open' | 'update:sort-menu-open' | 'update:outline-menu-open' | 'update:merge-menu-open' | 'update:calc-menu-open' | 'update:cf-menu-open' | 'update:freeze-menu-open' | 'update:font-menu-open' | 'update:h-align-menu-open' | 'update:v-align-menu-open' | 'update:num-fmt-menu-open', v: boolean): void;
   (e: 'border-change', v: BorderType): void;
@@ -942,15 +946,17 @@ const freezeOptions = computed<FontOption[]>(() => {
               fill="currentColor"
             ><path d="M180.053 361.387a32 32 0 0 1 45.227 0L512 648.107l286.72-286.72a32 32 0 1 1 45.227 45.227l-309.334 309.333a32 32 0 0 1-45.226 0L180.053 406.613a32 32 0 0 1 0-45.226z" /></svg>
           </button>
-          <BorderPicker
-            :model-open="borderMenuOpen"
-            :locale="locale"
-            :current-border="cachedBorder"
-            :trigger-el="borderArrowRef"
-            :boundary-el="boundaryEl"
-            @update:model-open="coordToolbarMenu('border', $event)"
-            @change="emit('border-change', $event)"
-          />
+            <BorderPicker
+              :model-open="borderMenuOpen"
+              :locale="locale"
+              :current-border="cachedBorder"
+              :current-color="cachedBorderColor"
+              :trigger-el="borderArrowRef"
+              :boundary-el="boundaryEl"
+              @update:model-open="coordToolbarMenu('border', $event)"
+              @change="emit('border-change', $event)"
+              @change-color="emit('border-color-change', $event)"
+            />
         </div>
       </div>
     </Teleport>
@@ -1557,7 +1563,7 @@ const freezeOptions = computed<FontOption[]>(() => {
 .toolbar { position: relative; display: flex; align-items: center; height: 32px; min-height: 32px; gap: 2px; padding: 0 6px; background: var(--sp-toolbar-bg); border-bottom: 1px solid var(--sp-toolbar-border); user-select: none; }
 /* 初始化时先隐藏内容（opacity，不影响尺寸测量），等溢出计算完成后淡入，避免窄屏先全显示再闪现溢出按钮 */
 /* 初始化时先淡入（both 保证结束时停在 opacity:1），避免窄屏先全显示再闪现溢出按钮。
-   关键：纯 CSS animation，绝不依赖 JS 测量的 toolbar--ready —— 无论 overflow 测量成功与否、甚至
+   关键：纯 CSS animation，绝不依赖 JS 测量的 toolbar--ready：无论 overflow 测量成功与否、甚至
    JS 未执行，0.15s 后一定 opacity:1，杜绝「整条 toolbar 永久透明」的 bug。 */
 .toolbar > * { animation: toolbar-fade-in .15s ease-out both; }
 @keyframes toolbar-fade-in { from { opacity: 0; } to { opacity: 1; } }
@@ -1585,7 +1591,7 @@ const freezeOptions = computed<FontOption[]>(() => {
 .toolbar-btn svg:not(.toolbar-btn__icon) { width: 18px; height: 18px; }
 .toolbar-btn__label { display: none; font-size: 12px; margin-left: 6px; }
 .toolbar-split { display: inline-flex; align-items: center; position: relative; height: 26px; }
-.toolbar-split__main { border: 1px solid transparent; border-right: none; border-radius: 3px 0 0 3px; }
+.toolbar-split__main { border: 1px solid transparent; border-right: none; border-radius: 3px 0 0 3px; position: relative; }
 .toolbar-split__arrow { display: flex; align-items: center; justify-content: center; width: 16px; height: 26px; border: 1px solid transparent; border-radius: 0 3px 3px 0; background: transparent; color: var(--sp-toolbar-btn-color); cursor: pointer; padding: 0; }
 .toolbar-split__arrow:hover:not(:disabled) { background: var(--sp-toolbar-btn-hover-bg); }
 .toolbar-split__arrow svg { width: 10px !important; height: 10px !important; }

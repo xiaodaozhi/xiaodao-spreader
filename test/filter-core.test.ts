@@ -214,7 +214,7 @@ test('候选值：检测空白并置 hasBlank=true，空白项不进入 values',
   assert.equal(c.hasBlank, true);
 });
 
-test('候选值：级联——仅统计「其它列已筛选」后可见的行', () => {
+test('候选值：级联，仅统计「其它列已筛选」后可见的行', () => {
   const acc = grid({
     '0,1': 'A', '1,1': 'x',
     '0,2': 'A', '1,2': 'y',

@@ -30,13 +30,13 @@ A high-performance, canvas-based spreadsheet component for Vue 3: bringing an Ex
 - **Number Format**: Excel-style number formatting (General / Text / Number / Currency / Accounting / Percent / Scientific / Date / Time / DateTime / Duration) with a custom format dialog; display-only, never mutates the stored cell value
 - **Smart Data Recognition**: Typing `100%`, `1,234`, `¥1,234.56` auto-converts the text to a number and applies the matching format; common date/time text auto-converts to dates: matching Excel input behavior
 - **Sorting & Sort Warning**: Sort any column by its **displayed content** (numbers / dates / text); sorting moves data only, never cell styles; ranges containing merged cells or formulas are auto-disabled; when adjacent data sits outside the selection, an Excel-style **Sort Warning** dialog lets you choose "Expand the selection" or "Sort the current selection only"
-- **Auto Filter (AutoFilter)**: Excel-style auto filter on a normal range. Enable via the toolbar **Data → Filter** or `Ctrl+Shift+L`; select a data cell (or a single-row multi-column range) and the filter is created by intelligently probing the contiguous data region **downward** from that header row. Each column header shows a filter drop-down arrow; opening it reveals the filter panel (values / text / number / date / search / blanks / multi-column AND). Clearing one column's criteria clears only that column; removing the AutoFilter clears everything. Only columns inside the Filter Range get an arrow; selecting a single merged cell with no active filter disables the filter button — *see [Auto Filter (AutoFilter)](#auto-filter-autofilter)*
+- **Auto Filter (AutoFilter)**: Excel-style auto filter on a normal range. Enable via the toolbar **Data → Filter** or `Ctrl+Shift+L`; select a data cell (or a single-row multi-column range) and the filter is created by intelligently probing the contiguous data region **downward** from that header row. Each column header shows a filter drop-down arrow; opening it reveals the filter panel (values / text / number / date / search / blanks / multi-column AND). Clearing one column's criteria clears only that column; removing the AutoFilter clears everything. Only columns inside the Filter Range get an arrow; selecting a single merged cell with no active filter disables the filter button - *see [Auto Filter (AutoFilter)](#auto-filter-autofilter)*
 - **Find & Replace**: Open via the toolbar find button or `Ctrl/Cmd+F` (also `Ctrl/Cmd+H`); three scopes: current sheet / entire workbook / current selection; match case and match entire cell; highlights all matches and locates the active one with wrap-around navigation; single and replace-all both integrate with undo/redo, mutating only the raw `value` (always kept a string), never format / border / merge
-- **Conditional Formatting**: Excel-style conditional formatting rules stored per-sheet. The toolbar "Conditional Formatting" dropdown offers preset rules (greater than / less than / between / text contains / duplicate / unique / blank / not blank) and a "New Rule" dialog with cell value and formula-based conditions. Rules render as temporary style overlays on top of the base cell style — no mutation of the underlying cell `value` or `styleId`. Rule priority (smaller number = higher), `stopIfTrue` semantics, and automatic cache invalidation on cell value change. Inserting / deleting rows or columns adjusts rule ranges and formula references via the same `shiftFormulaRefs` engine used by auto-fill. Includes a "Manage Rules" dialog for editing, reordering, and deleting rules; the "Clear Rules" sub-dialog lets you clear all rules or rules from selected ranges. Render-time style synthesis correctly composes CF background, font color, bold, italic, underline, and strikethrough with the base cell style. *see [Conditional Formatting](#conditional-formatting)*
-- **Data Validation**: Excel-style data validation rules stored per-sheet. The toolbar "Data Validation" button opens a dialog to set the allowed type (any value / list / whole number / decimal / date / time / text length / custom formula), the operator (between, not between, equal, greater than, …), and the criterion values. List validation shows an in-cell dropdown with search and full keyboard navigation (↑ ↓ / Home / End / PageUp / PageDown / Enter / Esc). Per-rule input message and error alert (Stop / Warning / Information) are supported; validation runs *before* the value is committed, so Stop-level violations reject the edit while Warning/Information let the user confirm. All rules on a range must pass. Rules persist through v-model, integrate with undo/redo, and adjust automatically on row/column insert/delete. Copy/paste and Auto Fill validate atomically — a Stop violation cancels the whole operation. *see [Data Validation](#data-validation)*
+- **Conditional Formatting**: Excel-style conditional formatting rules stored per-sheet. The toolbar "Conditional Formatting" dropdown offers preset rules (greater than / less than / between / text contains / duplicate / unique / blank / not blank) and a "New Rule" dialog with cell value and formula-based conditions. Rules render as temporary style overlays on top of the base cell style - no mutation of the underlying cell `value` or `styleId`. Rule priority (smaller number = higher), `stopIfTrue` semantics, and automatic cache invalidation on cell value change. Inserting / deleting rows or columns adjusts rule ranges and formula references via the same `shiftFormulaRefs` engine used by auto-fill. Includes a "Manage Rules" dialog for editing, reordering, and deleting rules; the "Clear Rules" sub-dialog lets you clear all rules or rules from selected ranges. Render-time style synthesis correctly composes CF background, font color, bold, italic, underline, and strikethrough with the base cell style. *see [Conditional Formatting](#conditional-formatting)*
+- **Data Validation**: Excel-style data validation rules stored per-sheet. The toolbar "Data Validation" button opens a dialog to set the allowed type (any value / list / whole number / decimal / date / time / text length / custom formula), the operator (between, not between, equal, greater than, …), and the criterion values. List validation shows an in-cell dropdown with search and full keyboard navigation (↑ ↓ / Home / End / PageUp / PageDown / Enter / Esc). Per-rule input message and error alert (Stop / Warning / Information) are supported; validation runs *before* the value is committed, so Stop-level violations reject the edit while Warning/Information let the user confirm. All rules on a range must pass. Rules persist through v-model, integrate with undo/redo, and adjust automatically on row/column insert/delete. Copy/paste and Auto Fill validate atomically - a Stop violation cancels the whole operation. *see [Data Validation](#data-validation)*
 - **Cell Notes**: Excel-style cell notes (comments). Right-click menu to create / edit / delete; red triangle indicator at cell corner marks cells with notes; hover to preview, click to edit. Notes are independent from cell values and styles, stored via a Note Pool (Sheet-level notes pool + cell.noteId reference), so sort / insert-delete moves cells together with their notes. Notes support multi-line text, optional author, and create/update timestamps. Author name can be set via the noteAuthor prop. *see [Cell Notes](#cell-notes)*
 - **Auto Fill (Fill Handle)**: Excel-style fill handle at the bottom-right corner of the active selection. Drag it up/down/left/right to fill cells: single values copy, number/date/text-number sequences auto-continue (e.g. `1,2 → 3,4,5`), formula references adjust per relative/absolute/mixed rules (e.g. `=A1*2` → `=A2*2`), and source `styleId` is reused via the style pool. Live preview during drag, edge auto-scroll, dynamic sheet expansion, freeze-pane compatibility, and a single undo step per operation: *see [Auto Fill](#auto-fill)*
-- **Row / Column Grouping & Collapsing**: Excel-style row/column outlines. Select whole rows or columns, then the toolbar "Group" dropdown (between Sort and Filter) offers Add Group / Ungroup / Clear Outline / Expand All / Collapse All, applied directly to the selected axis; row/column context menus expose a matching "Group" submenu. Only one level of non-overlapping groups is supported — nesting and partial overlap are rejected with a message. Group ranges get alternating background colors in the row/column header band; ± collapse buttons float inside the header band without reserving a separate gutter. Collapsed rows/columns are skipped during content rendering; inserting/deleting rows or columns shifts group ranges and auto-removes emptied groups. Groups persist per-sheet (`rowOutlines` / `columnOutlines`) through v-model, and every mutation integrates with undo/redo. *see [Row / Column Grouping & Collapsing](#row--column-grouping--collapsing)*
+- **Row / Column Grouping & Collapsing**: Excel-style row/column outlines. Select whole rows or columns, then the toolbar "Group" dropdown (between Sort and Filter) offers Add Group / Ungroup / Clear Outline / Expand All / Collapse All, applied directly to the selected axis; row/column context menus expose a matching "Group" submenu. Only one level of non-overlapping groups is supported - nesting and partial overlap are rejected with a message. Group ranges get alternating background colors in the row/column header band; ± collapse buttons float inside the header band without reserving a separate gutter. Collapsed rows/columns are skipped during content rendering; inserting/deleting rows or columns shifts group ranges and auto-removes emptied groups. Groups persist per-sheet (`rowOutlines` / `columnOutlines`) through v-model, and every mutation integrates with undo/redo. *see [Row / Column Grouping & Collapsing](#row--column-grouping--collapsing)*
 
 ### Interaction
 - **Smart Selection**: Click, drag, Shift+Click, row/column header select, corner-cell select-all
@@ -249,6 +249,7 @@ src/
             ├── style-pool.ts        # Style pool: dedup, registration, resolve, migration, GC
             ├── border-pool.ts       # Border pool: dedup, registration, resolve, migration, GC
             ├── border-resolve.ts    # Shared-border conflict resolution (resolveSharedBorder)
+            ├── border-color.ts      # Per-side border color: decouple color from line type, plan color changes
             ├── formula.ts           # Formula engine (parse, evaluate, deps, cache)
             ├── find-replace-core.ts # Find/replace pure algorithms (zero Vue deps, unit-testable)
             ├── sort-core.ts         # Sort pure algorithms (zero Vue deps, unit-testable)
@@ -382,11 +383,11 @@ An Excel-style number formatting engine (`spreader/core/number-format.ts`) that 
 
 ## Conditional Formatting
 
-Excel-style conditional formatting stored per-sheet in `SheetState.conditionalFormats` (array of `ConditionalFormattingRule`). The engine lives in `spreader/core/conditional-formatting.ts` — pure-logic, zero Vue/Canvas deps, with unit tests in `test/conditional-formatting.test.ts`.
+Excel-style conditional formatting stored per-sheet in `SheetState.conditionalFormats` (array of `ConditionalFormattingRule`). The engine lives in `spreader/core/conditional-formatting.ts` - pure-logic, zero Vue/Canvas deps, with unit tests in `test/conditional-formatting.test.ts`.
 
 ### Rule Structure
 
-Each rule has a stable `id`, a `condition`, a `format` override, one or more `ranges`, a numeric `priority` (smaller = higher precedence), `stopIfTrue`, and `enabled` flag. The `format` carries only visual properties (`backgroundColor`, `color`, `fontWeight`, `fontStyle`, `underline`, `strikethrough`) — it never writes back to `cell.styleId`.
+Each rule has a stable `id`, a `condition`, a `format` override, one or more `ranges`, a numeric `priority` (smaller = higher precedence), `stopIfTrue`, and `enabled` flag. The `format` carries only visual properties (`backgroundColor`, `color`, `fontWeight`, `fontStyle`, `underline`, `strikethrough`) - it never writes back to `cell.styleId`.
 
 ### Supported Condition Types
 
@@ -413,25 +414,25 @@ Duplicate / unique / top-bottom / above-below rules need a value-frequency stati
 
 ### Insert / Delete Propagation
 
-`shiftFormulaRefsSafe` in the CF engine reuses the same `shiftFormulaRefs` function from the formula engine — so `$B$2` (absolute) stays locked while `A1` (relative) shifts. Rule ranges also expand/shrink accordingly; ranges completely removed from the sheet are auto-deleted.
+`shiftFormulaRefsSafe` in the CF engine reuses the same `shiftFormulaRefs` function from the formula engine - so `$B$2` (absolute) stays locked while `A1` (relative) shifts. Rule ranges also expand/shrink accordingly; ranges completely removed from the sheet are auto-deleted.
 
 ### Render-time Style Synthesis
 
-`resolveConditionalFormatting` is called per viewport cell inside `drawCells`. It walks all enabled rules whose ranges contain the cell, applies priority-merging, and produces a temporary `cfStyle`. `applyCfFormat` merges this onto the base resolved style, composing `backgroundColor`, `color`, `fontWeight`, `fontStyle`, `underline`, and `strikethrough` — including correct handling of merged cells (CF applies to the anchor cell and propagates to the entire merge region).
+`resolveConditionalFormatting` is called per viewport cell inside `drawCells`. It walks all enabled rules whose ranges contain the cell, applies priority-merging, and produces a temporary `cfStyle`. `applyCfFormat` merges this onto the base resolved style, composing `backgroundColor`, `color`, `fontWeight`, `fontStyle`, `underline`, and `strikethrough` - including correct handling of merged cells (CF applies to the anchor cell and propagates to the entire merge region).
 
 ### UI Components
 
 | File | Role |
 |------|------|
 | `conditional-format-menu.vue` | Toolbar dropdown: preset rules (highlight cells, blank, duplicate, unique), New Rule, Manage Rules, Clear Rules submenu. Teleport-based submenus with hover-intent (150ms debounce) for cross-gap hover transitions |
-| `conditional-format-rule-editor.vue` | "New Rule" dialog: condition type selector (reuses `SpDropdown`), threshold inputs, format panel (background color picker, text color picker, bold, italic, underline, strikethrough — all reuse toolbar picker/button styles), application range auto-filled from current selection |
+| `conditional-format-rule-editor.vue` | "New Rule" dialog: condition type selector (reuses `SpDropdown`), threshold inputs, format panel (background color picker, text color picker, bold, italic, underline, strikethrough - all reuse toolbar picker/button styles), application range auto-filled from current selection |
 | `conditional-format-manager.vue` | "Manage Rules" dialog: list all rules for the active sheet, drag-to-reorder priority toggle, edit/delete per rule, clear all / clear selection |
 
 ---
 
 ## Data Validation
 
-Excel-style data validation stored per-sheet in `SheetState.dataValidations` (array of `DataValidationRule`). The engine lives in `spreader/core/data-validation.ts` — pure-logic, zero Vue/Canvas deps, with unit tests in `test/data-validation.test.ts` and `test/data-validation-integration.test.ts`.
+Excel-style data validation stored per-sheet in `SheetState.dataValidations` (array of `DataValidationRule`). The engine lives in `spreader/core/data-validation.ts` - pure-logic, zero Vue/Canvas deps, with unit tests in `test/data-validation.test.ts` and `test/data-validation-integration.test.ts`.
 
 ### Rule Structure
 
@@ -441,7 +442,7 @@ Each rule has a stable `id`, a `type`, an `operator`, criterion values `formula1
 
 | Type | Description |
 |------|-------------|
-| `any` | No constraint — selecting it on save clears validation for the range |
+| `any` | No constraint - selecting it on save clears validation for the range |
 | `list` | In-cell dropdown from fixed values or a cell range |
 | `wholeNumber` / `decimal` | Numeric constraint |
 | `date` / `time` | Date / time constraint (ISO, `YYYY年M月D日`, US `m/d/yyyy`, or Excel serial) |
@@ -456,7 +457,7 @@ List validation resolves its items from either fixed `values` (`{ type: 'values'
 
 ### Validation Flow
 
-Validation runs **before** the value is committed. `commitEdit` returns `Promise<boolean>` — `false` means a Stop-level violation rejected the edit and the editor state is preserved. Warning/Information alerts call `showValidationAlert` and await user confirmation before proceeding. When multiple rules target the same range, **all** must pass (`rules.every()`).
+Validation runs **before** the value is committed. `commitEdit` returns `Promise<boolean>` - `false` means a Stop-level violation rejected the edit and the editor state is preserved. Warning/Information alerts call `showValidationAlert` and await user confirmation before proceeding. When multiple rules target the same range, **all** must pass (`rules.every()`).
 
 ### Range Index
 
@@ -464,7 +465,7 @@ A spatial row-band index (`DvIndex`) maps a (row, col) lookup to candidate rules
 
 ### Atomic Paste / Auto Fill
 
-Copy/paste and Auto Fill compute every candidate first, run `validateCells`, and cancel the whole operation if any Stop-level violation occurs — no partial commit.
+Copy/paste and Auto Fill compute every candidate first, run `validateCells`, and cancel the whole operation if any Stop-level violation occurs - no partial commit.
 
 ### Insert / Delete Propagation
 
@@ -514,7 +515,7 @@ Inserting/deleting rows or columns shifts group ranges via `addOutlineForInsert`
 
 ## Cell Notes
 
-Excel-style cell notes (comments), fully independent from cell values and styles. The engine lives in `spreader/core/notes.ts` — pure-logic, zero Vue/Canvas deps; the UI overlay is `components/note-overlay.vue`.
+Excel-style cell notes (comments), fully independent from cell values and styles. The engine lives in `spreader/core/notes.ts` - pure-logic, zero Vue/Canvas deps; the UI overlay is `components/note-overlay.vue`.
 
 ### Data Model
 
@@ -533,7 +534,7 @@ interface CellNote {
 - **`CellData.noteId`**: Per-cell reference pointing into `SheetState.notes`
 - **`SheetModelData.notes`**: v-model serialized note pool, keyed by noteId
 
-The Note Pool design ensures that sort, insert/delete row/column, and other cell-moving operations carry `noteId` together with the cell data — notes never get orphaned.
+The Note Pool design ensures that sort, insert/delete row/column, and other cell-moving operations carry `noteId` together with the cell data - notes never get orphaned.
 
 ### Entry Points
 
@@ -544,7 +545,7 @@ The Note Pool design ensures that sort, insert/delete row/column, and other cell
 ### Rendering
 
 - Cells with a note show a 6px red triangle indicator in the top-right corner, drawn on Canvas (zero DOM cost)
-- The `note-overlay.vue` component is a Vue DOM overlay with `position: absolute` mounted inside `.spreadsheet-wrapper`, constrained by `overflow: hidden` to the table area — it never spills over the toolbar, row/column headers, frozen panes, or scrollbars
+- The `note-overlay.vue` component is a Vue DOM overlay with `position: absolute` mounted inside `.spreadsheet-wrapper`, constrained by `overflow: hidden` to the table area - it never spills over the toolbar, row/column headers, frozen panes, or scrollbars
 - Z-index layering: non-frozen overlays sit *below* the freeze canvas (z-index: 0 vs 1), frozen-region overlays sit *above* it (z-index: 2); scrollbars (z-index: 3) always stay on top for interactivity
 
 ### Author Name
@@ -664,6 +665,7 @@ A dedicated border storage & rendering mechanism (`spreader/core/border-pool.ts`
 - **Shared-border resolution**: adjacent cells' shared border is resolved at render time via `resolveSharedBorder()`: wider wins, then the first side on equal width; setting a border no longer mutates neighboring cells.
 - **Merged cells**: merged-region borders are stored at the anchor (top-left); internal borders are masked, outer boundaries are resolved segment-wise against neighbors, and the four corners fill in corner blocks.
 - **Legacy compatibility**: legacy inline border props (`borderTopWidth`, etc., deprecated) are auto-migrated via `migrateBordersInStyles()` on load.
+- **Per-side color (decoupled from line type)**: color lives on each `BorderSide` (`{ width; color; style }`) as a standard HEX string; `''` / omitted means "auto" and renders as the default `#444`. Changing the color only touches `color` and keeps `width`/`style`; changing the line type only touches `width` and keeps the existing `color`. The border-color selector (inside the border picker, reuses the text-color palette with an **Automatic** entry) colors **only existing borders** - it never creates a border that isn't there - and each actual edge is updated independently, so recoloring one side never overwrites a shared edge on the neighbor. Pure logic lives in `core/border-color.ts` (`withBorderColor` / `withBorderWidth` / `planBorderColorChanges` / `resolveSelectionBorderColor`), fully decoupled from Vue/Canvas and unit-tested.
 
 ---
 

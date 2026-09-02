@@ -17,6 +17,14 @@ export interface BorderSide {
   width?: number;
   color?: string;
   style?: string;  // 预留：solid/dashed/dotted 等
+  /**
+   * 渲染优先级标记（可选）：该边由一次边框操作「显式写入」时置为 true。
+   * 作用：相邻公共边解析（resolveSharedBorder）中，若仅一侧带 owner，则该侧优先，
+   * 用于修复「选区外框/上边框/左边框被相邻单元格旧 border 覆盖」的问题。
+   * 属于持久化数据（随 BorderPool 一起序列化）；旧数据缺省视为 undefined（非 owner）。
+   * 不表示跨单元格同步；A.right 与 B.left 仍各自独立存储。
+   */
+  owner?: boolean;
 }
 
 /** 四边边框组合 */

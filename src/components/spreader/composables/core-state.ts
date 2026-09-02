@@ -246,7 +246,7 @@ export interface CoreState {
   // 编辑状态
   startEdit: (initialValue?: string) => void;
   /** 提交编辑：数据验证发生在写入之前。
-   *  @returns Promise<boolean> —— true 表示已写入；false 表示被数据验证拦截（仍保持编辑态） */
+   *  @returns Promise<boolean>：true 表示已写入；false 表示被数据验证拦截（仍保持编辑态） */
   commitEdit: () => Promise<boolean>;
   cancelEdit: () => void;
 
@@ -600,7 +600,7 @@ export function createCoreState(
     if (!ctx) return { ascent: size * 0.88, descent: size * 0.28 };
     ctx.font = key;
 
-    // 1) 优先使用 TextMetrics.fontBoundingBoxAscent / Descent —— 这是字体级别的、
+    // 1) 优先使用 TextMetrics.fontBoundingBoxAscent / Descent：这是字体级别的、
     //    与具体文本内容无关的「字体全包围盒」度量，能统一覆盖拉丁、CJK、
     //    组合重音、下标字母等所有字形，避免纯英文 vs 含中文 ascent 不一致。
     const probe = ctx.measureText(' ');
@@ -1173,7 +1173,7 @@ export function createCoreState(
     }
 
     // 向下探测：从表头行向下逐行延伸到该列范围连续有内容的最后一行；
-    // 一旦碰到（跨多格）已合并单元格即停止，合并单元格不计入数据区——其往往属独立分区而非列表数据。
+    // 一旦碰到（跨多格）已合并单元格即停止，合并单元格不计入数据区，其往往属独立分区而非列表数据。
     let bottom = anchorRow;
     while (bottom < dims.rowCount - 1) {
       const next = bottom + 1;
@@ -1311,7 +1311,7 @@ export function createCoreState(
     if (selectionMode.value === 'cell' || selectionMode.value === 'all') {
       return c >= s.startCol && c <= s.endCol && r >= s.startRow && r <= s.endRow;
     }
-    // 'row' / 'col' 模式：选区矩形没有被 expand，判断「穿透」合并格 ——
+    // 'row' / 'col' 模式：选区矩形没有被 expand，判断「穿透」合并格。
     // 单元格自身坐标落在矩形内即视为选中，不再要求整个合并格覆盖到矩形。
     return c >= s.startCol && c <= s.endCol && r >= s.startRow && r <= s.endRow;
   }
@@ -1418,7 +1418,7 @@ export function createCoreState(
       return;
     }
     const val = String(v);
-    // 常规单元格：常见日期/时间/日期时间字符串自动识别（对齐 Excel 输入语义）——
+    // 常规单元格：常见日期/时间/日期时间字符串自动识别（对齐 Excel 输入语义）。
     // 转为序列值并套用对应格式代码；仅当当前格式为常规时生效（文本/已设格式不干预）
     if (!val.startsWith('=')) {
       const oldStyle = resolveStyleFn(cells[k]);

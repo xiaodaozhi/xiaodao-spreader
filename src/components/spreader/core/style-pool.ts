@@ -1,5 +1,5 @@
 /**
- * StylePool — 样式池，用于减少重复样式数据的存储体积。
+ * StylePool - 样式池，用于减少重复样式数据的存储体积。
  *
  * 核心思路：
  *  - 每个 Sheet 维护一个 styles: CellStyle[] 数组，styles[0] 始终为默认空样式 {}。

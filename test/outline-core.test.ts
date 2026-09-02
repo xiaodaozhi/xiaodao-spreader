@@ -47,14 +47,14 @@ test('分组：不相交 OK', () => {
   assert.equal(v.ok, true);
 });
 
-test('分组：仅一层——完全包含被拒绝（2~20 内再建 5~10 → outlineTooDeep）', () => {
+test('分组：仅一层，完全包含被拒绝（2~20 内再建 5~10 → outlineTooDeep）', () => {
   const ex = [row('A', 2, 20, false)];
   const v = validateGroup(ex, 5, 10);
   assert.equal(v.ok, false);
   assert.equal(v.code, 'outlineTooDeep');
 });
 
-test('分组：仅一层——嵌套被拒绝（A 2~20、B 5~10 → B 的创建即 outlineTooDeep）', () => {
+test('分组：仅一层，嵌套被拒绝（A 2~20、B 5~10 → B 的创建即 outlineTooDeep）', () => {
   const a = addOutline([], 'row', 2, 20, 'A').outlines;
   // A 已存在，B 完全位于 A 内部 → 嵌套，应被拒绝
   const v = validateGroup(a, 5, 10);

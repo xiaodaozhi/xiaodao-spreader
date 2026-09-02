@@ -1,5 +1,5 @@
 /**
- * BorderPool — 边框池，用于减少重复边框数据的存储体积。
+ * BorderPool - 边框池，用于减少重复边框数据的存储体积。
  *
  * 核心思路：
  *  - 每个 Sheet 维护一个 borders: BorderStyle[] 数组，borders[0] 始终为默认空边框 {}。
@@ -56,11 +56,13 @@ export class BorderPool {
     const obj: Record<string, unknown> = {};
     for (const side of sides) {
       const s = border[side];
-      if (s && (s.width !== undefined || s.color !== undefined || s.style !== undefined)) {
+      if (s && (s.width !== undefined || s.color !== undefined || s.style !== undefined || s.owner !== undefined)) {
         const sideObj: Record<string, unknown> = {};
         if (s.width !== undefined) sideObj.width = s.width;
         if (s.color !== undefined) sideObj.color = s.color;
         if (s.style !== undefined) sideObj.style = s.style;
+        // owner 影响公共边解析优先级，必须纳入去重 key，否则带/不带 owner 的边框会复用同一 id
+        if (s.owner !== undefined) sideObj.owner = s.owner;
         obj[side] = sideObj;
       }
     }

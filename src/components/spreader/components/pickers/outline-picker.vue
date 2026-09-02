@@ -33,7 +33,7 @@ interface OutlineItem {
 
 // 工具栏「分组」菜单项：与行列右键菜单「分组」子菜单同构的 5 个动词（添加分组 → 取消分组 → 清除分组 → 全部展开 → 全部折叠），
 // 按用户"按右键分组子菜单整一整"的要求排定，顺序保持与右键一致，不要擅改。
-// 工具栏按钮仅在选中整行/整列时可用（axis 非 null），菜单项直接作用于该轴，不弹「行/列」子菜单——
+// 工具栏按钮仅在选中整行/整列时可用（axis 非 null），菜单项直接作用于该轴，不弹「行/列」子菜单。
 // 轴已由选区决定（选中行→rows，选中列→cols）。action key 形如 `group-rows`/`expand-cols`。
 const ITEMS: OutlineItem[] = [
   { key: 'group', i18nKey: 'outlineAddGroup' },

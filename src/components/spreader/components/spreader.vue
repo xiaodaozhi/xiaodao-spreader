@@ -187,7 +187,7 @@ const canSort = computed(() => {
 });
 
 // 筛选可用条件：已存在筛选态（按钮选中态）时始终可用（点击即清除整个筛选）；
-// 否则若选区命中任何跨多格合并单元格则禁用——合并单元格会破坏表头/数据探测，不应进入筛选态。
+// 否则若选区命中任何跨多格合并单元格则禁用：合并单元格会破坏表头/数据探测，不应进入筛选态。
 const canFilter = computed(() => {
   if (coreState.getFilter() !== null) return true;
   const sel = coreState.selection;
@@ -644,6 +644,8 @@ const setDimInputRef = (el: unknown) => {
       :cached-fill-color="undoStyles.cachedFillColor"
       :border-menu-open="bordersMerge.borderMenuOpen"
       :cached-border="bordersMerge.cachedBorder"
+      :cached-border-color="bordersMerge.cachedBorderColor"
+      :border-color="bordersMerge.BORDER_COLOR"
       :sort-menu-open="sortMenuOpen"
       :cached-sort-order="cachedSortOrder"
       :can-sort="canSort"
@@ -701,6 +703,7 @@ const setDimInputRef = (el: unknown) => {
       @apply-fill-color="undoStyles.applyCachedFillColor"
       @update:border-menu-open="undoStyles.onBorderMenuToggle($event)"
       @border-change="bordersMerge.onBorderChange($event)"
+      @border-color-change="bordersMerge.onBorderColorChange($event)"
       @apply-border="bordersMerge.applyCachedBorder"
       @update:sort-menu-open="sheetsOps.onSortMenuToggle($event)"
       @sort-change="sheetsOps.onSortChange($event)"

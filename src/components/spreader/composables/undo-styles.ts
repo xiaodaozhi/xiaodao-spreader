@@ -158,7 +158,7 @@ export function createUndoStyles(
   function restoreSnap(snap: UndoSnap) {
     const liveSheets = sheetsCtx.sheets.value;
     sheetsCtx.sheets.value = snap.sheets.map((x, i) => {
-      // preserve current freeze state — freeze is view state, not cell data; must not be reverted by undo
+      // preserve current freeze state - freeze is view state, not cell data; must not be reverted by undo
       const currentFreeze = liveSheets[i]?.freeze ?? { rows: 0, cols: 0 };
       return {
         ...x,

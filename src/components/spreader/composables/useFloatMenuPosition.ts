@@ -48,7 +48,7 @@ export function useFloatMenuPosition() {
     const spaceAbove = r.top - b.top - 8;
     const up = spaceBelow < h && spaceAbove > 0;
     const ideal = up ? r.top - h - 4 : r.bottom + 4;
-    // 下界：以 b.top + 8 为准，但不高于「紧贴 trigger 下方」——否则 trigger 位于有效区之上时
+    // 下界：以 b.top + 8 为准，但不高于「紧贴 trigger 下方」，否则 trigger 位于有效区之上时
     // （工具栏按钮在表格容器之外）菜单会被 b.top 硬推下去，与按钮脱开一大截。
     const lower = Math.min(b.top + 8, r.bottom + 4);
     const top = Math.max(lower, Math.min(b.bottom - h - 8, ideal));

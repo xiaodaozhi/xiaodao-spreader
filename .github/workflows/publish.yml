@@ -66,7 +66,7 @@ jobs:
 
       - run: pnpm run build
 
-      # GitHub Packages requires scoped names — temporarily rename
+      # GitHub Packages requires scoped names - temporarily rename
       - run: npm pkg set name=@xiaodaozhi/xiaodao-spreader
       - run: npm pkg set publishConfig.registry=https://npm.pkg.github.com
 

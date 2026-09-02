@@ -73,7 +73,7 @@ function evalRule(
 
 // ============ 1. List（常量列表） ============
 
-test('List: 北京,上海,广州 —— 上海 valid / 深圳 invalid', () => {
+test('List: 北京,上海,广州 - 上海 valid / 深圳 invalid', () => {
   const r = rule({ type: 'list', values: ['北京', '上海', '广州'] });
   assert.equal(evalRule(r, '上海', 0, 0), true);
   assert.equal(evalRule(r, '深圳', 0, 0), false);
@@ -206,7 +206,7 @@ test('Text Length <= 10：中文 / Emoji 按码点统计', () => {
 
 // ============ 8. Custom Formula ============
 
-test('Custom: =AND(B2>=0,B2<=100) —— 50 valid / 101 invalid', () => {
+test('Custom: =AND(B2>=0,B2<=100) - 50 valid / 101 invalid', () => {
   // 应用范围 B2:B100（col=1, row=1..99）
   const r = rule({
     type: 'custom',

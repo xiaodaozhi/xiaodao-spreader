@@ -1,5 +1,5 @@
 /**
- * Border Icon — 边框图标的单一数据源。
+ * Border Icon - 边框图标的单一数据源。
  *
  * toolbar 主按钮与 border-picker 下拉项渲染的是同一套「田字型」边框图标，
  * 此前两处各维护一份 BORDER_SEGS / SOLID_SEGS / THICK_SEGS / segRole，

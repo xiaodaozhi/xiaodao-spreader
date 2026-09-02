@@ -32,7 +32,7 @@ export function countContaining(outlines: DimensionOutline[], start: number, end
   return n;
 }
 
-/** 两个闭区间是否嵌套（严格包含或不相交）——不产生部分重叠 */
+/** 两个闭区间是否嵌套（严格包含或不相交）：不产生部分重叠 */
 function isNestedPair(aS: number, aE: number, bS: number, bE: number): boolean {
   // a contains b
   if (aS <= bS && bE <= aE) return true;

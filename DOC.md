@@ -528,7 +528,7 @@ The `ThemeColors` interface includes:
 - **Auto Filter (AutoFilter)**: *now implemented, see [Section 23](#23-auto-filter-autofilter)*
 - **Data Validation**: *now implemented, see [Section 26](#26-data-validation)*
 - **Row / Column Grouping (Outline)**: *now implemented, see [Section 27](#27-row--column-grouping-outline)*
-- **Touch & Mobile Interaction**: *now implemented — every mouse path has a symmetric touch path (select / context menu / filter hit-test / resize / range select / format brush / tab menu; popups close on outside tap). See [Section 24](#24-touch--mobile-interaction).*
+- **Touch & Mobile Interaction**: *now implemented - every mouse path has a symmetric touch path (select / context menu / filter hit-test / resize / range select / format brush / tab menu; popups close on outside tap). See [Section 24](#24-touch--mobile-interaction).*
 - **Charts**
 
 ### 13.4 Performance Optimization
@@ -1098,7 +1098,7 @@ type FilterColumn =
 
 - `range.startRow` is the header row (always visible, never filtered); only rows `startRow+1 … endRow` are hidden.
 - Only columns inside `range` get an arrow (`isColumnInFilterRange`); outside columns (incl. column A / G) show none.
-- Hidden rows use the existing `filteredOutRows` + visible-row mapping; rows are **never deleted or copied** — original row indices are preserved.
+- Hidden rows use the existing `filteredOutRows` + visible-row mapping; rows are **never deleted or copied** - original row indices are preserved.
 
 ### 23.2 Enable & toggle
 
@@ -1120,7 +1120,7 @@ Triggered by the toolbar **Data → Filter** or `Ctrl+Shift+L` → `toggleAutoFi
 
 ### 23.4 Filter panel
 
-`filter-popup.vue` reuses the existing engine; the title shows the column's header text (not the column letter). Local state (`selected` / `blankChecked`) is committed to the sheet via `syncValuesFilter()` only on **OK** — unchecking items never affects the grid immediately. Supports value / text / number / date filters, search, blanks, and multi-column AND; candidate values come from the corresponding column inside `range`, generated from already-filtered rows when other columns are filtered (Excel cascading behavior).
+`filter-popup.vue` reuses the existing engine; the title shows the column's header text (not the column letter). Local state (`selected` / `blankChecked`) is committed to the sheet via `syncValuesFilter()` only on **OK** - unchecking items never affects the grid immediately. Supports value / text / number / date filters, search, blanks, and multi-column AND; candidate values come from the corresponding column inside `range`, generated from already-filtered rows when other columns are filtered (Excel cascading behavior).
 
 ### 23.5 Internal API (`composables/core-state.ts`)
 
@@ -1150,7 +1150,7 @@ x-spreader is touch-first: every mouse interaction has a symmetric touch path, v
 
 - **Tap to select / long-press context menu**: tap a cell, row header, column header, or the corner select-all button to select; long-press (450ms) inside the current selection opens the right-click context menu (cell / row / column / corner) via `showCtx`. Long-press outside the selection falls back to range selection / header drag-multi-select, so gestures never conflict. Touch coordinates are converted with `makeTouchEv(clientX, clientY)` into a minimal `MouseEvent` reused by `showCtx`.
 - **Header filter arrow**: `onTouchStart` now hit-tests `isFilterButtonHit` before selection/resize, so tapping the arrow opens the AutoFilter panel.
-- **Resize columns / rows**: touch the right edge of a column header or bottom edge of a row header (8px hot zone, widened on touch) to drag width / height — mirrors the mouse resize path.
+- **Resize columns / rows**: touch the right edge of a column header or bottom edge of a row header (8px hot zone, widened on touch) to drag width / height - mirrors the mouse resize path.
 - **Range selection**: long-press a cell (450ms) then drag to draw a rectangular selection (`tSelecting` / `tSelAnchorC` / `tSelAnchorR`); long-press a row/column header then drag to expand the selection. A clear drag (>8px) switches to scrolling; a light tap keeps the single selection.
 - **Format brush**: after copying a style from a source cell, tapping the target range on touch applies it via `us.applyPaintFormat()` (mirrors mouse `onMouseUp`).
 - **Commit edit by tapping outside**: tapping empty canvas or outside the formula bar commits an in-progress cell / formula-bar edit via `acceptFormulaBarEdit()` (mirrors mouse `onMouseDown`).
@@ -1222,13 +1222,13 @@ Rules live on the sheet state (`SheetState.dataValidations: DataValidationRule[]
 
 Rule object fields: id (stable unique id, never the array index), ranges (SelectionRange[], multi-area), type, operator, formula1, formula2, listSource / values, allowBlank, showDropdown, showInputMessage, inputTitle, inputMessage, showErrorMessage, errorStyle, errorTitle, errorMessage, enabled.
 
-Type union covers eight variants: `any` (no constraint — selecting it in the dialog clears the range), `list` (dropdown of allowed values), `wholeNumber`, `decimal`, `date`, `time`, `textLength`, `custom` (formula). Operator union covers eight: `between`, `notBetween`, `equal`, `notEqual`, `greaterThan`, `greaterThanOrEqual`, `lessThan`, `lessThanOrEqual`. Error style: `stop` (reject the commit) / `warning` (let the user confirm to continue) / `information` (prompt, user decides).
+Type union covers eight variants: `any` (no constraint - selecting it in the dialog clears the range), `list` (dropdown of allowed values), `wholeNumber`, `decimal`, `date`, `time`, `textLength`, `custom` (formula). Operator union covers eight: `between`, `notBetween`, `equal`, `notEqual`, `greaterThan`, `greaterThanOrEqual`, `lessThan`, `lessThanOrEqual`. Error style: `stop` (reject the commit) / `warning` (let the user confirm to continue) / `information` (prompt, user decides).
 
 List source is either `{ type: 'values'; values: string[] }` (inline constant list) or `{ type: 'range'; range: SelectionRange; sheetId?: string }` (a cell range, same sheet or cross-sheet via `ctx.getSheetCells`).
 
 ### 26.2 Validation Engine
 
-`evaluateDataValidationRule(rule, value, col, row, ctx)` is the per-rule entry. `allowBlank` wins first: a blank value passes when not explicitly disabled (default true, matching Excel). Type evaluators reuse `parseNumericText` / `parseDateTimeInput`, so literal criteria share the exact parsing used for live input. `between` / `notBetween` use `Math.min` / `Math.max`, so the min/max order does not matter. Multiple rules on the same range must all pass — `validateCellValue` aggregates via `rules.every()` and the worst (most severe) failing rule drives the alert.
+`evaluateDataValidationRule(rule, value, col, row, ctx)` is the per-rule entry. `allowBlank` wins first: a blank value passes when not explicitly disabled (default true, matching Excel). Type evaluators reuse `parseNumericText` / `parseDateTimeInput`, so literal criteria share the exact parsing used for live input. `between` / `notBetween` use `Math.min` / `Math.max`, so the min/max order does not matter. Multiple rules on the same range must all pass - `validateCellValue` aggregates via `rules.every()` and the worst (most severe) failing rule drives the alert.
 
 ### 26.3 Range Index
 
@@ -1240,11 +1240,11 @@ Validation runs *before* `setCellValue`. `commitEdit()` returns `Promise<boolean
 
 ### 26.5 Atomic Paste / Auto Fill
 
-Paste and Auto Fill compute all candidate values first, call `validateCells()`, and cancel the entire operation if any `stop`-level violation exists — never a partial write. Copy carries intersecting rules with the internal clipboard and translates them onto the paste target; external plain-text paste writes values only.
+Paste and Auto Fill compute all candidate values first, call `validateCells()`, and cancel the entire operation if any `stop`-level violation exists - never a partial write. Copy carries intersecting rules with the internal clipboard and translates them onto the paste target; external plain-text paste writes values only.
 
 ### 26.6 Range Shift on Insert / Delete
 
-`adjustDvRangeForInsert` / `adjustDvRangeForDelete` reuse the same propagation as conditional formatting. Dynamic `ensureCapacity` expansion does **not** auto-grow validation ranges — this is intentionally distinct from Insert Row semantics.
+`adjustDvRangeForInsert` / `adjustDvRangeForDelete` reuse the same propagation as conditional formatting. Dynamic `ensureCapacity` expansion does **not** auto-grow validation ranges - this is intentionally distinct from Insert Row semantics.
 
 ### 26.7 UI Components
 
@@ -1272,7 +1272,7 @@ The type union already reserves room for more operators and list-source variants
 
 ## 27. Row / Column Grouping (Outline)
 
-Excel-style row/column grouping and collapsing. The engine lives in `spreader/core/outline-core.ts` — pure functions with zero Vue / DOM dependencies; the state layer is `composables/core-state.ts` (rowOutlines / columnOutlines plus add/remove/collapse/shift methods); rendering and interaction live in `composables/interactions.ts`. Unit tests: `test/outline-core.test.ts`.
+Excel-style row/column grouping and collapsing. The engine lives in `spreader/core/outline-core.ts` - pure functions with zero Vue / DOM dependencies; the state layer is `composables/core-state.ts` (rowOutlines / columnOutlines plus add/remove/collapse/shift methods); rendering and interaction live in `composables/interactions.ts`. Unit tests: `test/outline-core.test.ts`.
 
 ### 27.1 Data Model
 
@@ -1280,7 +1280,7 @@ Groups are stored per-sheet and per-axis in `SheetState.rowOutlines` / `columnOu
 
 - a stable `id` (`row-N` / `col-N`; array indices are forbidden)
 - `start` / `end`: 0-based inclusive range
-- `level`: always 1 (`MAX_OUTLINE_LEVEL = 1` — one level of grouping only)
+- `level`: always 1 (`MAX_OUTLINE_LEVEL = 1` - one level of grouping only)
 - `collapsed`: collapse state
 
 ### 27.2 Validation Rules
@@ -1290,7 +1290,7 @@ Groups are stored per-sheet and per-axis in `SheetState.rowOutlines` / `columnOu
 - `outlineInvalid`: start > end or non-integer indices
 - `outlineMinSize`: at least 2 consecutive rows/columns required
 - `outlineCrossing`: partial overlap with an existing group (neither disjoint nor fully containing, decided by `isNestedPair`)
-- `outlineTooDeep`: nesting (countContaining > 0 pushes level past 1) — message: "groups cannot nest, only one level is supported"
+- `outlineTooDeep`: nesting (countContaining > 0 pushes level past 1) - message: "groups cannot nest, only one level is supported"
 
 Before creating a group the selection must cover whole rows (startCol === 0 and endCol === colCount - 1) or whole columns, otherwise the "select entire rows or columns first" hint is shown. Ungrouping requires the selection to **fully cover** at least one group (`rs <= o.start && o.end <= re`), otherwise a hint asks the user to adjust the selection.
 
@@ -1298,7 +1298,7 @@ Before creating a group the selection must cover whole rows (startCol === 0 and 
 
 - Group ranges get alternating background colors in the row/column header band (`buildOutlineColorMap` assigns alternating colors by group order).
 - ± collapse buttons (`OUTLINE_BTN`, ~9px) float inside the header band (`rowOutlineAnchorX` / `colOutlineAnchorY`); no separate gutter partition is reserved (`getOutlineGutterSize` is always 0, the grid origin never shifts).
-- Collapsed rows/columns are skipped during content (drawCells), border, and header-text rendering (`isRowCollapsed` / `isColumnCollapsed` — the 0-size guard prevents ghost stripes); merged cells straddling the freeze line are drawn per pane.
+- Collapsed rows/columns are skipped during content (drawCells), border, and header-text rendering (`isRowCollapsed` / `isColumnCollapsed` - the 0-size guard prevents ghost stripes); merged cells straddling the freeze line are drawn per pane.
 - `afterOutlineChange` is the shared tail for any structural/collapse mutation: re-clamp scroll, schedule render, emit v-model.
 
 ### 27.4 Coordinate Shifting
@@ -1307,7 +1307,7 @@ On row/column insert/delete, `addOutlineForInsert` / `addOutlineForDelete` shift
 
 ### 27.5 UI Entry Points
 
-- **Toolbar "Group" dropdown** (`pickers/outline-picker.vue`, button sits between Sort and Filter): enabled only when whole rows/columns are selected (the `outlineAxis` computed drives button `:disabled`; the Teleport overflow condition is unaffected by graying-out). Five verb items (Add Group → Ungroup → Clear Outline → Expand All → Collapse All, matching the context menu) act directly on the selected axis (action keys like `group-rows` / `expand-cols`) — no "rows/columns" submenu. Positioning reuses `useFloatMenuPosition`.
+- **Toolbar "Group" dropdown** (`pickers/outline-picker.vue`, button sits between Sort and Filter): enabled only when whole rows/columns are selected (the `outlineAxis` computed drives button `:disabled`; the Teleport overflow condition is unaffected by graying-out). Five verb items (Add Group → Ungroup → Clear Outline → Expand All → Collapse All, matching the context menu) act directly on the selected axis (action keys like `group-rows` / `expand-cols`) - no "rows/columns" submenu. Positioning reuses `useFloatMenuPosition`.
 - **Row/column context menu "Group" submenu** (interactions.ts): dispatches per right-clicked axis (Add Row Group / Ungroup Rows / Clear Outline / Expand All / Collapse All).
 - Validation failures go through `alertOutline`: the host-injected in-app dialog (`showOutlineAlert` hook) when available, falling back to `window.alert`.
 

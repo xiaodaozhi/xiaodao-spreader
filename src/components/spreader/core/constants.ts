@@ -170,6 +170,10 @@ export const i18n: Record<string, Record<string, string>> = {
     colorDarkMaroon: '深栗',
     colorDarkCoffee: '深咖',
     colorInkGreen: '墨绿',
+    colorPurple: '紫色',
+    colorCyan: '青色',
+    // 边框
+    borderColor: '边框颜色',
     // 数字格式（Number Format）
     numberFormat: '数字格式',
     nfGeneral: '常规',
@@ -565,6 +569,10 @@ export const i18n: Record<string, Record<string, string>> = {
     colorDarkMaroon: 'Dark Maroon',
     colorDarkCoffee: 'Dark Coffee',
     colorInkGreen: 'Ink Green',
+    colorPurple: 'Purple',
+    colorCyan: 'Cyan',
+    // Border
+    borderColor: 'Border Color',
     // Number Format
     numberFormat: 'Number Format',
     nfGeneral: 'General',

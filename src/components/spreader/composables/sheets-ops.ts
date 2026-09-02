@@ -781,7 +781,7 @@ export function createSheetsOps(
       if (entry.anchorCell) {
         const v = entry.anchorCell.value, sid = entry.anchorCell.styleId;
         if (v === '' && !sid) {
-          // s.delCell(entry.newAnchorKey); — 不主动删，避免破坏已经由 cells 主流程正确就位的空 cell
+          // s.delCell(entry.newAnchorKey); 不主动删，避免破坏已经由 cells 主流程正确就位的空 cell
         } else {
           s.cells[entry.newAnchorKey] = { value: v, styleId: sid || undefined };
         }

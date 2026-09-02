@@ -6,6 +6,7 @@ import type { UndoStylesState } from './undo-styles';
 import { formatNumber, shouldAlignRightByDefault, NF_INVALID_VALUE, isFormatOverflowsToHashes, isInvalidDisplayValue } from '../core/number-format';
 import { migrateCells } from '../core/style-pool';
 import { migrateBordersInStyles } from '../core/border-pool';
+import { DEFAULT_BORDER_COLOR } from '../core/border-color';
 import type { BordersMergeState } from './borders-merge';
 import type { SheetsOpsState } from './sheets-ops';
 import type { ContextMenuItem, BorderSide, ThemeColors, SelectionRange, FilterColumn, SheetFilter, CellData, DataValidationRule } from '../core/types';
@@ -243,7 +244,7 @@ export function createInteractions(
     return s.hitRow(logicalY);
   }
 
-  const BORDER_COLOR = '#444';
+  const BORDER_COLOR = DEFAULT_BORDER_COLOR;
   /** 单元格内下拉箭头的命中/绘制宽度 */
   const DV_DROPDOWN_W = 14;
   // ---- 行列分组（Outline）绘制常量 ----
@@ -457,7 +458,7 @@ export function createInteractions(
               const hasU = st?.underline === 'underline' || cf?.underline === 'underline';
               const hasS = st?.strikethrough === 'line-through' || cf?.strikethrough === 'line-through';
               const txtColor = cf?.color || (typeof st?.color === 'string' ? st.color : '');
-              // 默认水平对齐：仅显示时生效（不落 style）— 数值类格式/常规数字 右对齐，其他左对齐
+              // 默认水平对齐：仅显示时生效（不落 style）：数值类格式/常规数字 右对齐，其他左对齐
               const hAlign = typeof st?.textAlign === 'string' ? st.textAlign : (shouldAlignRightByDefault(rawV, nf) ? 'right' : 'left');
               const vAlign = typeof st?.verticalAlign === 'string' ? st.verticalAlign : 'top';
               rCtx.fillStyle = txtColor || cs.cellText;
@@ -663,8 +664,8 @@ export function createInteractions(
     // ---- 合并单元格：按各 pane 视口相交分段绘制 ----
     // 每个 pane 调用时只绘制与自身视口 [vx,vy,vw,vh] 相交的那一段：
     // 背景/网格/文本锚定在合并左上角（anchor），因此文本只会在包含 anchor 的 pane 中可见，
-    // 其余 pane 仅显示该段的背景与边框——实现「冻结部分冻结、非冻结部分随 body 滚动」。
-    // 合并文本：布局始终基于「逻辑宽高」(logicW/logicH)——即合并未滚动时的完整尺寸，
+    // 其余 pane 仅显示该段的背景与边框，实现「冻结部分冻结、非冻结部分随 body 滚动」。
+    // 合并文本：布局始终基于「逻辑宽高」(logicW/logicH)：即合并未滚动时的完整尺寸，
     // 不随 scrollX/Y 变化；绘制起点 (drawX/drawY) 按 pane 平移：冻结 pane 用 anchor 原位置（不叠加滚动），
     // body pane 用 anchor - scroll，靠两层 clip 拼出「冻结段固定显示开头 + body 段随滚动移动」。
     const drawMergeText = (ctx: CanvasRenderingContext2D, col: number, row: number, logicW: number, logicH: number, drawX: number, drawY: number): void => {
@@ -917,7 +918,7 @@ export function createInteractions(
         const aR = m.startRow;
         const eC = m.endCol;
         const eR = m.endRow;
-        // 关键：合并的屏幕矩形不能直接套 anchor 的 cellToScreenRect——
+        // 关键：合并的屏幕矩形不能直接套 anchor 的 cellToScreenRect。
         // anchor 在冻结列时不叠加 sx，但 endCol 跨到 body 列会叠加 sx，
         // 所以宽度必须用 (eCell.right - aCell.left) 算出，而非 anchor 自身的 width。
         const aRect = s.cellToScreenRect(aR, aC);
@@ -1610,7 +1611,7 @@ export function createInteractions(
   let fbGate_committing = false;
   /**
    * 公式栏是否被用户主动修改过（onFormulaBarInput 置 true；其余初始化/重置路径置 false）。
-   * —— 关键作用：防止"用户仅点击 A1→再点 B2 就把 A1 清空"：
+   * 关键作用：防止"用户仅点击 A1→再点 B2 就把 A1 清空"：
    *   !editingCell 场景下，watch(activeCell 切换) 会把 draft 重置为 ''；如果没有 fbDirty，acceptFormulaBarEdit
    *   会比较 '' !== curRaw 然后 setCellValue('',curCell) 把原 activeCell 写空。只有 fbDirty=true 时才代表用户真改了。
    */
@@ -1625,7 +1626,7 @@ export function createInteractions(
   /**
    * 接受公式栏草稿 → 写入 active/editing 单元格。唯一的落盘入口。
    * 调用者：✔ 按钮 / Enter 键 / blur 失焦 / onMouseDown / onDblClick。
-   * —— 双重兜底：
+   * 双重兜底：
    *   (a) 如果 editingCell 不为空 → draft → s.editValue → commitEdit → Cell.value；
    *   (b) 如果 editingCell 已空（比如 onMouseDown 之前已经被 s.commitEdit 清掉了），
    *       仍然比较草稿和当前 activeCell 的原始值，若有差异就 saveUndo + setCellValue 再写一次，
@@ -1635,7 +1636,7 @@ export function createInteractions(
    * 接受编辑 → 写入数据模型。可能的编辑来源：
    *   1) 公式栏 textarea（实时写 formulaBarDraft.value）；
    *   2) 单元格双击进入的行内编辑器（实时写 s.editValue.value）。
-   * ⚠️ 数据源选择必须按"焦点 / 是否实际修改了草稿"来判断 —— 绝对不能统一 draft → s.editValue 覆盖，
+   * ⚠️ 数据源选择必须按"焦点 / 是否实际修改了草稿"来判断，绝对不能统一 draft → s.editValue 覆盖，
    *    否则行内编辑器的输入会被初始值 draft 覆盖，导致"点其他单元格原编辑内容丢失 / 清空单元格"严重 BUG。
    */
   /**
@@ -1649,7 +1650,7 @@ export function createInteractions(
     if (fbGate_committing) return;
     const fbRef = so.formulaBarRef.value;
     const focusOnFormulaBar = !!(fbRef && typeof document !== 'undefined' && document.activeElement === fbRef);
-    // —— 纯选区切换：既没进入编辑、公式栏也没焦点、用户也没改过公式栏 → 直接 return（核心修复：避免 watch 重置的空 draft ==='' 被当成用户输入清 activeCell）
+    // 纯选区切换：既没进入编辑、公式栏也没焦点、用户也没改过公式栏 → 直接 return（核心修复：避免 watch 重置的空 draft ==='' 被当成用户输入清 activeCell）
     if (!s.editingCell.value && !focusOnFormulaBar && !fbDirty) return;
 
     const ac = { ...s.activeCell.value };
@@ -1662,7 +1663,7 @@ export function createInteractions(
       // 关键修复：唯一允许落盘的判据是「用户真的在公式栏输入过」（fbDirty）。
       // 即便此刻公式栏仍持有焦点（例如点击画布时 mousedown 早于 blur，document.activeElement 仍是
       // formulaBarRef），只要 fbDirty=false 就说明 draft 只是被 editingCell watch 重置后的空值/旧值，
-      // 绝不能拿它覆盖单元格 —— 否则会把行内编辑器已提交（commitEdit）的原始数据清空。
+      // 绝不能拿它覆盖单元格，否则会把行内编辑器已提交（commitEdit）的原始数据清空。
       if (!fbDirty) {
         return; // 没改过公式栏：直接退出，原单元格内容保持稳定
       }
@@ -1707,9 +1708,9 @@ export function createInteractions(
       });
     } else if (focusOnFormulaBar) {
       // 2) 仅 focus 了公式栏（fbDirty=false，用户没在公式栏输入，只是"点一下看看"）：
-      //    —— 必须以行内编辑器已写入的 s.editValue.value 为准（用户可能在行内编辑器里已经改过内容；之前这里错误地直接用旧 draft.value 覆盖 s.editValue，
-      //       当 A1 原值为空/初始值且 onMouseDown e.preventDefault() 让 textarea 保持为 activeElement 时，就会把行内已编辑内容覆盖为空/原值 —— 导致"清空单元格"严重 BUG）。
-      //    —— 先把 draft 反向同步为最新 editValue（保持显示一致性），然后直接 commit s.editValue。
+      //    必须以行内编辑器已写入的 s.editValue.value 为准（用户可能在行内编辑器里已经改过内容；之前这里错误地直接用旧 draft.value 覆盖 s.editValue，
+      //       当 A1 原值为空/初始值且 onMouseDown e.preventDefault() 让 textarea 保持为 activeElement 时，就会把行内已编辑内容覆盖为空/原值，导致"清空单元格"严重 BUG）。
+      //    先把 draft 反向同步为最新 editValue（保持显示一致性），然后直接 commit s.editValue。
       formulaBarDraft.value = s.editValue.value;
       void s.commitEdit().then((ok) => {
         if (ok) {
@@ -3537,7 +3538,7 @@ export function createInteractions(
         tSC = -1;
         tSR = -1;
       }
-      // 列头/行头/全选角：长按手势——选区内长按弹右键菜单，选区外长按拖拽多选
+      // 列头/行头/全选角：长按手势：选区内长按弹右键菜单，选区外长按拖拽多选
       if (tZone === 'col' || tZone === 'row' || tZone === 'all') {
         if (tLongTimer !== null) clearTimeout(tLongTimer);
         tLongTimer = window.setTimeout(() => {
