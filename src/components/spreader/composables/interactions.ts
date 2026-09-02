@@ -256,8 +256,10 @@ export function createInteractions(
 
   /**
    * 绘制单条单元格边框边（top / bottom / left / right）。
-   *  - solid：沿用原 fillRect 实现，保持与历史渲染像素完全一致（不引入回归）；
-   *  - dashed / dotted：改用 stroke + setLineDash 实际绘制虚线 / 点线。
+   *  - solid：fillRect 实心填充，必须在填充前显式设置 fillStyle = color，
+   *    否则沿用上一条边 / 上一个格子遗留的 fillStyle（角方块 / 选区 / 条件格式
+   *    都改过 fillStyle），导致同一帧里「上/左边一种色、右/下边另一种色」的颜色错乱；
+   *  - dashed / dotted：stroke + setLineDash 实际绘制虚线 / 点线（strokeStyle 已显式赋值）。
    * 本函数只绘制「单元格边框」，不触碰网格线 / 选区框 / 冻结分隔线等非单元格边框，
    * 因此不会影响它们的绘制。
    */
@@ -268,7 +270,8 @@ export function createInteractions(
   ): void {
     const dash = borderLineDash(style, width);
     if (!dash) {
-      // solid：与历史 fillRect 行为完全一致
+      // solid：显式设填充色（颜色参数在调用处已回退为 BORDER_COLOR）
+      ctx.fillStyle = color;
       if (y1 === y2) ctx.fillRect(x1, y1, x2 - x1, width);
       else ctx.fillRect(x1, y1, width, y2 - y1);
       return;

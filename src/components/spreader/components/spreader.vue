@@ -1335,9 +1335,10 @@ const setDimInputRef = (el: unknown) => {
 .formula-bar__buttons { display: inline-flex; align-items: stretch; margin-top: 4px; margin-left: 6px; height: 28px; border: 1px solid var(--sp-formula-bar-input-border); border-radius: 2px; overflow: hidden; background: var(--sp-formula-bar-input-bg); }
 .formula-bar__btn { width: 22px; height: 28px; border: none; border-radius: 0; background: transparent; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; padding: 0; user-select: none; color: inherit; }
 .formula-bar__btn + .formula-bar__btn { border-left: 1px solid var(--sp-formula-bar-input-border); }
-.formula-bar__btn:hover { background: var(--sp-scroll-btn-hover-bg, #f0f0f0); }
-.formula-bar__btn--cancel:hover { color: #e53935; background: #fdecea; }
-.formula-bar__btn--accept:hover { color: #2e7d32; background: #e8f5e9; }
+.formula-bar__btn:hover { background: var(--sp-scroll-btn-hover-bg, #d0d0d0); }
+/* ✓ / × 按钮 hover：语义色半透明叠加，明暗主题均可见（弃用浅色专属的 #fdecea / #e8f5e9 淡底） */
+.formula-bar__btn--cancel:hover { color: #e53935; background: rgba(229, 57, 53, 0.16); }
+.formula-bar__btn--accept:hover { color: #2e7d32; background: rgba(46, 125, 50, 0.16); }
 .formula-bar__fx-icon {
   display: block;
   width: 16px;
@@ -1345,12 +1346,15 @@ const setDimInputRef = (el: unknown) => {
   color: var(--sp-formula-bar-input-color, #333);
   user-select: none;
 }
-.formula-bar__btn--fx:hover { background: var(--sp-scroll-btn-hover-bg, #f0f0f0); }
+/* fx 按钮 hover：蓝色强调（背景 + 图标变色），补齐此前仅靠 var 且 dark 下近乎不可见的问题 */
+.formula-bar__btn--fx:hover { background: rgba(0, 120, 215, 0.12); }
+.formula-bar__btn--fx:hover .formula-bar__fx-icon { color: var(--sp-toolbar-btn-active-color, #0078d7); }
 .formula-bar__input { flex: 1; min-height: 28px; height: 28px; line-height: 20px; margin-top: 4px; border: 1px solid var(--sp-formula-bar-input-border); border-radius: 2px; outline: none; padding: 3px 6px; margin-left: 4px; font-size: 13px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; color: var(--sp-formula-bar-input-color); background: var(--sp-formula-bar-input-bg); resize: none; overflow: hidden; box-sizing: border-box; }
 .formula-bar__input--expanded { height: 68px; overflow: auto; margin-bottom: 4px; }
 .formula-bar__input:focus { border-color: var(--sp-formula-bar-input-focus-border); box-shadow: 0 0 0 1px var(--sp-formula-bar-input-focus-shadow); }
 .formula-bar__toggle { width: 22px; min-width: 22px; height: 28px; margin-top: 4px; margin-left: 2px; border: 1px solid var(--sp-formula-bar-input-border); border-radius: 2px; background: var(--sp-formula-bar-input-bg); color: var(--sp-formula-bar-input-color); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; padding: 0; user-select: none; }
-.formula-bar__toggle:hover { background: var(--sp-scroll-btn-hover-bg, #e8e8e8); }
+/* 输入框展开 / 折叠按钮 hover：边框高亮 + 图标变色（明暗主题可见） */
+.formula-bar__toggle:hover { border-color: var(--sp-formula-bar-input-focus-border); color: var(--sp-toolbar-btn-active-color, #0078d7); background: rgba(0, 120, 215, 0.1); }
 .spreadsheet-wrapper { flex: 1; position: relative; overflow: hidden; background: var(--sp-wrapper-bg); }
 .grid-canvas { position: absolute; top: 0; left: 0; display: block; outline: none; cursor: cell; }
 .grid-canvas--freeze { pointer-events: none; z-index: 1; }
