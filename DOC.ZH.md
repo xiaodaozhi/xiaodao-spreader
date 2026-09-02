@@ -715,7 +715,7 @@ Canvas CSS 坐标（逻辑像素）
 
 ### 18.1 数据结构
 
-- `BorderSide`：单边边框 `{ width?, color?, style? }`（`style` 预留：solid/dashed/dotted）。
+- `BorderSide`：单边边框 `{ width?, color?, style?, owner? }`（`style` 预留：solid/dashed/dotted；`owner` 可选，由边框/选区操作写入，作为公共边解析时的渲染优先级标记）。
 - `BorderStyle`：四边组合 `{ top?, right?, bottom?, left? }`，各边独立存储。
 - `CellStyle.borderId`：样式通过 `borderId`（`borders` 数组下标）引用边框；`0` 或省略表示无边框。
 - 旧版内联属性（`borderTopWidth` / `borderBottomWidth` / `borderLeftWidth` / `borderRightWidth` / `borderColor`）标注 `@deprecated`，仅用于迁移历史数据。
@@ -741,7 +741,9 @@ Canvas CSS 坐标（逻辑像素）
 
 1. 两边均为空 → 不绘制。
 2. 仅一边存在 → 采用该边。
-3. 两边均存在：`width` 大者优先；宽度相等 → `first` 侧优先（稳定平局规则）。
+3. 两边均存在：
+   a. 若仅一侧带 `owner: true`（由边框/选区操作显式写入），则该侧在公共边解析中优先，不受宽度影响。
+   b. 否则 `width` 大者优先；宽度相等 → `first` 侧优先（稳定平局规则）。
 4. `firstSource`/`secondSource`（`'cell'`/`'merge'`）为预留参数，当前不影响优先级，合并单元格不会无条件覆盖普通单元格。
 
 渲染器绘制边框与角方块时，每条相邻边都经此函数解析。**设置边框不再同步相邻单元格**（旧的 `syncCellBorders` 机制已移除）。

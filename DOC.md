@@ -716,7 +716,7 @@ Located in `spreader/core/border-pool.ts` and `spreader/core/border-resolve.ts`.
 
 ### 18.1 Data Structures
 
-- `BorderSide`: a single border side `{ width?, color?, style? }` (`style` reserved for solid/dashed/dotted).
+- `BorderSide`: a single border side `{ width?, color?, style?, owner? }` (`style` reserved for solid/dashed/dotted; `owner` optional, set by explicit border/selection operations as a render-time priority hint for shared-edge resolution).
 - `BorderStyle`: a four-side combination `{ top?, right?, bottom?, left? }`, each side stored independently.
 - `CellStyle.borderId`: a style references a border via `borderId` (index into `borders`); `0` or omitted means no border.
 - Legacy inline props (`borderTopWidth` / `borderBottomWidth` / `borderLeftWidth` / `borderRightWidth` / `borderColor`) are marked `@deprecated`, used only for migrating historical data.
@@ -742,7 +742,9 @@ Helper functions: `getCellBorderSide` / `getCellBorder` / `setCellBorderSide` / 
 
 1. Both sides empty → do not draw.
 2. Only one side present → use that side.
-3. Both present: the larger `width` wins; on equal width → the `first` side wins (stable tie-break).
+3. Both present:
+   a. If exactly one side carries `owner: true` (set by an explicit border or selection operation), that side wins the shared edge, regardless of width.
+   b. Otherwise the larger `width` wins; on equal width → the `first` side wins (stable tie-break).
 4. `firstSource`/`secondSource` (`'cell'`/`'merge'`) are reserved parameters that currently do not affect priority: merge does not unconditionally override cell.
 
 When the renderer draws borders and corner blocks, every adjacent edge goes through this function. **Setting a border no longer synchronizes neighboring cells** (the old `syncCellBorders` mechanism has been removed).

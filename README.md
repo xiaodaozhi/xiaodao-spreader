@@ -191,7 +191,7 @@ import type {
   CellData,        // { value: string; styleId?: number }
   CellStyle,       // Typed style interface (font, color, border, alignment, etc.)
   BorderStyle,     // Four-side border { top; right; bottom; left }
-  BorderSide,      // Single border side { width; color; style }
+  BorderSide,      // Single border side { width; color; style; owner? }
   BorderSource,    // Border source 'cell' | 'merge'
   Range,           // { start: number; end: number }
   SpreadsheetOptions,
@@ -662,7 +662,7 @@ Reuses the existing engine: the title shows the column's header text (not the co
 A dedicated border storage & rendering mechanism (`spreader/core/border-pool.ts` + `border-resolve.ts`).
 
 - **Dedicated border pool**: each sheet maintains a `borders: BorderStyle[]` pool (`borders[0]` is always the empty border `{}`); styles reference borders by index (`borderId`), and identical borders are deduplicated.
-- **Shared-border resolution**: adjacent cells' shared border is resolved at render time via `resolveSharedBorder()`: wider wins, then the first side on equal width; setting a border no longer mutates neighboring cells.
+- **Shared-border resolution**: adjacent cells' shared border is resolved at render time via `resolveSharedBorder()`: wider wins, then the first side on equal width; when exactly one side carries an `owner` flag (set by an explicit border or selection operation) that side wins the shared edge regardless of width, so a freshly applied selection-boundary edge takes priority over a pre-existing neighbor edge. Setting a border no longer mutates neighboring cells.
 - **Merged cells**: merged-region borders are stored at the anchor (top-left); internal borders are masked, outer boundaries are resolved segment-wise against neighbors, and the four corners fill in corner blocks.
 - **Legacy compatibility**: legacy inline border props (`borderTopWidth`, etc., deprecated) are auto-migrated via `migrateBordersInStyles()` on load.
 - **Per-side color (decoupled from line type)**: color lives on each `BorderSide` (`{ width; color; style }`) as a standard HEX string; `''` / omitted means "auto" and renders as the default `#444`. Changing the color only touches `color` and keeps `width`/`style`; changing the line type only touches `width` and keeps the existing `color`. The border-color selector (inside the border picker, reuses the text-color palette with an **Automatic** entry) colors **only existing borders** - it never creates a border that isn't there - and each actual edge is updated independently, so recoloring one side never overwrites a shared edge on the neighbor. Pure logic lives in `core/border-color.ts` (`withBorderColor` / `withBorderWidth` / `planBorderColorChanges` / `resolveSelectionBorderColor`), fully decoupled from Vue/Canvas and unit-tested.

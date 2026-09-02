@@ -194,7 +194,7 @@ import type {
   CellData,        // { value: string; styleId?: number }
   CellStyle,       // 类型化样式接口（字体、颜色、边框、对齐等）
   BorderStyle,     // 四边边框组合 { top; right; bottom; left }
-  BorderSide,      // 单边边框 { width; color; style }
+  BorderSide,      // 单边边框 { width; color; style; owner? }
   BorderSource,    // 边框来源 'cell' | 'merge'
   Range,           // { start: number; end: number }
   SpreadsheetOptions,
@@ -667,7 +667,7 @@ scheduleRender()
 一套独立的边框存储与渲染机制（`spreader/core/border-pool.ts` + `border-resolve.ts`）。
 
 - **独立边框池**：每个 Sheet 维护 `borders: BorderStyle[]` 池（`borders[0]` 恒为空边框 `{}`），样式通过 `borderId`（数组下标）引用边框，相同边框自动去重。
-- **公共边统一解析**：相邻单元格的公共边在渲染时经 `resolveSharedBorder()` 解析，宽者优先、同宽取先侧；设置边框**不再**同步修改相邻单元格。
+- **公共边统一解析**：相邻单元格的公共边在渲染时经 `resolveSharedBorder()` 解析，宽者优先、同宽取先侧；若仅一侧带 `owner` 标记（由边框或选区操作显式写入），则该侧在公共边解析中优先、不受宽度影响，使新设置的选区边界边优先于相邻的旧边。设置边框**不再**同步修改相邻单元格。
 - **合并单元格**：合并区域边框统一存储在锚点（左上角），内部边屏蔽，外边界按行/列分段与相邻区域解析，四角补齐角方块。
 - **旧数据兼容**：旧版内联边框属性（`borderTopWidth` 等，已废弃）在加载时经 `migrateBordersInStyles()` 自动迁移。
 - **按边颜色（与线型解耦）**：颜色挂在每条独立边 `BorderSide`（`{ width; color; style }`）上，统一以标准 HEX 字符串存储；`''` 或省略表示「自动」，渲染回退默认色 `#444`。改颜色只动 `color`、保留 `width`/`style`；改线型只动 `width`、保留已有 `color`。边框颜色选择器（位于边框下拉框内，复用文字色板并含「自动」项）**只给已存在的边上色**，绝不会凭空创建不存在的边框，且每条实际边独立更新，因而重涂一侧不会覆盖相邻单元格共享边的另一侧颜色。纯逻辑集中在 `core/border-color.ts`（`withBorderColor` / `withBorderWidth` / `planBorderColorChanges` / `resolveSelectionBorderColor`），与 Vue/Canvas 完全解耦并具备单元测试。
