@@ -542,13 +542,6 @@ const noteCurrent = computed(() => {
   return coreStateRaw.getNote(ui.row, ui.col) ?? null;
 });
 const notePlaceholder = computed(() => t(coreState.locale, 'notePlaceholder'));
-/** 活动批注单元格是否在冻结区域内（决定浮层 z-index：冻结区=2 在冻结画布之上，非冻结区=0 在冻结画布之下） */
-const noteIsFrozen = computed(() => {
-  const ui = interactionsRaw.noteUi.value;
-  if (!ui) return false;
-  const f = coreState.freeze;
-  return ui.row < f.rows && ui.col < f.cols;
-});
 
 // ============ 模板赋值辅助函数（用于 @update:xxx 事件）============
 function setFontSizeMenuOpen(v: boolean) {
@@ -1048,7 +1041,6 @@ const setDimInputRef = (el: unknown) => {
         :locale="coreState.locale"
         :placeholder="notePlaceholder"
         :boundary-el="wrapperEl"
-        :frozen="noteIsFrozen"
         @save="(text: string) => interactionsRaw.saveNoteAt(interactions.noteUi!.row, interactions.noteUi!.col, text, props.noteAuthor)"
         @delete="interactionsRaw.removeNoteAt(interactions.noteUi!.row, interactions.noteUi!.col)"
         @close="interactionsRaw.closeNote()"

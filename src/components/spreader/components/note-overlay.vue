@@ -24,13 +24,10 @@ const props = withDefaults(defineProps<{
   locale: string;
   placeholder?: string;
   boundaryEl?: HTMLElement | null;
-  /** 活动单元格是否在冻结区域内（影响 z-index 层级） */
-  frozen?: boolean;
 }>(), {
   note: null,
   placeholder: '',
   boundaryEl: null,
-  frozen: false,
 });
 
 const emit = defineEmits<{
@@ -54,7 +51,9 @@ const pos = ref<{ left: number; top: number }>({ left: 0, top: 0 });
 const style = computed<CSSProperties>(() => ({
   left: pos.value.left + 'px',
   top: pos.value.top + 'px',
-  zIndex: props.frozen ? 2 : 0,
+  // 始终高于两个画布（body z:0 / freeze z:1），确保选中格的填充方块不被浮在上层；
+  // 仍低于滚动条（z:3），避免遮挡可交互的滚动条
+  zIndex: 2,
 }));
 
 function layout() {

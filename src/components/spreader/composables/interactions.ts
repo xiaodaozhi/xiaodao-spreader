@@ -1930,25 +1930,12 @@ export function createInteractions(
   /** 当前显示的批注浮层：mode=view 查看 / edit 编辑；null=关闭。
    *  仅记录逻辑坐标，显示位置由浮层组件用 cellToScreenRect 实时推导（兼容滚动/冻结/合并）。 */
   const noteUi = ref<{ mode: 'view' | 'edit'; row: number; col: number } | null>(null);
-  /** hover 打开批注的防抖计时器 */
-  let noteHoverTimer: ReturnType<typeof setTimeout> | null = null;
-  /** 当前 hover 命中的带批注单元格（防抖基准） */
-  let noteHoverCell: { row: number; col: number } | null = null;
-  function clearNoteHover() {
-    if (noteHoverTimer) {
-      clearTimeout(noteHoverTimer);
-      noteHoverTimer = null;
-    }
-    noteHoverCell = null;
-  }
   /** 按逻辑坐标打开批注浮层（view / edit）；编辑态需由宿主组件聚焦输入框 */
   function openNote(row: number, col: number, mode: 'view' | 'edit') {
-    clearNoteHover();
     noteUi.value = { mode, row, col };
   }
   /** 关闭批注浮层 */
   function closeNote() {
-    clearNoteHover();
     noteUi.value = null;
   }
   /** 右键 / Shift+F2 入口：新建或编辑批注（有则预填、无则新建） */
@@ -1973,33 +1960,6 @@ export function createInteractions(
     s.deleteCellNote(row, col);
     closeNote();
     scheduleRender();
-  }
-  /** hover 防抖：进入带批注格 300ms 后打开查看浮层；离开后延迟关闭（给鼠标移入浮层留时间） */
-  function updateNoteHover(px: number, py: number) {
-    if (noteUi.value?.mode === 'edit') return; // 编辑中不因 hover 切换
-    const inGrid = !!(px >= hwOff() && py >= hhOff());
-    const hit = inGrid ? s.screenToCell(px, py) : null;
-    const noteHit = hit && hit.col >= 0 && hit.row >= 0 && s.hasNote(hit.row, hit.col) ? hit : null;
-    const curView = noteUi.value && noteUi.value.mode === 'view' ? noteUi.value : null;
-    const _curKey = curView ? `${curView.col},${curView.row}` : null;
-    const newKey = noteHit ? `${noteHit.col},${noteHit.row}` : null;
-
-    // 仍停留在同一带批注格：不重置计时
-    if (noteHoverCell && `${noteHoverCell.col},${noteHoverCell.row}` === newKey) return;
-    noteHoverCell = noteHit ? { row: noteHit.row, col: noteHit.col } : null;
-    if (noteHoverTimer) {
-      clearTimeout(noteHoverTimer);
-      noteHoverTimer = null;
-    }
-    if (newKey) {
-      noteHoverTimer = setTimeout(() => {
-        noteHoverTimer = null;
-        if (noteUi.value?.mode !== 'edit') {
-          noteUi.value = { mode: 'view', row: noteHit!.row, col: noteHit!.col };
-          scheduleRender();
-        }
-      }, 300);
-    }
   }
   /** 命中测试：点是否落在单元格右上角的批注指示器上（优先级高于普通 Cell 选择） */
   function isNoteIndicatorHit(x: number, y: number): { row: number; col: number } | null {
@@ -3290,11 +3250,10 @@ export function createInteractions(
         return;
       }
       const p = getCanvasXY(e, cvs);
-      // 批注指示器 hover：命中指示器显示 pointer + 更新浮层（浮层只有 hover 到带批注格才打开）
+      // 批注指示器 hover：命中指示器显示 pointer（浮层改为点击单元格右上角三角打开）
       if (isNoteIndicatorHit(p.x, p.y)) {
         cvs.style.cursor = 'pointer';
       }
-      updateNoteHover(p.x, p.y);
       if (hitTestOutlineControl(p.x, p.y)) {
         cvs.style.cursor = 'pointer';
         return;
@@ -3459,6 +3418,17 @@ export function createInteractions(
       const fbRef = so.formulaBarRef.value;
       const focusOnFb = !!(fbRef && typeof document !== 'undefined' && document.activeElement === fbRef);
       if (s.editingCell.value || focusOnFb || fbDirty) acceptFormulaBarEdit();
+    }
+    // 批注指示器命中：点按单元格右上角三角直接打开查看浮层（不选择单元格，
+    // 标记 tMoved 使 onTouchEnd 提前返回，避免抬手误触发选择）
+    const hitNote = isNoteIndicatorHit(x, y);
+    if (hitNote) {
+      e.preventDefault();
+      isTouch = true;
+      tMoved = true;
+      openNote(hitNote.row, hitNote.col, 'view');
+      so.emitModelData();
+      return;
     }
     // 填充柄命中：进入 autofilling（与 mouse 共用 autoFillState），不启动滚动
     if (isFillHandleHit(x, y)) {
@@ -3731,6 +3701,8 @@ export function createInteractions(
     isTouch = false;
     if (tMoved) return;
     if (tZone === 'cell' && tSC >= 0 && tSR >= 0) {
+      // 轻点普通单元格：关闭打开的批注浮层（与鼠标点击别处关闭一致）
+      if (noteUi.value) closeNote();
       const n = Date.now();
       if (tSC === ltC && tSR === ltR && n - ltT < 300) {
         s.selectCell(tSC, tSR);
