@@ -891,5 +891,5 @@ function onErrorStyleChange(v: string | number) {
 .dv-btn--primary { border-color: #0078d7; background: #0078d7; color: #fff; }
 .dv-btn--primary:hover { background: #0069c0; }
 .dv-btn--danger { color: #c5221f; }
-.dv-btn--danger:hover { background: #fce8e6; }
+.dv-btn--danger:hover { background: var(--sp-danger-hover-bg, #fce8e6); }
 </style>

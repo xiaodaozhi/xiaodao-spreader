@@ -27,6 +27,8 @@ const props = withDefaults(defineProps<{
   triggerLabel?: string;
   /** 边界基准元素（通常是表格容器 wrapper）：菜单不得越出其可视区，见 getFloatBounds */
   boundaryEl?: HTMLElement | null;
+  /** 字体预览：为 true 时把菜单项与触发器的字体名用该字体本身渲染（字体选择器专用，value 须为 CSS font-family 串） */
+  previewFont?: boolean;
 }>(), {
   width: 'auto',
   locale: 'zh-CN',
@@ -43,6 +45,7 @@ const props = withDefaults(defineProps<{
   triggerIcon: '',
   triggerLabel: '',
   boundaryEl: null,
+  previewFont: false,
 });
 
 const emit = defineEmits<{
@@ -64,6 +67,12 @@ const query = ref('');
 const searchInputRef = ref<HTMLInputElement | null>(null);
 
 const current = computed(() => props.options.find((o) => String(o.value) === String(props.modelValue)));
+/** 字体预览：previewFont 开启且 value 为有效 CSS font-family 串时，返回把字体名渲染成该字体本身的样式 */
+function fontPreviewStyle(v: string | number): { fontFamily: string } | undefined {
+  if (!props.previewFont) return undefined;
+  if (typeof v !== 'string' || !v) return undefined;
+  return { fontFamily: v };
+}
 const effMenuWidth = computed(() => {
   if (props.menuWidth !== undefined) return props.menuWidth;
   return triggerWidth.value;
@@ -275,6 +284,7 @@ onBeforeUnmount(() => {
       <!-- eslint-enable vue/no-v-html -->
       <span
         class="sp-dropdown__value"
+        :style="fontPreviewStyle(current?.value ?? '')"
       >{{ (current?.icon || triggerIcon) ? (current?.label ?? triggerLabel) : (current?.label ?? fallbackLabel) }}</span>
       <svg
         class="sp-dropdown__caret"
@@ -340,7 +350,10 @@ onBeforeUnmount(() => {
                 v-html="o.icon"
               />
               <!-- eslint-enable vue/no-v-html -->
-              <span class="sp-dropdown__item-label">{{ o.label }}</span>
+              <span
+                class="sp-dropdown__item-label"
+                :style="fontPreviewStyle(o.value)"
+              >{{ o.label }}</span>
             </button>
           </div>
           <div
@@ -483,14 +496,17 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 6px;
   width: 100%;
+  height: 26px;
   border: none;
   background: transparent;
   color: var(--sp-toolbar-btn-color, #444);
   font-size: 12px;
+  line-height: 18px;
   cursor: pointer;
-  padding: 4px 8px;
+  padding: 0 8px;
   box-sizing: border-box;
   border-radius: 3px;
+  overflow: hidden;
 }
 .sp-dropdown__item:hover { background: var(--sp-toolbar-btn-hover-bg, #eef3f9); }
 .sp-dropdown__item--disabled { color: var(--sp-toolbar-btn-disabled-color, #c9c9c9); cursor: default; }

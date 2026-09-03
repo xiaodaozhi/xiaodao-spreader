@@ -69,6 +69,10 @@ export function buildOuterStyle(
   style['--sp-toolbar-text-muted'] = colors.toolbarTextMuted;
   // 下拉 / 右键菜单选中项底色，随主题切换
   style['--sp-toolbar-item-active-bg'] = colors.toolbarItemActiveBg;
+  // 危险按钮（如数据验证「全部清除」）hover 底色，随主题切换
+  style['--sp-danger-hover-bg'] = colors.dangerHoverBg;
+  // 查找/表单内提示说明文字色，随主题切换
+  style['--sp-find-hint-color'] = colors.findHintColor;
   // 默认（自动）边框色：随主题切换，dark 下更亮以保证在深色背景可见
   style['--sp-border-default'] = colors === darkTheme ? DARK_BORDER_COLOR : DEFAULT_BORDER_COLOR;
   return style;

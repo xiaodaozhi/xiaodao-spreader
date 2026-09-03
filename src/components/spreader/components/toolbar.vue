@@ -572,6 +572,7 @@ const freezeOptions = computed<FontOption[]>(() => {
           :visible-count="8"
           :title="t(locale, 'fontFamily')"
           align="right"
+          :preview-font="true"
           :model-open="fontMenuOpen"
           :boundary-el="boundaryEl"
           @update:model-open="coordToolbarMenu('font', $event)"

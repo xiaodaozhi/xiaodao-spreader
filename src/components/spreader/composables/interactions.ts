@@ -3095,15 +3095,13 @@ export function createInteractions(
       openValidationDropdown(hitDv.col, hitDv.row);
       return;
     }
-    // 批注指示器命中（优先级高于普通 Cell 选择）：点击指示器打开批注而非选择单元格；关闭编辑态
-    if (noteUi.value?.mode === 'edit') closeNote();
-    const hitNote = isNoteIndicatorHit(p.x, p.y);
-    if (hitNote) {
-      openNote(hitNote.row, hitNote.col, 'view');
-      so.emitModelData();
-      return;
-    } else if (noteUi.value) {
+    // 批注浮层交互：编辑态点击任意处先收起编辑；查看态点「带批注单元格」保持、点别处关闭。
+    // 「点击单元格即查看批注」在下方单元格选择分支处理，覆盖原「仅点右上角三角」交互。
+    if (noteUi.value?.mode === 'edit') {
       closeNote();
+    } else if (noteUi.value) {
+      const hc = s.screenToCell(p.x, p.y);
+      if (!hc || !s.hasNote(hc.row, hc.col)) closeNote();
     }
     // 筛选按钮命中（最高优先级：高于 resize / 选择 / 行列头选择）
     const hitFilter = isFilterButtonHit(p.x, p.y);
@@ -3208,6 +3206,14 @@ export function createInteractions(
     } else {
       s.selectCell(c, r);
     }
+    // 带批注的单元格：点击单元格即查看批注浮层（覆盖原「仅点右上角三角」交互）
+    if (s.hasNote(r, c)) {
+      openNote(r, c, 'view');
+      so.emitModelData();
+      isDragging = false; // 不进入拖拽选择，与旧『点三角打开』一致
+      scheduleRender();
+      return;
+    }
     isDragging = true;
     drgSC = c;
     drgSR = r;
@@ -3250,8 +3256,9 @@ export function createInteractions(
         return;
       }
       const p = getCanvasXY(e, cvs);
-      // 批注指示器 hover：命中指示器显示 pointer（浮层改为点击单元格右上角三角打开）
-      if (isNoteIndicatorHit(p.x, p.y)) {
+      // 带批注单元格 hover：整格显示 pointer（点击单元格即查看批注）
+      const hvNote = s.screenToCell(p.x, p.y);
+      if (hvNote && s.hasNote(hvNote.row, hvNote.col)) {
         cvs.style.cursor = 'pointer';
       }
       if (hitTestOutlineControl(p.x, p.y)) {
@@ -3419,14 +3426,14 @@ export function createInteractions(
       const focusOnFb = !!(fbRef && typeof document !== 'undefined' && document.activeElement === fbRef);
       if (s.editingCell.value || focusOnFb || fbDirty) acceptFormulaBarEdit();
     }
-    // 批注指示器命中：点按单元格右上角三角直接打开查看浮层（不选择单元格，
-    // 标记 tMoved 使 onTouchEnd 提前返回，避免抬手误触发选择）
-    const hitNote = isNoteIndicatorHit(x, y);
-    if (hitNote) {
+    // 带批注单元格：点按单元格即打开查看浮层（覆盖原「仅点右上角三角」），
+    // 标记 tMoved 使 onTouchEnd 提前返回，避免抬手误触发选择/编辑
+    const tHit = s.screenToCell(x, y);
+    if (tHit && s.hasNote(tHit.row, tHit.col)) {
       e.preventDefault();
       isTouch = true;
       tMoved = true;
-      openNote(hitNote.row, hitNote.col, 'view');
+      openNote(tHit.row, tHit.col, 'view');
       so.emitModelData();
       return;
     }

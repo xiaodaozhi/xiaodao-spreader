@@ -1320,8 +1320,8 @@ const setDimInputRef = (el: unknown) => {
 </template>
 
 <style scoped>
-.spreadsheet-outer { flex: 1; display: flex; flex-direction: column; overflow: hidden; height: 100%; min-height: 400px; width: 100%; background: var(--sp-toolbar-bg); }
-.formula-bar { display: flex; align-items: flex-start; min-height: 36px; padding: 0; gap: 0; background: var(--sp-formula-bar-bg); }
+.spreadsheet-outer { flex: 1; display: flex; flex-direction: column; overflow: hidden; height: 100%; min-height: 400px; width: 100%; }
+.formula-bar { display: flex; align-items: flex-start; min-height: 36px; padding: 0; gap: 0; }
 .formula-bar--expanded { min-height: 72px; }
 .formula-bar__cell-label { width: 48px; min-width: 48px; height: 28px; line-height: 28px; margin-top: 4px; text-align: center; font-size: 12px; font-weight: 600; color: var(--sp-formula-bar-label-color); background: var(--sp-formula-bar-label-bg); border: 1px solid var(--sp-formula-bar-label-border); border-radius: 2px; user-select: none; }
 .formula-bar__buttons { display: inline-flex; align-items: stretch; margin-top: 4px; margin-left: 6px; height: 28px; border: 1px solid var(--sp-formula-bar-input-border); border-radius: 2px; overflow: hidden; background: var(--sp-formula-bar-input-bg); }

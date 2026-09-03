@@ -1,7 +1,7 @@
 {
   "name": "xiaodao-spreader",
-  "version": "0.1.42",
-  "description": "A Vue 3 component for spreading sheets",
+  "version": "0.1.43",
+  "description": "A high-performance, canvas-based spreadsheet component for Vue 3: bringing an Excel-like editing experience to the web. Keep developing!",
   "type": "module",
   "license": "MIT",
   "homepage": "https://xiaodaozhi.com/xiaodao-spreader.html",

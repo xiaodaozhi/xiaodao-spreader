@@ -382,7 +382,7 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.tab-bar { display: flex; align-items: stretch; height: 30px; min-height: 30px; background: var(--sp-tab-bar-bg); border-top: 1px solid var(--sp-tab-bar-border); user-select: none; -webkit-touch-callout: none; margin-top: 4px; }
+.tab-bar { display: flex; align-items: stretch; height: 30px; min-height: 30px; background: var(--sp-tab-bar-bg); border-top: 1px solid var(--sp-tab-bar-border); user-select: none; -webkit-touch-callout: none; }
 .tab-list { display: flex; align-items: flex-start; flex: 1; overflow: hidden; gap: 1px; padding: 0 1px; }
 .tab-item { display: flex; align-items: center; height: 28px; min-width: 0; max-width: 120px; padding: 0 10px; cursor: pointer; border: 1px solid var(--sp-tab-inactive-border); background: var(--sp-tab-inactive-bg); color: var(--sp-tab-inactive-color); font-size: 14px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; white-space: nowrap; transition: background 0.1s; -webkit-touch-callout: none; }
 .tab-item:hover { background: var(--sp-tab-hover-bg); }

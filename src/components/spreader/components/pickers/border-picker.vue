@@ -510,8 +510,8 @@ defineExpose({ open, openMenu, close });
   box-sizing: border-box;
 }
 .border-picker__line-item:hover { background: var(--sp-toolbar-btn-hover-bg, #eef3f9); }
-.border-picker__line-item--active { background: #e3edf9; }
-.border-picker__line-item--active:hover { background: #d5e4f7; }
+.border-picker__line-item--active { background: var(--sp-toolbar-item-active-bg, #e5f1fb); }
+.border-picker__line-item--active:hover { background: var(--sp-toolbar-item-active-bg, #e5f1fb); }
 .border-picker__line-preview {
   width: 64px;
   height: 20px;

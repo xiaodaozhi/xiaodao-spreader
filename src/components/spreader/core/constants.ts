@@ -1034,6 +1034,8 @@ export const lightTheme: ThemeColors = {
   toolbarTextSecondary: '#666',
   toolbarTextMuted: '#999',
   toolbarItemActiveBg: '#e5f1fb',
+  dangerHoverBg: '#fce8e6',
+  findHintColor: '#888',
   findMatchBg: 'rgba(255, 213, 79, 0.45)',
   findActiveBg: 'rgba(255, 179, 0, 0.75)',
 };
@@ -1098,6 +1100,8 @@ export const darkTheme: ThemeColors = {
   toolbarTextSecondary: '#aaa',
   toolbarTextMuted: '#888',
   toolbarItemActiveBg: 'rgba(78, 161, 255, 0.16)',
+  dangerHoverBg: 'rgba(197, 34, 31, 0.18)',
+  findHintColor: '#aaa',
   findMatchBg: 'rgba(255, 213, 79, 0.35)',
   findActiveBg: 'rgba(255, 179, 0, 0.6)',
 };

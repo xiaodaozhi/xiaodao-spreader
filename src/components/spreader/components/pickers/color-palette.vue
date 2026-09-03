@@ -189,12 +189,12 @@ function onPick(v: string) {
         :key="c.value"
         type="button"
         class="color-palette__swatch"
-        :class="{ 'color-palette__swatch--selected': isSelected(c.value) }"
-        :title="labelOf(c.key)"
-        :style="{
-          background: c.value || 'transparent',
-          border: !c.value ? '1px dashed #999' : '1px solid rgba(0,0,0,0.15)',
+        :class="{
+          'color-palette__swatch--selected': isSelected(c.value),
+          'color-palette__swatch--none': !c.value,
         }"
+        :title="labelOf(c.key)"
+        :style="c.value ? { background: c.value, border: '1px solid rgba(0,0,0,0.15)' } : undefined"
         @click="onPick(c.value)"
       />
     </div>
@@ -228,5 +228,10 @@ function onPick(v: string) {
 }
 .color-palette__swatch--selected {
   box-shadow: 0 0 0 2px #0078d7;
+}
+/* 「自动 / 无填充」首项：透明背景 + 虚线圆，去掉填充色；虚线边框随主题（dark 下更亮） */
+.color-palette__swatch--none {
+  background: transparent;
+  border: 1px dashed var(--sp-toolbar-text-muted, #999);
 }
 </style>

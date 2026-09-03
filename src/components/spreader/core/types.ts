@@ -536,6 +536,10 @@ export interface ThemeColors {
   toolbarTextMuted: string;
   /** 下拉/右键菜单选中项底色，light #e5f1fb / dark 半透明蓝（配 toolbarBtnActiveColor 文字色） */
   toolbarItemActiveBg: string;
+  /** 危险按钮（如数据验证「全部清除」）hover 底色，light #fce8e6 / dark 暗红半透明 */
+  dangerHoverBg: string;
+  /** 查找/表单内的提示说明文字色（如数据验证条件提示、筛选空状态），light #888 / dark #aaa */
+  findHintColor: string;
 
   // 查找高亮
   findMatchBg: string;
