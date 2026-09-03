@@ -36,6 +36,7 @@ xiaodao-spreader/
     └── components/
         └── spreader/
             ├── index.ts                # Unified barrel export: component + types
+            ├── theme.css               # Global theme stylesheet: --sp-* variables (.spreadsheet-outer / .sp-spreader-overlay scope, light + dark pairs)
             ├── components/
             │   ├── spreader.vue         # Entry component: template + style + composition
             │   ├── toolbar.vue          # Toolbar with overflow dropdown
@@ -67,7 +68,7 @@ xiaodao-spreader/
             │   ├── core-state.ts          # Props, cells/merges/selection, font metrics, navigation, outline state
             │   ├── find-replace.ts        # Find/replace state & interaction (Vue-dependent)
             │   ├── interactions.ts        # Renderer, formula bar, tab bar, context menu, scrollbar, events
-            │   ├── sheets-ops.ts          # Row/col ops, multi-sheet, v-model emit, theme, refs
+            │   ├── sheets-ops.ts          # Row/col ops, multi-sheet, v-model emit, refs
             │   ├── undo-styles.ts         # Undo/redo, format painter, font/alignment/color
             │   └── float-menu-position.ts # Shared toolbar dropdown positioning (right-anchor + flip/clamp)
             └── core/
@@ -90,7 +91,7 @@ xiaodao-spreader/
                 ├── sort-core.ts              # Sort pure algorithms (zero Vue deps, unit-testable)
                 ├── sort-icon.ts              # Sort icon single source (toolbar + picker)
                 ├── style-pool.ts             # Style pool: dedup, registration, resolve, migration, GC
-                ├── theme.ts                  # Theme CSS variable construction
+                ├── theme.ts                  # Theme types + light/dark palettes (for Canvas); buildOuterStyle now returns size only
                 ├── types.ts                  # All type definitions
                 └── utils.ts                  # Pure utilities (column label, hit test, resolve size)
 ```
@@ -240,6 +241,7 @@ interface ThemeColors { /* See Section 10 for full list */ }
 | `sheets` | `ref<SheetState[]>` | All worksheets |
 | `activeSheetIndex` | `ref<number>` | Current active worksheet index |
 | `undoStack` / `redoStack` | `ref<UndoSnapshot[]>` | Undo/redo stacks (max 50 steps) |
+| `editable` | `ref<boolean>` | Edit switch (initialized by `createCoreState` from `props.editable ?? true`; spreader.vue keeps it in sync with the prop via a watch). Every data-mutating method checks this ref first as its read-only guard. See [Section 28](#28-read-only-mode-editable) |
 
 ### 4.2 Computed Properties
 
@@ -249,8 +251,8 @@ interface ThemeColors { /* See Section 10 for full list */ }
 | `rowPositions` | Cumulative row position prefix sum |
 | `totalWidth` / `totalHeight` | Sum of all column/row dimensions |
 | `maxScrollX` / `maxScrollY` | Maximum scroll range |
-| `themeColors` | Selects light/dark color palette based on `theme` prop |
-| `outerStyle` | Injects theme colors via CSS variables |
+| `themeColors` | Selects light/dark color palette based on `theme` prop (used by Canvas rendering) |
+| `outerStyle` | Component-root size style (width/height); theme CSS variables moved to the global `theme.css` and no longer injected via outerStyle |
 
 ### 4.3 Multi-Sheet Switching
 
@@ -498,10 +500,23 @@ The `ThemeColors` interface includes:
 - Scrollbar: `scrollTrack`, `scrollThumb`, `scrollbarThumb`, `scrollbarThumbHover`, `scrollBtnBg`, `scrollBtnColor`, `scrollBtnHoverBg`, `scrollBtnActiveBg`, `scrollTrackBg`
 - Editor: `cellEditorBorder`, `cellEditorText`, `cellEditorBg`, `cellEditorShadow`
 - Wrapper: `wrapperBg`
+- Dialog danger button: `dangerHoverBg` (hover background of destructive buttons such as Data Validation "Clear All"; light `#fce8e6` / dark `rgba(197,34,31,0.18)`)
 
 ### 10.2 CSS Variable Injection
 
-`buildOuterStyle()` converts the theme color palette to CSS custom properties (`--sp-*`), bound to the root element via `outerStyle`. Scoped styles within the component reference these variables.
+CSS variables (`--sp-*`) are decoupled from the component's runtime colors:
+
+- **Canvas layer** (grid / headers / selection / text drawn on canvas): `useTheme()` returns `ThemeColors` chosen by the `theme` prop; no CSS involved.
+- **DOM layer** (toolbar / tabbar / overlays / dialogs): `--sp-*` variables are declared centrally in `spreader/theme.css`. `buildOuterStyle()` no longer injects variables; `outerStyle` only carries the component root's width/height.
+
+Variable scope is confined to the component subtree (so the host page and multiple instances never clash):
+
+- light: `.spreadsheet-outer, .sp-spreader-overlay { --sp-*: light values }`
+- dark: `.spreadsheet-outer.dark, .sp-spreader-overlay.dark { --sp-*: dark values }`
+
+The component provides the theme marker through `provide('sp-theme')` (a computed ref); the spreader root `.spreadsheet-outer` gets a `.dark` class when `theme === 'dark'`, and every teleported overlay (dropdown, overflow menu, find & replace bar, tabbar, pickers, filter popup, dv dropdown, dv input message, CF modal mask, context menu, dim panel) mounts a `sp-spreader-overlay` root and toggles `.dark` from the same marker. The stylesheet declares the same variable set on both the component root and overlay roots precisely because teleported overlays hang off `<body>` and cannot inherit variables from the component DOM tree. The library entry (`index.ts`) imports this stylesheet and it is emitted as `dist/style.css`; consumers must `import 'xiaodao-spreader/style.css'`.
+
+The library never touches `<html>` global classes nor spreads inline `--sp-*` on the component root (avoiding clashes with a host app's own theming). New/changed variables must ship both light and dark values, otherwise the other theme silently falls back to a light fallback.
 
 ---
 
@@ -1344,3 +1359,51 @@ Groups persist through the sheet v-model (`rowOutlines` / `columnOutlines` field
 ### 27.8 Future Extensions
 
 The types already reserve room for multi-level grouping (recomputeOutlineLevels computes levels from nesting); the validation layer currently caps it at one. Lifting `MAX_OUTLINE_LEVEL` plus adding gutter-partition rendering would enable nested groups.
+
+## 28. Read-only Mode (editable)
+
+### 28.1 Design Goals
+
+The `editable` prop (default `true`) switches the component into a read-only view. In read-only mode every data / format mutation is blocked while all viewing abilities stay available; UI presentation and guarding logic stay consistent, with two hard constraints: runtime toggling takes effect immediately, and the default behavior is unchanged when the prop is omitted. Blocked list: cell editing and direct typing, paste / cut / delete, fill handle, row / column insert & resize, sort, filter, conditional formatting, data validation, note add/edit/delete, merge, borders, font / alignment / fill / text color, number format, format painter, freeze panes, find & replace, undo / redo.
+
+### 28.2 State Wiring
+
+`CoreState.editable` is a `Ref<boolean>` initialized by `createCoreState(rawProps)` from `rawProps.editable ?? true`. It is captured by dozens of `if (!editable.value) return` guards across all composable closures, making it the execution foundation of the whole defense. spreader.vue mirrors prop changes back into the ref via `watch(() => props.editable, v => editable.value = v ?? true, { immediate: true })`.
+
+Two write paths coexist: the component-level watch (props → ref) and direct test writes (`s.editable.value = false`). A computed is not used because it is read-only and would prevent tests from toggling the state directly.
+
+### 28.3 Layered Guards
+
+`:disabled` / readonly is merely HTML state; removing it in DevTools still lets clicks fire handlers, so UI disabling is not the only line of defense. Four layers:
+
+| Layer | Location | Role |
+|---|---|---|
+| ① UI `:disabled` / readonly | toolbar / tabbar / dropdown / context-menu items / formula bar / find-replace-bar / the 6 data-writing dialogs (DV, number format, sort confirm, insert function, CF manager, CF rule editor) | UX: visually unclickable |
+| ② Event gate | toolbar emit wrapper (whitelist `VIEW_ONLY_EVENTS`), interactions keyboard / fill handle / resize / dblclick-rename / overlay-open entries | Intercepts inside component JS; DevTools cannot bypass |
+| ③ Handler guards | spreader.vue: onDvSave / onDvClear / onCfSave / onCfDelete / onCfMove / onCfToggle / onCfClear / onFreezeChange / onToggleFilter; interactions: insertFunctionIntoCell / saveNoteAt / removeNoteAt / onValidationDropdownSelect | Execution-layer guard for dialogs' direct callbacks (avoids inconsistent behavior where the dialog still closes or a render still fires) |
+| ④ Mutation guards | every data-mutating method of core-state / undo-styles / borders-merge / sheets-ops / find-replace | Last line of defense: no data can change regardless of which chain slips past the upper layers |
+
+Toolbar font / color / formatting events flow through ②'s emit wrapper and do not repeat ③; dialog-direct handlers are the channels that genuinely need ③.
+
+### 28.4 Undo and the silent Path under Read-only
+
+- `saveUndo()` itself carries a guard: while read-only, any snapshot attempt is rejected, so the undo stack stays unpolluted and undo/redo behaves identically after switching back.
+- Data-loading paths (initial v-model data, re-import, sheet duplication) call with `opts.silent` (`setFilter` / DV / notes / CF) and are **allowed through**: read-only bans user interaction edits, not the host restoring a document through v-model.
+
+### 28.5 Closing the UI on Toggle
+
+Blocking open entries alone is not enough: if a dialog is open when `editable` flips to false, its confirm button would still be clickable. So spreader.vue and toolbar.vue each have a dedicated watch (fired when `props.editable === false`):
+
+- spreader's `closeEditOverlays()`: closes CF manager / rule editor, DV dialog, insert-function, number format, sort confirm, note-edit overlay, context menu, filter popup, DV dropdown. It cannot be merged into the immediate watch of 28.2 (the callback would run synchronously before later refs are initialized, causing a TDZ error).
+- toolbar closes every picker dropdown and the overflow menu; close events must go through `rawEmit` to bypass ②'s read-only gate (otherwise the "close" event is swallowed and the menu stays open).
+
+### 28.6 UI Disabling Details
+
+- Disabled checks use `props.editable === false` (`editable` is an optional prop defaulting to `undefined`; writing `!props.editable` would misclassify "prop omitted" as read-only).
+- Parent items with children such as "Calculate" get `disabled: ro` directly instead of disabling each child; the renderer's `.context-menu__item:not(.context-menu__item--disabled):hover > .context-submenu` keeps a disabled parent from expanding.
+- The formula-bar button group hides wholesale via `v-if="props.editable"` and the input becomes `:readonly`; the find & replace bar disables "Replace" / "Replace All" and makes the "replace with" input read-only while keeping find navigation usable.
+- `ro = !s.editable.value`; note that toolbar.vue already had a local `ro` (ResizeObserver), so avoid the name collision.
+
+### 28.7 Tests
+
+`test/read-only.test.ts` has 18 cases (full-stack wiring across the 5 composables): every mutation entry leaves data untouched when `editable=false`, the undo stack length does not change, silent loading passes through, runtime toggling works in both directions, and the omitted-prop default regresses to full editability.

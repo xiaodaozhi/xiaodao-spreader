@@ -38,6 +38,7 @@
 - **行列分组与折叠**: 类 Excel 的行/列分组（Outline）。选中整行或整列后，工具栏「分组」下拉（位于排序与筛选之间）提供添加分组 / 取消分组 / 清除分组 / 全部展开 / 全部折叠，直接作用于选中轴；行/列右键菜单提供同构的「分组」子菜单。仅支持一层、互不相交的分组，嵌套或部分重叠会被校验拒绝并提示。分组区间在行号/列号带用交替背景色区分，± 折叠按钮浮动于表头带内，不占用独立 gutter。折叠的行/列不参与内容绘制；插入/删除行列时分组范围自动平移、被清空的分组自动删除。分组状态按工作表持久化（`rowOutlines` / `columnOutlines`），增删与折叠均接入撤销/重做。*见 [行列分组与折叠](#行列分组与折叠)*
 - **单元格批注**: 类 Excel 的单元格批注（Note/Comment）。右键菜单新建 / 编辑 / 删除；单元格右上角红色三角指示器标识含批注；hover 悬停查看、点按编辑；批注独立于单元格值与样式，采用 Note Pool 存储（Sheet 级 notes 池 + cell.noteId 引用），便于排序 / 插入删除时随 cell 一起移动。批注支持多行文本、可选作者、创建 / 修改时间。可通过 `noteAuthor` prop 设置当前作者名。*见 [单元格批注](#单元格批注)*
 - **自动填充（填充柄）**: 类 Excel 的活动选区右下角填充柄，按住向上/下/左/右拖拽即可填充单元格：单值复制、数字/日期/文本数字自动续序列（如 `1,2 → 3,4,5`）、公式引用按相对/绝对/混合规则平移（如 `=A1*2 → =A2*2`）、源 `styleId` 经样式池复用。拖拽期间实时预览、边缘自动滚动、动态扩展工作表、冻结窗格兼容、单次拖拽仅产生一个撤销步骤，*见 [自动填充](#自动填充)*
+- **只读模式**: `editable` prop（默认 `true`）一键切换：`false` 时禁止一切数据/格式修改（编辑、粘贴剪切、删除、填充、行列增删调整、排序筛选、CF/DV/批注、合并边框、冻结、格式刷、替换等），只读下编辑类控件（toolbar、右键菜单、对话框确认/插入按钮、公式栏、查找替换栏）真实禁用，保留选中、滚动、复制、查找定位与查看能力。分层守卫纵深防御（UI disabled → 事件闸门 → handler → 底层 mutation），运行时切换立即生效且不污染 undo 历史，*见 [只读模式](#只读模式read-only)*
 
 ### 交互体验
 
@@ -145,8 +146,37 @@ const myData = ref<SheetModelData[]>([
 | `theme` | `'light' \| 'dark'` | `'light'` | 主题模式 |
 | `locale` | `string` | `'zh-CN'` | 语言: `'zh-CN'` \| `'en-US'` |
 | `noteAuthor` | `string` | `''`（空串，显示时回退为 i18n 占位符「未命名」） | 当前批注作者名；为空时存入批注的 author 字段为空字符串，显示时回退为 i18n 占位符 |
+| `editable` | `boolean` | `true` | 是否允许编辑；`false` 进入只读模式（详见 [只读模式](#只读模式read-only)） |
 
 ---
+
+## 只读模式（Read-only）
+
+通过 `editable` prop 可将组件切换为只读展示（默认 `true`，即完全可编辑）。`editable={false}` 时：
+
+- **禁止一切修改**：单元格编辑与直接输入、粘贴 / 剪切 / 删除、填充柄、行 / 列增删与宽高调整、排序与筛选、条件格式、数据验证、批注增删改、合并单元格、边框、字体 / 对齐 / 背景 / 文字颜色、数字格式、格式刷、冻结窗格、查找替换、撤销 / 重做均被拦截。
+- **保留查看能力**：选中与多选区、滚动、冻结查看、复制、单元格内容 / 格式 / 批注查看、查找定位（上一条 / 下一条）不受影响。
+- **UI 与逻辑一致**：所有编辑类控件（toolbar 按钮与下拉、右键菜单项、对话框确认 / 插入按钮、公式栏按钮、查找替换栏按钮与「替换为」输入框）在只读下真实禁用或只读；切到只读的瞬间，已打开的编辑浮层与对话框自动关闭，不会出现「按钮看起来能点、点了没反应」。
+- **纵深防御**：守卫分四层——① UI `:disabled` / readonly（体验层）→ ② toolbar emit 闸门与事件拦截 → ③ 处理函数首行守卫 → ④ 底层 mutation 守卫（终极防线）。仅靠 DevTools 删除 HTML 的 `disabled` 属性无法绕过，数据不可能被改写；只读下不产生任何 undo 快照，undo 历史不被污染。
+- **运行时切换即时生效**，无需重挂组件；`v-model` 数据与格式不被改动，切回可编辑后一切如常。
+
+```vue
+<template>
+  <button @click="editable = !editable">
+    {{ editable ? '切换为只读' : '切换为可编辑' }}
+  </button>
+  <Spreader v-model:data="myData" :editable="editable" />
+</template>
+
+<script setup lang="ts">
+import { ref } from 'vue';
+import Spreader from 'xiaodao-spreader';
+import type { SheetModelData } from 'xiaodao-spreader';
+
+const myData = ref<SheetModelData[]>([]);
+const editable = ref(true);
+</script>
+```
 
 ## 数据模型
 
@@ -220,6 +250,7 @@ src/
 └── components/
     └── spreader/
         ├── index.ts                  # 统一导出口: 组件 + 类型（barrel）
+        ├── theme.css                 # 全局主题样式表：--sp-* 变量（.spreadsheet-outer / .sp-spreader-overlay 作用域，light + dark 两套）
         ├── components/
         │   ├── spreader.vue         # 入口组件：模板 + 样式 + 组合
         │   ├── toolbar.vue          # 工具栏（带溢出下拉）
@@ -251,7 +282,7 @@ src/
         │   ├── core-state.ts          # Props、cells/merges/selection、字体度量、导航、行列分组状态
         │   ├── find-replace.ts        # 查找/替换状态与交互（依赖 Vue）
         │   ├── interactions.ts        # 渲染器、公式栏、标签栏、右键菜单、滚动条、事件
-        │   ├── sheets-ops.ts          # 行列操作、多 Sheet、v-model emit、主题、refs
+        │   ├── sheets-ops.ts          # 行列操作、多 Sheet、v-model emit、refs
         │   ├── undo-styles.ts         # 撤销/重做、格式刷、字体/对齐/颜色
         │   └── float-menu-position.ts # 工具栏下拉菜单共享定位（右锚 + 上下翻向夹紧）
         └── core/
@@ -274,7 +305,7 @@ src/
             ├── sort-core.ts              # 排序纯算法（零 Vue 依赖，可单测）
             ├── sort-icon.ts              # 排序图标单一数据源（toolbar + picker）
             ├── style-pool.ts             # 样式池：去重、注册、解析、迁移、GC
-            ├── theme.ts                  # 主题 CSS 变量构建
+            ├── theme.ts                  # 主题类型与 light/dark 配色（canvas 用）；buildOuterStyle 仅剩尺寸
             ├── types.ts                  # 全部类型定义
             └── utils.ts                  # 纯工具函数（列标转换、命中测试等）
 ```
@@ -701,28 +732,49 @@ const lightTheme: ThemeColors = { /* 50+ 颜色字段 */ };
 const darkTheme: ThemeColors = { /* 50+ 颜色字段 */ };
 ```
 
-### CSS 变量注入
+### 主题变量（`--sp-*`）与作用域
 
-主题颜色通过 CSS 自定义属性（`--sp-*`）注入：
+主题颜色通过 CSS 自定义属性（`--sp-*`）注入，集中声明在组件样式表 `theme.css`：
 
 ```css
 --sp-bg, --sp-gridBg, --sp-gridLine, --sp-selectionBg,
 --sp-headerBg, --sp-headerBorder, --sp-headerText,
 --sp-formulaBarBg, --sp-formulaBarInputBorder,
 --sp-wrapperBg, --sp-cellEditorBorder,
-/* ... 以及更多 */
+/* ... 以及更多（新增变量须同时提供 light 与 dark 两套取值） */
 ```
+
+变量作用域收敛在组件子树内，不污染宿主页面：
+
+- **light**：定义于 `.spreadsheet-outer, .sp-spreader-overlay`
+- **dark**：定义于 `.spreadsheet-outer.dark, .sp-spreader-overlay.dark`，`theme="dark"` 时组件根与各 Teleport 浮层根自动挂 `.dark` 类，绝不读写 `<html>` 的全局类
+
+由于下拉 / 对话框 / 右键菜单等浮层经 Teleport 挂到 `<body>` 下（脱离组件 DOM 树，无法从组件祖先继承变量），样式表将同一套变量同时声明在 `.spreadsheet-outer`（组件主体）与 `.sp-spreader-overlay`（浮层根）两个作用域。**消费方必须引入样式表**，否则所有组件样式（含浮层）都取不到主题变量：
+
+```ts
+import 'xiaodao-spreader/style.css';
+```
+
+另注：Canvas 内部绘制的网格 / 表头 / 选区配色不依赖 CSS 变量，而是由 `ThemeColors`（`lightTheme` / `darkTheme`）按 `theme` prop 直接选取。
 
 ### 自定义主题
 
-传入 `theme="dark"` 启用暗色模式，或通过包装组件覆盖 CSS 变量实现完全自定义：
+传入 `theme="dark"` 启用暗色模式，或覆盖 `--sp-*` 变量实现完全自定义。变量挂在 `.spreadsheet-outer` 作用域上，覆盖主体时可用包装组件（后代级联），但要连同浮层一起覆盖则需同时写 `.sp-spreader-overlay`（浮层脱离组件树、不从包装组件继承），也可直接用 `theme.css` 同优先级规则覆盖：
 
 ```vue
 <template>
   <div style="--sp-bg: #1a1a2e; --sp-cellText: #e0e0e0;">
-    <Spreader v-model:data="myData" theme="dark" />
+    <Spreader v-model:data="myData" />
   </div>
 </template>
+```
+
+```css
+/* 覆盖 Teleport 浮层（下拉/对话框/右键菜单）时须用该选择器，仅覆盖组件根不够 */
+.sp-spreader-overlay {
+  --sp-bg: #1a1a2e;
+  --sp-cellText: #e0e0e0;
+}
 ```
 
 ### 国际化
@@ -809,6 +861,7 @@ x-spreader 以触屏为第一交互：每个鼠标操作都有对称的触屏路
 - [x] 自动筛选（AutoFilter）：工具栏「筛选」/`Ctrl+Shift+L` 启用，表头下箭头、智能向下探测数据区、值/文本/数值/日期多类型筛选、清除单列与整体移除分离；见 [自动筛选（AutoFilter）](#自动筛选autofilter)
 - [x] 触屏与移动端交互：选择 / 右键菜单 / 筛选 / 列宽行高 / 框选 / 格式刷 / tab 菜单均补齐对称触屏路径，浮层支持点外部关闭；见 [触屏与移动端交互](#触屏与移动端交互)
 - [x] 单元格批注：Note Pool 存储、右键菜单 CRUD、hover 查看、编辑浮层、持久化与撤销；见 [单元格批注](#单元格批注)
+- [x] 只读模式：`editable` prop 分层守卫，UI 与逻辑双重收口；见 [只读模式](#只读模式read-only)
 - [ ] 打印布局
 
 ### 远期

@@ -268,6 +268,7 @@ export function createFindReplace(
   }
 
   function replace(): void {
+    if (!s.editable.value) return;
     if (currentIndex.value < 0 || currentIndex.value >= results.value.length) return;
     const m = results.value[currentIndex.value]!;
     const raw = getRawValue(m);
@@ -289,6 +290,7 @@ export function createFindReplace(
   }
 
   function replaceAll(): void {
+    if (!s.editable.value) return;
     const ft = findText.value;
     if (!ft || results.value.length === 0) return;
     us.saveUndo(); // 整个「全部替换」仅产生一次 Undo

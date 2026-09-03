@@ -36,6 +36,7 @@ xiaodao-spreader/
     └── components/
         └── spreader/
             ├── index.ts                # 统一桶导出: 组件 + 类型
+            ├── theme.css               # 全局主题样式表：--sp-* 变量（.spreadsheet-outer / .sp-spreader-overlay 作用域，light + dark 两套）
             ├── components/
             │   ├── spreader.vue         # 入口组件：模板 + 样式 + 组合
             │   ├── toolbar.vue          # 工具栏（带溢出下拉）
@@ -67,7 +68,7 @@ xiaodao-spreader/
             │   ├── core-state.ts          # Props、cells/merges/selection、字体度量、导航、行列分组状态
             │   ├── find-replace.ts        # 查找/替换状态与交互（依赖 Vue）
             │   ├── interactions.ts        # 渲染器、公式栏、标签栏、右键菜单、滚动条、事件
-            │   ├── sheets-ops.ts          # 行列操作、多 Sheet、v-model emit、主题、refs
+            │   ├── sheets-ops.ts          # 行列操作、多 Sheet、v-model emit、refs
             │   ├── undo-styles.ts         # 撤销/重做、格式刷、字体/对齐/颜色
             │   └── float-menu-position.ts # 工具栏下拉菜单共享定位（右锚 + 上下翻向夹紧）
             └── core/
@@ -90,7 +91,7 @@ xiaodao-spreader/
                 ├── sort-core.ts              # 排序纯算法（零 Vue 依赖，可单测）
                 ├── sort-icon.ts              # 排序图标单一数据源（toolbar + picker）
                 ├── style-pool.ts             # 样式池：去重、注册、解析、迁移、GC
-                ├── theme.ts                  # 主题 CSS 变量构建
+                ├── theme.ts                  # 主题类型与 light/dark 配色（canvas 用）；buildOuterStyle 仅剩尺寸
                 ├── types.ts                  # 全部类型定义
                 └── utils.ts                  # 纯工具函数（列标转换、命中测试等）
 ```
@@ -239,6 +240,7 @@ interface ThemeColors { /* 完整列表见第 10 节 */ }
 | `sheets` | `ref<SheetState[]>` | 全部工作表 |
 | `activeSheetIndex` | `ref<number>` | 当前激活工作表索引 |
 | `undoStack` / `redoStack` | `ref<UndoSnapshot[]>` | 撤销/重做栈（最多 50 步） |
+| `editable` | `ref<boolean>` | 编辑开关（`createCoreState` 自 `props.editable ?? true` 初始化，spreader.vue 用 watch 将 prop 变化同步回本 ref）；所有会改数据的 mutation 方法首行都以此做只读守卫。详见[第 28 节](#28-只读模式read-only--editable) |
 
 ### 4.2 计算属性
 
@@ -248,8 +250,8 @@ interface ThemeColors { /* 完整列表见第 10 节 */ }
 | `rowPositions` | 行位置累计前缀和 |
 | `totalWidth` / `totalHeight` | 全部列/行尺寸之和 |
 | `maxScrollX` / `maxScrollY` | 最大滚动范围 |
-| `themeColors` | 根据 `theme` prop 选择亮/暗配色 |
-| `outerStyle` | 以 CSS 变量注入主题配色 |
+| `themeColors` | 根据 `theme` prop 选择亮/暗配色（Canvas 绘制用） |
+| `outerStyle` | 组件根尺寸样式（width/height）；主题 CSS 变量已迁至全局 `theme.css`，不再经 outerStyle 注入 |
 
 ### 4.3 多 Sheet 切换
 
@@ -496,10 +498,23 @@ Canvas CSS 坐标（逻辑像素）
 - 滚动条：`scrollTrack`、`scrollThumb`、`scrollbarThumb`、`scrollbarThumbHover`、`scrollBtnBg`、`scrollBtnColor`、`scrollBtnHoverBg`、`scrollBtnActiveBg`、`scrollTrackBg`
 - 编辑器：`cellEditorBorder`、`cellEditorText`、`cellEditorBg`、`cellEditorShadow`
 - 容器：`wrapperBg`
+- 对话框危险按钮：`dangerHoverBg`（如数据验证「清除全部」hover 背景；light `#fce8e6` / dark `rgba(197,34,31,0.18)`）
 
 ### 10.2 CSS 变量注入
 
-`buildOuterStyle()` 将主题配色转换为 CSS 自定义属性（`--sp-*`），通过 `outerStyle` 绑定到根元素。组件内的 scoped 样式引用这些变量。
+CSS 变量（`--sp-*`）与组件运行时配色**分离**：
+
+- **Canvas 层**（网格/表头/选区/文字等绘制色）：由 `useTheme()` 按 `theme` prop 返回的 `ThemeColors` 直接取色，不走 CSS。
+- **DOM 层**（toolbar / tabbar / 浮层 / 对话框等）：在 `spreader/theme.css` 中集中声明 `--sp-*` 变量。`buildOuterStyle()` 已不再做变量注入，`outerStyle` 仅剩组件根 width/height。
+
+变量作用域约束在组件子树内（避免污染宿主页面与多实例冲突）：
+
+- light：`.spreadsheet-outer, .sp-spreader-overlay { --sp-*: 亮色值 }`
+- dark：`.spreadsheet-outer.dark, .sp-spreader-overlay.dark { --sp-*: 暗色值 }`
+
+组件通过 `provide('sp-theme')` 下发主题标记（computed ref），spreader 根 `.spreadsheet-outer` 在 `theme === 'dark'` 时挂 `.dark` 类；各 Teleport 浮层（dropdown、溢出菜单、查找替换栏、tabbar、pickers、filter-popup、dv-dropdown、dv-input-message、cf-modal-mask、context-menu、dim-panel）根元素挂 `sp-spreader-overlay` 类并按同一主题标记挂 `.dark`。样式文件在组件根与浮层根**两处**重复声明同一套变量，正是为了 Teleport 到 `<body>` 的浮层能脱离组件 DOM 树独立取到主题变量。库入口 `index.ts` import 该样式表，随构建产物输出为 `dist/style.css`；消费方须自行 `import 'xiaodao-spreader/style.css'`。
+
+库绝不读写 `<html>` 的全局类，也不会在组件根铺行内 `--sp-*`（避免与调用方自己的主题冲突）。新增/修改变量必须同时给出 light 与 dark 两套取值，否则另一主题下回退到浅色 fallback。
 
 ---
 
@@ -1343,3 +1358,51 @@ core-state.ts 暴露 addRowGroup / addColumnGroup / removeOutline / clearRowGrou
 ### 27.8 未来扩展
 
 类型已预留 level > 1 的多层分组空间（recomputeOutlineLevels 按嵌套关系计算），但校验层当前限制一层；如需多层分组，放开 MAX_OUTLINE_LEVEL 并补充 gutter 分区渲染即可。
+
+## 28. 只读模式（Read-only / editable）
+
+### 28.1 设计目标
+
+`editable` prop（默认 `true`）将组件切换为只读展示。只读下禁止一切数据 / 格式修改，保留全部查看能力；UI 呈现与守卫逻辑一致，且对「运行时切换」与「默认行为不变」两个约束负责。禁止列表：单元格编辑与直接输入、粘贴 / 剪切 / 删除、填充柄、行 / 列增删与宽高调整、排序、筛选、条件格式、数据验证、批注增删改、合并、边框、字体 / 对齐 / 背景 / 文字颜色、数字格式、格式刷、冻结窗格、查找替换、撤销 / 重做。
+
+### 28.2 状态接线
+
+`CoreState.editable` 是 `Ref<boolean>`，在 `createCoreState(rawProps)` 时以 `rawProps.editable ?? true` 初始化，被各 composable 闭包内数十处 `if (!editable.value) return` 捕获，是全部守卫的执行根基。spreader.vue 用 `watch(() => props.editable, v => editable.value = v ?? true, { immediate: true })` 把 prop 变化同步回 ref。
+
+两处写入路径并存：组件层 watch（props → ref）与测试直写（`s.editable.value = false`）。不用 computed 是因为 computed 只读、无法支撑测试直接切换。
+
+### 28.3 分层守卫
+
+`:disabled` / readonly 只是 HTML 状态，DevTools 删除后点击仍会触发事件，因此 UI 禁用不是唯一防线，防御分四层：
+
+| 层 | 落点 | 作用 |
+|---|---|---|
+| ① UI `:disabled` / readonly | toolbar / tabbar / dropdown / 右键菜单项 / 公式栏 / find-replace-bar / 6 个写数据对话框（DV、数字格式、排序确认、插入函数、CF 管理器、CF 规则编辑器） | 体验层：视觉明确不可点 |
+| ② 事件闸门 | toolbar emit 包装器（白名单 `VIEW_ONLY_EVENTS`）、interactions 键盘 / 填充柄 / resize / 双击重命名 / 弹浮层入口 | 组件 JS 内层拦截，DevTools 无法绕过 |
+| ③ handler 守卫 | spreader.vue 的 onDvSave / onDvClear / onCfSave / onCfDelete / onCfMove / onCfToggle / onCfClear / onFreezeChange / onToggleFilter；interactions 的 insertFunctionIntoCell / saveNoteAt / removeNoteAt / onValidationDropdownSelect | 对话框等直连回调的执行层拦截（防止行为不一致：对话框照常关闭、照常发渲染） |
+| ④ mutation 守卫 | core-state / undo-styles / borders-merge / sheets-ops / find-replace 全部会改数据的方法首行 | 终极防线，无论哪条链路漏过前几层都改不动数据 |
+
+工具栏字体 / 颜色 / 格式类事件走 ② 的 emit 包装器，不重复加 ③；对话框直连 handler 是真正需要 ③ 的通道。
+
+### 28.4 只读下的 undo 与 silent 路径
+
+- `saveUndo()` 自身带只读守卫：只读期间任何被触发的落盘尝试都不会把快照压入 undo 栈，历史不被污染，切回可编辑后 undo/redo 行为与之前完全一致。
+- 数据加载路径（v-model 初始数据、重导入、sheet 复制）带 `opts.silent` 的调用（`setFilter` / DV / 批注 / CF）**放行**：只读只是禁止用户交互修改，不阻断宿主程序经 v-model 恢复文档。
+
+### 28.5 切换瞬间的 UI 收口
+
+只关闭「打开入口」不够：若对话框正开着时 `editable` 被切为 false，其内部确认按钮仍可点。因此 spreader.vue 与 toolbar.vue 各有一个独立 watch（`props.editable === false` 触发）：
+
+- spreader 的 `closeEditOverlays()`：关闭 CF 管理器 / 规则编辑器、DV 对话框、插入函数、数字格式、排序确认、批注编辑浮层、右键菜单、筛选弹窗、DV 下拉。不能并入 28.2 的 immediate watch（回调同步执行时后文 ref 未初始化会 TDZ）。
+- toolbar 逐个收起全部 picker 下拉与溢出菜单，关闭事件必须走 `rawEmit` 绕过 ② 的只读闸门（否则「关闭」事件被吞，菜单卡在展开态）。
+
+### 28.6 UI 禁用细节
+
+- 禁用判断用 `props.editable === false`（`editable` 为可选 prop，缺省 `undefined`，不能写 `!props.editable`，否则不传 prop 也被判为只读）。
+- 「计算」等带 children 的右键菜单父级直接 `disabled: ro`，子项不再逐个冗余；渲染层 `.context-menu__item:not(.context-menu__item--disabled):hover > .context-submenu` 保证 disabled 父级不展开。
+- 公式栏按钮组父级 `v-if="props.editable"` 整块隐藏，编辑框 `:readonly`；查找替换栏「替换 / 全部替换」按钮禁用、「替换为」输入框 readonly，查找定位保留。
+- 只读判定常量 `ro = !s.editable.value`，注意 toolbar.vue 内已有同名 `ro`（ResizeObserver），勿撞名。
+
+### 28.7 测试
+
+`test/read-only.test.ts` 18 例（全栈接线 5 个 composable）：各 mutation 入口在 `editable=false` 时不改数据、undo 栈长度不变、silent 加载放行、运行时双向切换、缺省行为回归（与完全可编辑一致）。

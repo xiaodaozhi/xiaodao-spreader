@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount, nextTick, inject } from 'vue';
+import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, inject } from 'vue';
 
 import { t } from '../core/constants';
 import type { FontOption, MergeType } from '../core/constants';
@@ -353,9 +353,11 @@ const props = defineProps<{
   /** 边界基准元素（通常是表格容器 wrapper）：弹出菜单不得越出其可视区。
    *  组件嵌入宿主 Vue 页面时必需，否则菜单会越界盖住宿主内容。缺省时退化为纯视口判定。 */
   boundaryEl?: HTMLElement | null;
+  /** 是否可编辑；false = 只读模式，编辑类控件置灰且事件被拦截，仅查找/冻结保持可用 */
+  editable?: boolean;
 }>();
 
-const emit = defineEmits<{
+const rawEmit = defineEmits<{
   (e: 'undo' | 'redo' | 'paint-format' | 'clear-format' | 'font-size-blur' | 'font-size-toggle' | 'font-size-step-up' | 'font-size-step-down' | 'bold-toggle' | 'italic-toggle' | 'underline-toggle' | 'strikethrough-toggle' | 'apply-text-color' | 'apply-fill-color' | 'apply-border' | 'apply-sort' | 'wrap-toggle' | 'apply-merge' | 'calc-sum' | 'calc-avg' | 'calc-count' | 'find' | 'increase-decimals' | 'decrease-decimals' | 'toggle-filter' | 'cf-new-rule' | 'cf-manage' | 'open-data-validation'): void;
   (e: 'font-family-change' | 'font-size-change' | 'h-align-change' | 'v-align-change', v: string | number): void;
   (e: 'font-size-input' | 'text-color-change' | 'fill-color-change' | 'border-color-change' | 'border-line-style-change' | 'number-format-change' | 'freeze-change' | 'cf-preset' | 'outline-action', v: string): void;
@@ -366,6 +368,14 @@ const emit = defineEmits<{
   (e: 'merge-change', v: MergeType): void;
   (e: 'cf-clear', scope: 'selection' | 'sheet'): void;
 }>();
+
+// 只读模式事件闸门：编辑类事件在 toolbar 层直接拦截（兜底），查看类事件照常透传。
+// 父层的 mutation 方法各自还有 editable 守卫，这里是「UI 层不发出」的第一道闸。
+const VIEW_ONLY_EVENTS = new Set(['find']);
+const emit = ((e: string, ...args: unknown[]) => {
+  if (props.editable === false && !VIEW_ONLY_EVENTS.has(e)) return;
+  return (rawEmit as (ev: string, ...a: unknown[]) => void)(e, ...args);
+}) as typeof rawEmit;
 
 // 同一时刻仅允许一个工具栏下拉菜单打开：任一 picker 下拉打开时，关闭其余 picker 下拉。
 // 覆盖主栏与溢出菜单（二者同源 tb-item + 同一套状态），修复「溢出菜单里点不同下拉框、前一个不关闭」的问题。
@@ -402,6 +412,20 @@ function closeAllToolbarMenus() {
   for (const k of TOOLBAR_MENU_KEYS) emit(MENU_EMIT[k], false);
 }
 
+// 切到只读时收起所有已展开的 picker/下拉与溢出菜单。
+// 必须走 rawEmit 直通父层：emit 包装器在只读态会拦截编辑类事件，而这里发送的恰恰是关闭事件，
+// 若被拦截则菜单会保持展开，其内部可写控件停留在可点状态（底层 mutation 虽拦截，但体验是点了没反应）。
+watch(
+  () => props.editable,
+  (v) => {
+    if (v === false) {
+      const rawEmitAny = rawEmit as (ev: string, ...a: unknown[]) => void;
+      for (const k of TOOLBAR_MENU_KEYS) rawEmitAny(MENU_EMIT[k], false);
+      overflowOpen.value = false;
+    }
+  },
+);
+
 // 溢出菜单内点击按钮：除「负责开关 picker 的箭头/触发器」自身外，一律收起已弹出的 picker 下拉。
 // （箭头/触发器由 coordToolbarMenu 处理互斥与开关，这里不能重复关闭，否则刚点开的会被立刻收起。）
 function onOverflowMenuClick(e: MouseEvent) {
@@ -436,6 +460,7 @@ const freezeOptions = computed<FontOption[]>(() => {
   <div
     ref="rootEl"
     class="toolbar"
+    :class="{ 'toolbar--readonly': props.editable === false }"
     @mousedown.prevent
   >
     <Teleport
@@ -451,7 +476,7 @@ const freezeOptions = computed<FontOption[]>(() => {
           class="toolbar-btn"
           :class="{ 'toolbar-btn--disabled': !canUndo }"
           :title="t(locale, 'undo')"
-          :disabled="!canUndo"
+          :disabled="!canUndo || !props.editable"
           @click="emit('undo')"
         >
           <svg
@@ -479,7 +504,7 @@ const freezeOptions = computed<FontOption[]>(() => {
           class="toolbar-btn"
           :class="{ 'toolbar-btn--disabled': !canRedo }"
           :title="t(locale, 'redo')"
-          :disabled="!canRedo"
+          :disabled="!canRedo || !props.editable"
           @click="emit('redo')"
         >
           <svg
@@ -510,7 +535,7 @@ const freezeOptions = computed<FontOption[]>(() => {
           class="toolbar-btn"
           :class="{ 'toolbar-btn--active': paintFmtActive }"
           :title="t(locale, 'paintFormat')"
-          :disabled="!hasSelection"
+          :disabled="!hasSelection || !props.editable"
           @click="emit('paint-format')"
         >
           <svg
@@ -538,7 +563,7 @@ const freezeOptions = computed<FontOption[]>(() => {
           class="toolbar-btn"
           :class="{ 'toolbar-btn--disabled': !hasSelection }"
           :title="t(locale, 'clearFormat')"
-          :disabled="!hasSelection"
+          :disabled="!hasSelection || !props.editable"
           @click="emit('clear-format')"
         >
           <svg
@@ -586,6 +611,7 @@ const freezeOptions = computed<FontOption[]>(() => {
           align="right"
           :preview-font="true"
           :model-open="fontMenuOpen"
+          :disabled="!props.editable"
           :boundary-el="boundaryEl"
           @update:model-open="coordToolbarMenu('font', $event)"
           @change="emit('font-family-change', $event)"
@@ -610,6 +636,7 @@ const freezeOptions = computed<FontOption[]>(() => {
             max="72"
             step="1"
             :value="fontSizeInput"
+            :disabled="!props.editable"
             :title="t(locale, 'fontSize')"
             @mousedown.stop
             @input="emit('font-size-input', ($event.target as HTMLInputElement).value)"
@@ -628,6 +655,7 @@ const freezeOptions = computed<FontOption[]>(() => {
             :model-open="fontSizeMenuOpen"
             align="right"
             :trigger-el="fontSizeArrowRef"
+            :disabled="!props.editable"
             :boundary-el="boundaryEl"
             @update:model-open="coordToolbarMenu('fontSize', $event)"
             @change="emit('font-size-change', $event)"
@@ -637,6 +665,7 @@ const freezeOptions = computed<FontOption[]>(() => {
             class="toolbar-font-size__btn"
             type="button"
             :title="t(locale, 'fontSize')"
+            :disabled="!props.editable"
             @mousedown.prevent
             @click="emit('font-size-toggle')"
           >
@@ -649,7 +678,7 @@ const freezeOptions = computed<FontOption[]>(() => {
             class="toolbar-btn toolbar-btn--step"
             type="button"
             :title="t(locale, 'fontSizeDecrease')"
-            :disabled="!hasSelection"
+            :disabled="!hasSelection || !props.editable"
             @mousedown.prevent
             @click="emit('font-size-step-down')"
           >
@@ -662,7 +691,7 @@ const freezeOptions = computed<FontOption[]>(() => {
             class="toolbar-btn toolbar-btn--step"
             type="button"
             :title="t(locale, 'fontSizeIncrease')"
-            :disabled="!hasSelection"
+            :disabled="!hasSelection || !props.editable"
             @mousedown.prevent
             @click="emit('font-size-step-up')"
           >
@@ -701,7 +730,7 @@ const freezeOptions = computed<FontOption[]>(() => {
           class="toolbar-btn"
           :class="{ 'toolbar-btn--active': selFontWeight }"
           :title="t(locale, 'bold')"
-          :disabled="!hasSelection"
+          :disabled="!hasSelection || !props.editable"
           @click="emit('bold-toggle')"
         >
           <svg
@@ -726,7 +755,7 @@ const freezeOptions = computed<FontOption[]>(() => {
           class="toolbar-btn"
           :class="{ 'toolbar-btn--active': selFontStyle }"
           :title="t(locale, 'italic')"
-          :disabled="!hasSelection"
+          :disabled="!hasSelection || !props.editable"
           @click="emit('italic-toggle')"
         >
           <svg
@@ -751,7 +780,7 @@ const freezeOptions = computed<FontOption[]>(() => {
           class="toolbar-btn"
           :class="{ 'toolbar-btn--active': selUnderline }"
           :title="t(locale, 'underline')"
-          :disabled="!hasSelection"
+          :disabled="!hasSelection || !props.editable"
           @click="emit('underline-toggle')"
         >
           <svg
@@ -776,7 +805,7 @@ const freezeOptions = computed<FontOption[]>(() => {
           class="toolbar-btn"
           :class="{ 'toolbar-btn--active': selStrikethrough }"
           :title="t(locale, 'strikethrough')"
-          :disabled="!hasSelection"
+          :disabled="!hasSelection || !props.editable"
           @click="emit('strikethrough-toggle')"
         >
           <svg
@@ -815,7 +844,7 @@ const freezeOptions = computed<FontOption[]>(() => {
           <button
             class="toolbar-btn toolbar-split__main"
             :title="t(locale, 'fontColor')"
-            :disabled="!hasSelection"
+            :disabled="!hasSelection || !props.editable"
             @click="emit('apply-text-color')"
           >
             <svg
@@ -836,7 +865,7 @@ const freezeOptions = computed<FontOption[]>(() => {
             ref="textColorArrowRef"
             class="toolbar-btn toolbar-split__arrow"
             :title="t(locale, 'fontColor')"
-            :disabled="!hasSelection"
+            :disabled="!hasSelection || !props.editable"
             @click="coordToolbarMenu('textColor', !textColorMenuOpen)"
           >
             <svg
@@ -872,7 +901,7 @@ const freezeOptions = computed<FontOption[]>(() => {
           <button
             class="toolbar-btn toolbar-split__main"
             :title="t(locale, 'fillColor')"
-            :disabled="!hasSelection"
+            :disabled="!hasSelection || !props.editable"
             @click="emit('apply-fill-color')"
           >
             <svg
@@ -891,7 +920,7 @@ const freezeOptions = computed<FontOption[]>(() => {
             ref="fillColorArrowRef"
             class="toolbar-btn toolbar-split__arrow"
             :title="t(locale, 'fillColor')"
-            :disabled="!hasSelection"
+            :disabled="!hasSelection || !props.editable"
             @click="coordToolbarMenu('fillColor', !fillColorMenuOpen)"
           >
             <svg
@@ -927,7 +956,7 @@ const freezeOptions = computed<FontOption[]>(() => {
           <button
             class="toolbar-btn toolbar-split__main"
             :title="t(locale, 'borders')"
-            :disabled="!hasSelection"
+            :disabled="!hasSelection || !props.editable"
             @click="emit('apply-border')"
           >
             <svg
@@ -961,7 +990,7 @@ const freezeOptions = computed<FontOption[]>(() => {
             ref="borderArrowRef"
             class="toolbar-btn toolbar-split__arrow"
             :title="t(locale, 'borders')"
-            :disabled="!hasSelection"
+            :disabled="!hasSelection || !props.editable"
             @click="coordToolbarMenu('border', !borderMenuOpen)"
           >
             <svg
@@ -1019,6 +1048,7 @@ const freezeOptions = computed<FontOption[]>(() => {
           align="right"
           :title="t(locale, 'hAlign')"
           :model-open="hAlignMenuOpen"
+          :disabled="!props.editable"
           :boundary-el="boundaryEl"
           @update:model-open="coordToolbarMenu('hAlign', $event)"
           @change="emit('h-align-change', $event)"
@@ -1046,6 +1076,7 @@ const freezeOptions = computed<FontOption[]>(() => {
           align="right"
           :title="t(locale, 'vAlign')"
           :model-open="vAlignMenuOpen"
+          :disabled="!props.editable"
           :boundary-el="boundaryEl"
           @update:model-open="coordToolbarMenu('vAlign', $event)"
           @change="emit('v-align-change', $event)"
@@ -1068,6 +1099,7 @@ const freezeOptions = computed<FontOption[]>(() => {
           :class="{ 'toolbar-btn--active': selWrap }"
           type="button"
           :title="t(locale, 'wrap')"
+          :disabled="!props.editable"
           @click="emit('wrap-toggle')"
         >
           <svg
@@ -1093,7 +1125,7 @@ const freezeOptions = computed<FontOption[]>(() => {
           <button
             class="toolbar-btn toolbar-split__main"
             :title="t(locale, 'mergeCenter')"
-            :disabled="!hasSelection"
+            :disabled="!hasSelection || !props.editable"
             @click="emit('apply-merge')"
           >
             <svg
@@ -1106,7 +1138,7 @@ const freezeOptions = computed<FontOption[]>(() => {
             ref="mergeArrowRef"
             class="toolbar-btn toolbar-split__arrow"
             :title="t(locale, 'mergeCells')"
-            :disabled="!hasSelection"
+            :disabled="!hasSelection || !props.editable"
             @click="coordToolbarMenu('merge', !mergeMenuOpen)"
           >
             <svg
@@ -1162,6 +1194,7 @@ const freezeOptions = computed<FontOption[]>(() => {
             :fallback-label="nfFallbackLabel"
             align="right"
             :model-open="numFmtMenuOpen"
+            :disabled="!props.editable"
             :boundary-el="boundaryEl"
             @update:model-open="coordToolbarMenu('numFmt', $event)"
             @change="emit('number-format-change', String($event))"
@@ -1171,7 +1204,7 @@ const freezeOptions = computed<FontOption[]>(() => {
             class="toolbar-btn toolbar-number-format__btn"
             :class="{ 'toolbar-btn--disabled': !canIncreaseDecimals }"
             :title="t(locale, 'nfIncreaseDecimals')"
-            :disabled="!canIncreaseDecimals"
+            :disabled="!canIncreaseDecimals || !props.editable"
             @click="emit('increase-decimals')"
           >
             <svg
@@ -1193,7 +1226,7 @@ const freezeOptions = computed<FontOption[]>(() => {
             class="toolbar-btn toolbar-number-format__btn"
             :class="{ 'toolbar-btn--disabled': !canDecreaseDecimals }"
             :title="t(locale, 'nfDecreaseDecimals')"
-            :disabled="!canDecreaseDecimals"
+            :disabled="!canDecreaseDecimals || !props.editable"
             @click="emit('decrease-decimals')"
           >
             <svg
@@ -1242,7 +1275,7 @@ const freezeOptions = computed<FontOption[]>(() => {
           <button
             class="toolbar-btn toolbar-split__main"
             :title="t(locale, 'sum')"
-            :disabled="!hasSelection || isSingleCell"
+            :disabled="!hasSelection || isSingleCell || !props.editable"
             @click="emit('calc-sum')"
           >
             <svg
@@ -1255,7 +1288,7 @@ const freezeOptions = computed<FontOption[]>(() => {
             ref="calcArrowRef"
             class="toolbar-btn toolbar-split__arrow"
             :title="t(locale, 'calculate')"
-            :disabled="!hasSelection"
+            :disabled="!hasSelection || !props.editable"
             @click="coordToolbarMenu('calc', !calcMenuOpen)"
           >
             <svg
@@ -1267,7 +1300,7 @@ const freezeOptions = computed<FontOption[]>(() => {
             :model-open="calcMenuOpen"
             :locale="locale"
             :trigger-el="calcArrowRef"
-            :disabled="isSingleCell"
+            :disabled="isSingleCell || !props.editable"
             :boundary-el="boundaryEl"
             @update:model-open="coordToolbarMenu('calc', $event)"
             @change="emit(`calc-${$event}`)"
@@ -1290,7 +1323,7 @@ const freezeOptions = computed<FontOption[]>(() => {
           <button
             class="toolbar-btn toolbar-split__main"
             :title="cachedSortOrder === 'asc' ? t(locale, 'sortAsc') : t(locale, 'sortDesc')"
-            :disabled="!canSort"
+            :disabled="!canSort || !props.editable"
             @click="emit('apply-sort')"
           >
             <svg
@@ -1317,7 +1350,7 @@ const freezeOptions = computed<FontOption[]>(() => {
             ref="sortArrowRef"
             class="toolbar-btn toolbar-split__arrow"
             :title="t(locale, 'sort')"
-            :disabled="!canSort"
+            :disabled="!canSort || !props.editable"
             @click="coordToolbarMenu('sort', !sortMenuOpen)"
           >
             <svg
@@ -1352,7 +1385,7 @@ const freezeOptions = computed<FontOption[]>(() => {
           ref="outlineArrowRef"
           class="toolbar-btn outline-trigger"
           :class="{ 'is-open': outlineMenuOpen }"
-          :disabled="!outlineAxis"
+          :disabled="!outlineAxis || !props.editable"
           :title="t(locale, 'outlineGroup')"
           @click="coordToolbarMenu('outline', !outlineMenuOpen)"
         >
@@ -1400,7 +1433,7 @@ const freezeOptions = computed<FontOption[]>(() => {
         <button
           class="toolbar-btn"
           :class="{ 'toolbar-btn--active': filterActive }"
-          :disabled="!canFilter"
+          :disabled="!canFilter || !props.editable"
           :title="filterActive ? t(locale, 'clearFilter') : t(locale, 'filter')"
           @click="onFilterClick"
         >
@@ -1435,6 +1468,7 @@ const freezeOptions = computed<FontOption[]>(() => {
           :trigger-icon="FREEZE_ICON"
           :trigger-label="t(locale, 'freezePane')"
           :model-open="freezeMenuOpen"
+          :disabled="!props.editable"
           :boundary-el="boundaryEl"
           @update:model-open="coordToolbarMenu('freeze', $event)"
           @change="emit('freeze-change', String($event))"
@@ -1454,7 +1488,7 @@ const freezeOptions = computed<FontOption[]>(() => {
       >
         <ConditionalFormatMenu
           :locale="locale"
-          :has-selection="hasSelection"
+          :has-selection="hasSelection && props.editable"
           :theme-vars="themeVars"
           :model-open="cfMenuOpen"
           :boundary-el="boundaryEl"
@@ -1480,6 +1514,7 @@ const freezeOptions = computed<FontOption[]>(() => {
         <button
           class="toolbar-btn"
           :title="t(locale, 'dv')"
+          :disabled="!props.editable"
           @click="onDataValidationClick"
         >
           <svg
@@ -1499,7 +1534,7 @@ const freezeOptions = computed<FontOption[]>(() => {
       :to="overflowMenuTarget"
     >
       <div
-        class="tb-item sp-spreader-overlay"
+        class="tb-item sp-spreader-overlay ro-keep"
         :class="{ dark: spTheme === 'dark' }"
         data-key="find"
       >
@@ -1558,7 +1593,7 @@ const freezeOptions = computed<FontOption[]>(() => {
       <div
         v-show="overflowOpen"
         class="overflow-menu-wrap sp-spreader-overlay"
-        :class="{ 'no-anim': skipCloseAnim, 'dark': spTheme === 'dark' }"
+        :class="{ 'no-anim': skipCloseAnim, 'dark': spTheme === 'dark', 'toolbar--readonly': props.editable === false }"
         :style="menuStyle"
         @pointerdown.stop.prevent
       >
@@ -1609,6 +1644,10 @@ const freezeOptions = computed<FontOption[]>(() => {
 .toolbar > * { animation: toolbar-fade-in .15s ease-out both; }
 @keyframes toolbar-fade-in { from { opacity: 0; } to { opacity: 1; } }
 .tb-item { display: flex; align-items: center; flex: 0 0 auto; }
+/* 只读模式：编辑类 tb-item 的按钮已各自带 :disabled 原生置灰；
+   这里仅用 pointer-events 兜底 SpDropdown/ColorPicker 等无 disabled prop 的组件，
+   查看类（冻结、查找）用 .ro-keep 豁免 */
+.toolbar--readonly .tb-item:not(.ro-keep) { pointer-events: none; }
 .toolbar-sep { width: 1px; height: 18px; margin: 0 4px; background: var(--sp-toolbar-border); }
 .toolbar-font, .toolbar-number-format, .toolbar-align, .toolbar-freeze { flex: 0 0 auto; }
 .toolbar-font-size, .toolbar-number-format-group { display: inline-flex; align-items: center; gap: 0; height: 26px; position: relative; }
@@ -1617,6 +1656,8 @@ const freezeOptions = computed<FontOption[]>(() => {
 .toolbar-font-size__input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .toolbar-font-size__input:hover { background: var(--sp-toolbar-btn-hover-bg); }
 .toolbar-font-size__input:focus { border-color: var(--sp-toolbar-border); background: var(--sp-toolbar-bg, #fff); }
+.toolbar-font-size__input:disabled { color: var(--sp-toolbar-btn-disabled-color, #bbb); cursor: default; background: transparent; }
+.toolbar-font-size__input:disabled:hover { background: transparent; }
 .toolbar-font-size__btn { display: flex; align-items: center; justify-content: center; width: 16px; height: 26px; border: 1px solid transparent; border-left: none; border-radius: 0 3px 3px 0; background: transparent; color: var(--sp-toolbar-btn-color); cursor: pointer; padding: 0; }
 .toolbar-font-size__btn:hover { background: var(--sp-toolbar-btn-hover-bg); }
 .toolbar-font-size__btn svg { width: 10px; height: 10px; }

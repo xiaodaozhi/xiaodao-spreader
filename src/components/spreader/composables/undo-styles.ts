@@ -178,6 +178,8 @@ export function createUndoStyles(
   }
 
   function saveUndo() {
+    // 只读模式下任何变异都不会发生，快照入栈只会污染 undo 历史并清空 redo 栈
+    if (!s.editable.value) return;
     const snap = takeSnap();
     const last = undoStack.value[undoStack.value.length - 1];
     if (last && JSON.stringify(last) === JSON.stringify(snap)) return;
@@ -189,6 +191,7 @@ export function createUndoStyles(
   s.saveUndo = saveUndo;
 
   function undo() {
+    if (!s.editable.value) return;
     if (!undoStack.value.length) return;
     redoStack.value.push(takeSnap());
     restoreSnap(undoStack.value.pop()!);
@@ -199,6 +202,7 @@ export function createUndoStyles(
   }
 
   function redo() {
+    if (!s.editable.value) return;
     if (!redoStack.value.length) return;
     undoStack.value.push(takeSnap());
     restoreSnap(redoStack.value.pop()!);
@@ -216,6 +220,7 @@ export function createUndoStyles(
   const paintFmt = ref<{ styles: Record<string, number> } | null>(null);
 
   function onPaintFormat() {
+    if (!s.editable.value) return;
     const sel = s.selection.value;
     if (!sel) return;
     const styleIds: Record<string, number> = {};
@@ -228,6 +233,7 @@ export function createUndoStyles(
   }
 
   function applyPaintFormat() {
+    if (!s.editable.value) return;
     const pf = paintFmt.value;
     const sel = s.selection.value;
     if (!pf || !sel) return;
@@ -253,6 +259,7 @@ export function createUndoStyles(
   }
 
   function clearFormat() {
+    if (!s.editable.value) return;
     const sel = s.selection.value;
     if (!sel) return;
     saveUndo();
@@ -315,6 +322,7 @@ export function createUndoStyles(
   });
 
   function applyStyleToSelection(prop: string, value: unknown) {
+    if (!s.editable.value) return;
     const sel = s.selection.value;
     if (!sel) return;
     saveUndo();
@@ -648,6 +656,7 @@ export function createUndoStyles(
   // 将格式代码应用到当前选区；General（空串）会删除 numberFormat 属性。
   // 用户显式选择格式 → 同时清除自动生成的自定义标记（由后续代码反推分类）
   function applyNumberFormatCode(code: string) {
+    if (!s.editable.value) return;
     applyStyleToSelection('numberFormat', code);
     clearSelectionNumberFormatCategory();
   }
@@ -752,6 +761,7 @@ export function createUndoStyles(
   // 逐格基于自身当前格式步进 ±1 小数位；越界/不支持的单元格跳过；一次操作一个撤销点。
   // 常规单元格（识别为数字）步进后，数字格式属性自动标记为自定义分类。
   function stepSelectionDecimals(delta: 1 | -1) {
+    if (!s.editable.value) return;
     const items = collectAdjustableCells();
     const changes: { key: string; code: string; category?: 'custom' }[] = [];
     for (const it of items) {

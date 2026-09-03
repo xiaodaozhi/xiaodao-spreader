@@ -28,10 +28,12 @@ const props = withDefaults(defineProps<{
   mode: 'create' | 'edit';
   rule?: DataValidationRule | null;
   defaultRangeText?: string;
+  editable?: boolean;
   themeVars?: Record<string, string>;
 }>(), {
   rule: null,
   defaultRangeText: '',
+  editable: true,
   themeVars: () => ({}),
 });
 
@@ -679,6 +681,7 @@ function onErrorStyleChange(v: string | number) {
       <button
         type="button"
         class="dv-btn dv-btn--danger"
+        :disabled="props.editable === false"
         @click="emit('clear')"
       >
         {{ t(locale, 'dvClearAll') }}
@@ -687,6 +690,7 @@ function onErrorStyleChange(v: string | number) {
       <button
         type="button"
         class="dv-btn dv-btn--primary"
+        :disabled="props.editable === false"
         @click="onSave"
       >
         {{ t(locale, 'ok') }}
@@ -892,4 +896,7 @@ function onErrorStyleChange(v: string | number) {
 .dv-btn--primary:hover { background: #0069c0; }
 .dv-btn--danger { color: #c5221f; }
 .dv-btn--danger:hover { background: var(--sp-danger-hover-bg, #fce8e6); }
+.dv-btn:disabled { color: var(--sp-toolbar-btn-disabled-color, #bbb); border-color: var(--sp-toolbar-border, #ddd); background: var(--sp-toolbar-bg, #fff); cursor: default; }
+.dv-btn:disabled:hover { background: var(--sp-toolbar-bg, #fff); }
+.dv-btn--danger:disabled { color: var(--sp-toolbar-btn-disabled-color, #bbb); }
 </style>

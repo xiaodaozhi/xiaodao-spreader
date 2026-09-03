@@ -285,6 +285,7 @@ export function createSheetsOps(
 ): SheetsOpsState {
   // ============ 行/列插入/删除 ============
   function deleteRows(rS: number, rE: number) {
+    if (!s.editable.value) return;
     const dr = rE - rS + 1;
     // 先对 merges 做调整规划（此时旧 anchor cell 的 value/style 还在未被删，可用于迁移）
     const rebuiltMerges = adjustMergesForDeleteRows(rS, rE);
@@ -341,6 +342,7 @@ export function createSheetsOps(
   }
 
   function insertRows(rS: number, rE: number) {
+    if (!s.editable.value) return;
     const n = rE - rS + 1;
     const currentRowCount = s.rowCount;
     const origColCount = s.colCount;
@@ -400,6 +402,7 @@ export function createSheetsOps(
   }
 
   function insertCols(cS: number, cE: number) {
+    if (!s.editable.value) return;
     const n = cE - cS + 1;
     const currentColCount = s.colCount;
     const origRowCount = s.rowCount;
@@ -459,6 +462,7 @@ export function createSheetsOps(
   }
 
   function deleteCols(cS: number, cE: number) {
+    if (!s.editable.value) return;
     const dc = cE - cS + 1;
     const rebuiltMerges = adjustMergesForDeleteCols(cS, cE);
 
@@ -653,6 +657,7 @@ export function createSheetsOps(
   }
 
   function sortSelectedColumns(order: SortOrder, range?: SelectionRange, keyCol?: number) {
+    if (!s.editable.value) return;
     const sel = range ?? s.selection.value;
     if (!sel) return;
     const sC = sel.startCol, eC = sel.endCol;
@@ -715,6 +720,7 @@ export function createSheetsOps(
 
   /** 准备排序确认：若选区可扩展则弹出提醒并返回 true；调用方应直接 return，等待用户确认 */
   function prepareSortConfirmation(order: SortOrder): boolean {
+    if (!s.editable.value) return false;
     const sel = s.selection.value;
     if (!sel || !needsSortConfirmation(sel)) return false;
     const expanded = getCurrentRegion(sel);
@@ -725,6 +731,7 @@ export function createSheetsOps(
 
   /** 用户确认排序：expand=true 用扩展区域排序，false 用原始选区排序；基准列始终为原始选区首列 */
   function confirmSort(expand: boolean): void {
+    if (!s.editable.value) return;
     const pending = sortConfirmPending.value;
     if (!pending) return;
     const { order, originalRange, expandedRange } = pending;
@@ -763,6 +770,7 @@ export function createSheetsOps(
 
   /** 功能按钮：应用上一次从下拉菜单使用的排序项（默认升序） */
   function applyCachedSort() {
+    if (!s.editable.value) return;
     if (prepareSortConfirmation(cachedSortOrder.value)) return;
     sortSelectedColumns(cachedSortOrder.value);
   }
@@ -1123,6 +1131,7 @@ export function createSheetsOps(
   }
 
   function addSheet(n?: string): number {
+    if (!s.editable.value) return -1;
     us.saveUndo();
     s.cancelEdit();
     saveSheet();
@@ -1132,6 +1141,7 @@ export function createSheetsOps(
   }
 
   function removeSheet(i: number): number {
+    if (!s.editable.value) return activeSheetIndex.value;
     if (sheets.value.length <= 1) return activeSheetIndex.value;
     us.saveUndo();
     s.cancelEdit();
@@ -1141,6 +1151,7 @@ export function createSheetsOps(
   }
 
   function renameSheet(i: number, n: string) {
+    if (!s.editable.value) return;
     if (sheets.value[i] && n.trim()) {
       us.saveUndo();
       sheets.value[i]!.name = n.trim();
@@ -1148,6 +1159,7 @@ export function createSheetsOps(
   }
 
   function dupSheet(i: number): number {
+    if (!s.editable.value) return i;
     us.saveUndo();
     s.cancelEdit();
     saveSheet();
@@ -1188,6 +1200,7 @@ export function createSheetsOps(
   }
 
   function moveSheet(i: number, d: number) {
+    if (!s.editable.value) return;
     const ni = i + d;
     if (ni < 0 || ni >= sheets.value.length) return;
     us.saveUndo();
@@ -1376,6 +1389,7 @@ export function createSheetsOps(
 
   // ============ 行高/列宽重置 ============
   function resetRowHeight() {
+    if (!s.editable.value) return;
     const sel = s.selection.value;
     if (!sel) return;
     us.saveUndo();
@@ -1384,6 +1398,7 @@ export function createSheetsOps(
     emitModelData();
   }
   function resetColWidth() {
+    if (!s.editable.value) return;
     const sel = s.selection.value;
     if (!sel) return;
     us.saveUndo();

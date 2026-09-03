@@ -7,9 +7,11 @@ import type { ConditionalFormattingRule, ConditionalFormattingCondition } from '
 const props = withDefaults(defineProps<{
   locale: string;
   rules?: ConditionalFormattingRule[];
+  editable?: boolean;
   themeVars?: Record<string, string>;
 }>(), {
   rules: () => [],
+  editable: true,
   themeVars: () => ({}),
 });
 
@@ -87,6 +89,7 @@ function previewStyle(r: ConditionalFormattingRule): Record<string, string> {
       <button
         type="button"
         class="cf-btn cf-btn--primary cf-manager__new"
+        :disabled="props.editable === false"
         @click="emit('new')"
       >
         {{ t(locale, 'cfNewRule') }}
@@ -137,6 +140,7 @@ function previewStyle(r: ConditionalFormattingRule): Record<string, string> {
               class="cf-chk__input"
               type="checkbox"
               :checked="r.enabled"
+              :disabled="props.editable === false"
               @change="emit('toggle', r.id, ($event.target as HTMLInputElement).checked)"
             >
             <span class="cf-chk__box">
@@ -151,6 +155,7 @@ function previewStyle(r: ConditionalFormattingRule): Record<string, string> {
             type="button"
             class="cf-mini"
             :title="t(locale, 'cfMoveUp')"
+            :disabled="props.editable === false"
             @click="emit('move', r.id, 'up')"
           >
             <svg
@@ -168,6 +173,7 @@ function previewStyle(r: ConditionalFormattingRule): Record<string, string> {
             type="button"
             class="cf-mini"
             :title="t(locale, 'cfMoveDown')"
+            :disabled="props.editable === false"
             @click="emit('move', r.id, 'down')"
           >
             <svg
@@ -185,6 +191,7 @@ function previewStyle(r: ConditionalFormattingRule): Record<string, string> {
             type="button"
             class="cf-mini"
             :title="t(locale, 'cfEdit')"
+            :disabled="props.editable === false"
             @click="emit('edit', r)"
           >
             <svg
@@ -203,6 +210,7 @@ function previewStyle(r: ConditionalFormattingRule): Record<string, string> {
             type="button"
             class="cf-mini"
             :title="t(locale, 'cfDelete')"
+            :disabled="props.editable === false"
             @click="emit('delete', r.id)"
           >
             <svg
@@ -338,6 +346,8 @@ function previewStyle(r: ConditionalFormattingRule): Record<string, string> {
 }
 .cf-mini svg { display: block; width: 14px; height: 14px; }
 .cf-mini:hover { background: var(--sp-toolbar-btn-hover-bg, #f0f0f0); }
+.cf-mini:disabled { color: var(--sp-toolbar-btn-disabled-color, #bbb); border-color: var(--sp-toolbar-border, #ddd); cursor: default; }
+.cf-mini:disabled:hover { background: var(--sp-toolbar-bg, #fff); }
 
 .cf-btn {
   height: 30px;
@@ -352,4 +362,8 @@ function previewStyle(r: ConditionalFormattingRule): Record<string, string> {
 .cf-btn:hover { background: var(--sp-toolbar-btn-hover-bg, #f0f0f0); }
 .cf-btn--primary { border-color: #0078d7; background: #0078d7; color: #fff; }
 .cf-btn--primary:hover { background: #0069c0; }
+.cf-btn:disabled { color: var(--sp-toolbar-btn-disabled-color, #bbb); border-color: var(--sp-toolbar-border, #ddd); background: var(--sp-toolbar-bg, #fff); cursor: default; }
+.cf-btn:disabled:hover { background: var(--sp-toolbar-bg, #fff); }
+.cf-chk__input:disabled + .cf-chk__box { opacity: 0.5; }
+.cf-chk:has(.cf-chk__input:disabled) { cursor: default; }
 </style>

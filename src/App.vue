@@ -5,7 +5,8 @@
       :row-count="200"
       :col-count="26"
       :theme="theme"
-      locale="zh-CN"
+      :editable="true"
+      :locale="'zh-CN'"
     />
   </div>
 </template>

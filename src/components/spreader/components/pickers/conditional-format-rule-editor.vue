@@ -17,10 +17,12 @@ const props = withDefaults(defineProps<{
   mode: 'create' | 'edit';
   rule?: ConditionalFormattingRule | null;
   defaultRangeText?: string;
+  editable?: boolean;
   themeVars?: Record<string, string>;
 }>(), {
   rule: null,
   defaultRangeText: '',
+  editable: true,
   themeVars: () => ({}),
 });
 
@@ -511,6 +513,7 @@ function onCancel() {
       <button
         type="button"
         class="cf-btn cf-btn--primary"
+        :disabled="props.editable === false"
         @click="onSave"
       >
         {{ t(locale, 'ok') }}
@@ -673,4 +676,6 @@ function onCancel() {
 .cf-btn:hover { background: var(--sp-toolbar-btn-hover-bg, #f0f0f0); }
 .cf-btn--primary { border-color: #0078d7; background: #0078d7; color: #fff; }
 .cf-btn--primary:hover { background: #0069c0; }
+.cf-btn:disabled { color: var(--sp-toolbar-btn-disabled-color, #bbb); border-color: var(--sp-toolbar-border, #ddd); background: var(--sp-toolbar-bg, #fff); cursor: default; }
+.cf-btn:disabled:hover { background: var(--sp-toolbar-bg, #fff); }
 </style>

@@ -13,6 +13,7 @@ const spTheme = inject('sp-theme', 'light') as string;
 
 const props = defineProps<{
   open: boolean;
+  editable?: boolean;
   findText: string;
   replaceText: string;
   scope: FindScope;
@@ -119,6 +120,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocPointerdo
         class="find-bar__input"
         :placeholder="t(locale, 'replacePlaceholder')"
         :value="replaceText"
+        :readonly="props.editable === false"
         @input="emit('update:replaceText', ($event.target as HTMLInputElement).value)"
         @keydown="onInputKd"
       >
@@ -180,14 +182,14 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocPointerdo
       <span class="find-bar__count">{{ countText }}</span>
       <button
         class="find-bar__btn find-bar__btn--text"
-        :disabled="total === 0"
+        :disabled="total === 0 || props.editable === false"
         @click="emit('replace')"
       >
         {{ t(locale, 'replace') }}
       </button>
       <button
         class="find-bar__btn find-bar__btn--text"
-        :disabled="total === 0"
+        :disabled="total === 0 || props.editable === false"
         @click="emit('replace-all')"
       >
         {{ t(locale, 'replaceAll') }}
@@ -274,6 +276,10 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocPointerdo
 }
 .find-bar__input:focus {
   border-color: var(--sp-toolbar-btn-active-color);
+}
+.find-bar__input:read-only {
+  color: var(--sp-toolbar-btn-disabled-color, #bbb);
+  cursor: default;
 }
 .find-bar__btn--close {
   width: 26px;

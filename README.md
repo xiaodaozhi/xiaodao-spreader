@@ -37,6 +37,7 @@ A high-performance, canvas-based spreadsheet component for Vue 3: bringing an Ex
 - **Cell Notes**: Excel-style cell notes (comments). Right-click menu to create / edit / delete; red triangle indicator at cell corner marks cells with notes; hover to preview, click to edit. Notes are independent from cell values and styles, stored via a Note Pool (Sheet-level notes pool + cell.noteId reference), so sort / insert-delete moves cells together with their notes. Notes support multi-line text, optional author, and create/update timestamps. Author name can be set via the noteAuthor prop. *see [Cell Notes](#cell-notes)*
 - **Auto Fill (Fill Handle)**: Excel-style fill handle at the bottom-right corner of the active selection. Drag it up/down/left/right to fill cells: single values copy, number/date/text-number sequences auto-continue (e.g. `1,2 → 3,4,5`), formula references adjust per relative/absolute/mixed rules (e.g. `=A1*2` → `=A2*2`), and source `styleId` is reused via the style pool. Live preview during drag, edge auto-scroll, dynamic sheet expansion, freeze-pane compatibility, and a single undo step per operation: *see [Auto Fill](#auto-fill)*
 - **Row / Column Grouping & Collapsing**: Excel-style row/column outlines. Select whole rows or columns, then the toolbar "Group" dropdown (between Sort and Filter) offers Add Group / Ungroup / Clear Outline / Expand All / Collapse All, applied directly to the selected axis; row/column context menus expose a matching "Group" submenu. Only one level of non-overlapping groups is supported - nesting and partial overlap are rejected with a message. Group ranges get alternating background colors in the row/column header band; ± collapse buttons float inside the header band without reserving a separate gutter. Collapsed rows/columns are skipped during content rendering; inserting/deleting rows or columns shifts group ranges and auto-removes emptied groups. Groups persist per-sheet (`rowOutlines` / `columnOutlines`) through v-model, and every mutation integrates with undo/redo. *see [Row / Column Grouping & Collapsing](#row--column-grouping--collapsing)*
+- **Read-only Mode**: the `editable` prop (default `true`) toggles between full editing and a read-only view. With `editable={false}` every data / format mutation is blocked (editing, paste/cut/delete, fill, row/column insert & resize, sort/filter, CF/DV/notes, merge/borders, freeze panes, format painter, find & replace), all editing controls (toolbar, context menus, dialog confirm/insert buttons, formula bar, find & replace bar) are truly disabled, while selection, scrolling, copying, find-locate and viewing stay available. Guarding is layered (UI disabled → event gate → handler guard → underlying mutation guard) as defense in depth, runtime toggling takes effect immediately and never pollutes the undo history: *see [Read-only Mode](#read-only-mode)*
 
 ### Interaction
 - **Smart Selection**: Click, drag, Shift+Click, row/column header select, corner-cell select-all
@@ -142,8 +143,37 @@ const myData = ref<SheetModelData[]>([
 | `theme` | `'light' \| 'dark'` | `'light'` | Theme mode |
 | `locale` | `string` | `'zh-CN'` | Language: `'zh-CN'` \| `'en-US'` |
 | `noteAuthor` | `string` | `''` | Current note author name; when empty, saved notes have empty author field that renders as i18n placeholder |
+| `editable` | `boolean` | `true` | Whether editing is allowed; `false` enters read-only mode (see [Read-only Mode](#read-only-mode)) |
 
 ---
+
+## Read-only Mode
+
+Pass the `editable` prop to switch the component into a read-only view (default `true`, i.e. fully editable). With `editable={false}`:
+
+- **Every mutation is blocked**: cell editing and direct typing, paste / cut / delete, the fill handle, row / column insert & resize, sorting & filtering, conditional formatting, data validation, note add/edit/delete, merge cells, borders, font / alignment / fill / text color, number format, format painter, freeze panes, find & replace, and undo / redo.
+- **Viewing stays available**: selection & multi-range selection, scrolling, frozen-pane viewing, copying, inspecting cell content / format / notes, and find navigation (previous / next) are unaffected.
+- **UI stays consistent with logic**: every editing control (toolbar buttons & dropdowns, context-menu items, dialog confirm / insert buttons, formula-bar buttons, find & replace buttons and the "replace with" input) is truly disabled or read-only; the moment read-only is switched on, any open editing overlay or dialog closes automatically - no more "buttons look clickable but do nothing".
+- **Defense in depth**: four guard layers - ① UI `:disabled` / readonly (UX) → ② toolbar emit gate & event interception → ③ guard at the top of each handler → ④ underlying mutation guards (last line of defense). Removing the HTML `disabled` attribute via DevTools cannot bypass the guards, so the data can never be rewritten; read-only never pushes undo snapshots, so the undo history stays unpolluted.
+- **Runtime toggling takes effect immediately** without remounting; the `v-model` data and formatting are untouched and editing works as usual after switching back.
+
+```vue
+<template>
+  <button @click="editable = !editable">
+    {{ editable ? 'Switch to read-only' : 'Switch to editable' }}
+  </button>
+  <Spreader v-model:data="myData" :editable="editable" />
+</template>
+
+<script setup lang="ts">
+import { ref } from 'vue';
+import Spreader from 'xiaodao-spreader';
+import type { SheetModelData } from 'xiaodao-spreader';
+
+const myData = ref<SheetModelData[]>([]);
+const editable = ref(true);
+</script>
+```
 
 ## Data Model
 
@@ -218,6 +248,7 @@ src/
 └── components/
     └── spreader/
         ├── index.ts                  # Unified export: component + types (barrel)
+        ├── theme.css                 # Global theme stylesheet: --sp-* variables (.spreadsheet-outer / .sp-spreader-overlay scope, light + dark pairs)
         ├── components/
         │   ├── spreader.vue         # Entry component: template + style + composition
         │   ├── toolbar.vue          # Toolbar with overflow dropdown
@@ -249,7 +280,7 @@ src/
         │   ├── core-state.ts          # Props, cells/merges/selection, font metrics, navigation, outline state
         │   ├── find-replace.ts        # Find/replace state & interaction (Vue-dependent)
         │   ├── interactions.ts        # Renderer, formula bar, tab bar, context menu, scrollbar, events
-        │   ├── sheets-ops.ts          # Row/col ops, multi-sheet, v-model emit, theme, refs
+        │   ├── sheets-ops.ts          # Row/col ops, multi-sheet, v-model emit, refs
         │   ├── undo-styles.ts         # Undo/redo, format painter, font/alignment/color
         │   └── float-menu-position.ts # Shared toolbar dropdown positioning (right-anchor + flip/clamp)
         └── core/
@@ -272,7 +303,7 @@ src/
             ├── sort-core.ts              # Sort pure algorithms (zero Vue deps, unit-testable)
             ├── sort-icon.ts              # Sort icon single source (toolbar + picker)
             ├── style-pool.ts             # Style pool: dedup, registration, resolve, migration, GC
-            ├── theme.ts                  # Theme CSS variable construction
+            ├── theme.ts                  # Theme types + light/dark palettes (for Canvas); buildOuterStyle now returns size only
             ├── types.ts                  # All type definitions
             └── utils.ts                  # Pure utilities (column label, hit test, resolve size)
 ```
@@ -697,28 +728,49 @@ const lightTheme: ThemeColors = { /* 50+ color fields */ };
 const darkTheme: ThemeColors = { /* 50+ color fields */ };
 ```
 
-### CSS Variable Injection
+### Theme Variables (`--sp-*`) and Scope
 
-Theme colors are injected via CSS custom properties (`--sp-*`):
+Theme colors are injected via CSS custom properties (`--sp-*`), declared centrally in the component stylesheet `theme.css`:
 
 ```css
 --sp-bg, --sp-gridBg, --sp-gridLine, --sp-selectionBg,
 --sp-headerBg, --sp-headerBorder, --sp-headerText,
 --sp-formulaBarBg, --sp-formulaBarInputBorder,
 --sp-wrapperBg, --sp-cellEditorBorder,
-/* ... and many more */
+/* ... and many more (new variables must ship both light and dark values) */
 ```
+
+Variable scope is confined to the component subtree so the host page is never polluted:
+
+- **light**: declared on `.spreadsheet-outer, .sp-spreader-overlay`
+- **dark**: declared on `.spreadsheet-outer.dark, .sp-spreader-overlay.dark`; when `theme="dark"` the component root and every teleported overlay root get a `.dark` class automatically - `<html>` globals are never touched
+
+Because dropdowns / dialogs / context menus are teleported to `<body>` (outside the component DOM tree, so they cannot inherit variables from component ancestors), the stylesheet declares the same variable set on both `.spreadsheet-outer` (component body) and `.sp-spreader-overlay` (overlay roots). **Consumers must import the stylesheet**, otherwise every component style (including overlays) loses its theme variables:
+
+```ts
+import 'xiaodao-spreader/style.css';
+```
+
+Note: colors painted on the Canvas (grid, headers, selection) do not depend on CSS variables; they come from `ThemeColors` (`lightTheme` / `darkTheme`) picked by the `theme` prop.
 
 ### Custom Theme
 
-Pass `theme="dark"` for dark mode, or create a wrapper component that overrides CSS variables for full customization:
+Pass `theme="dark"` for dark mode, or override `--sp-*` variables for full customization. The variables live on the `.spreadsheet-outer` scope, so a wrapper component can override the component body via descendant inheritance, but to cover teleported overlays as well you must also target `.sp-spreader-overlay` (overlays leave the component tree and do not inherit from the wrapper):
 
 ```vue
 <template>
   <div style="--sp-bg: #1a1a2e; --sp-cellText: #e0e0e0;">
-    <Spreader v-model:data="myData" theme="dark" />
+    <Spreader v-model:data="myData" />
   </div>
 </template>
+```
+
+```css
+/* Needed to restyle teleported overlays (dropdowns/dialogs/context menus); overriding only the component root is not enough */
+.sp-spreader-overlay {
+  --sp-bg: #1a1a2e;
+  --sp-cellText: #e0e0e0;
+}
 ```
 
 ### Internationalization
@@ -805,6 +857,7 @@ x-spreader is touch-first: every mouse interaction has a symmetric touch path, v
 - [x] Auto Filter (AutoFilter): toolbar "Filter" / `Ctrl+Shift+L` to enable, header drop-down arrows, intelligent downward data probing, value/text/number/date multi-type filters, separate clear-column vs remove-all; see [Auto Filter (AutoFilter)](#auto-filter-autofilter)
 - [x] Touch & mobile interaction: symmetric touch paths for select / context menu / filter / resize / range select / format brush / tab menu; popups close on outside tap; see [Touch & Mobile Interaction](#touch--mobile-interaction)
 - [x] Cell comments / notes: Note Pool storage, context-menu CRUD, hover preview, edit overlay, persistence & undo; see [Cell Notes](#cell-notes)
+- [x] Read-only Mode: `editable` prop with layered guards, UI and logic both covered; see [Read-only Mode](#read-only-mode)
 - [ ] Print layout
 
 ### Long-term

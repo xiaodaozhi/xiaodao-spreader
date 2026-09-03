@@ -16,9 +16,11 @@ const spTheme = inject('sp-theme', 'light') as string;
 const props = withDefaults(defineProps<{
   modelOpen?: boolean;
   locale?: string;
+  editable?: boolean;
 }>(), {
   modelOpen: false,
   locale: 'zh-CN',
+  editable: true,
 });
 
 const emit = defineEmits<{
@@ -221,7 +223,7 @@ function onKeydown(e: KeyboardEvent) {
             <button
               class="ifn-dialog__btn ifn-dialog__btn--primary"
               type="button"
-              :disabled="!canInsert"
+              :disabled="!canInsert || props.editable === false"
               @click="onInsert"
             >
               {{ t(locale, 'insertFunctionBtn') }}

@@ -28,21 +28,42 @@ const emit = defineEmits<{
   (e: 'resolve', action: 'retry' | 'continue' | 'cancel'): void;
 }>();
 
-const ICONS: Record<DataValidationSeverity, { path: string; color: string }> = {
-  // 停止：圆形禁止符号
+interface DvIconGlyph {
+  d: string;
+  fill: string;
+  /** 需要旋转的图形（如交叉条）携带整体变换 */
+  t?: string;
+}
+interface DvIcon {
+  paths: DvIconGlyph[];
+}
+
+// 出错样式图标：实心语义色底 + 高对比字形，参照 Excel 三种 Alert 的经典形态。
+//  - stop       ：红色圆底 + 白色交叉条（禁止输入），比线框圆更醒目
+//  - warning    ：琥珀三角（深棕垫底勾勒描边）+ 深色感叹号
+//  - information：蓝色圆底 + 白色 i
+const ICONS: Record<DataValidationSeverity, DvIcon> = {
   stop: {
-    color: '#d93025',
-    path: 'M512 64a448 448 0 1 0 0 896 448 448 0 0 0 0-896zm0 96a352 352 0 1 1 0 704 352 352 0 0 1 0-704zm-160 224h320a32 32 0 0 1 0 64H352a32 32 0 0 1 0-64z',
+    paths: [
+      { d: 'M512 84a428 428 0 1 0 0 856 428 428 0 0 0 0-856z', fill: '#d93025' },
+      { d: 'M412 172h200v680H412z', fill: '#ffffff', t: 'rotate(45 512 512)' },
+      { d: 'M412 172h200v680H412z', fill: '#ffffff', t: 'rotate(-45 512 512)' },
+    ],
   },
-  // 警告：三角感叹号
   warning: {
-    color: '#f4b400',
-    path: 'M512 96l416 736H96L512 96zm0 128L192 768h640L512 224zm-32 128a32 32 0 0 1 32 32v160a32 32 0 0 1-64 0V384a32 32 0 0 1 32-32zm0 256a36 36 0 1 1 0 72 36 36 0 0 1 0-72z',
+    paths: [
+      { d: 'M512 96 L64 880 L960 880 Z', fill: '#8a5a00' },
+      { d: 'M512 128 L91 865 L933 865 Z', fill: '#ffc107' },
+      { d: 'M476 380h72v300H476z', fill: '#212121' },
+      { d: 'M512 726a46 46 0 1 0 0 92 46 46 0 0 0 0-92z', fill: '#212121' },
+    ],
   },
-  // 信息：圆形 i
   information: {
-    color: '#1a73e8',
-    path: 'M512 64a448 448 0 1 0 0 896 448 448 0 0 0 0-896zm0 96a352 352 0 1 1 0 704 352 352 0 0 1 0-704zm-32 128a32 32 0 0 1 64 0v32a32 32 0 0 1-64 0V288zm32 128a36 36 0 1 1 0 72 36 36 0 0 1 0-72zm0 96a32 32 0 0 1 32 32v128a32 32 0 0 1-64 0V544a32 32 0 0 1 32-32z',
+    paths: [
+      { d: 'M512 84a428 428 0 1 0 0 856 428 428 0 0 0 0-856z', fill: '#1a73e8' },
+      { d: 'M512 316a56 56 0 1 0 0 112 56 56 0 0 0 0-112z', fill: '#ffffff' },
+      { d: 'M474 460h76v280H474z', fill: '#ffffff' },
+    ],
   },
 };
 
@@ -88,11 +109,13 @@ function onSecondary() {
       <svg
         class="dv-alert__icon"
         viewBox="0 0 1024 1024"
-        :style="{ color: icon.color }"
       >
         <path
-          :d="icon.path"
-          fill="currentColor"
+          v-for="(g, gi) in icon.paths"
+          :key="gi"
+          :d="g.d"
+          :fill="g.fill"
+          :transform="g.t || undefined"
         />
       </svg>
       <div class="dv-alert__text">

@@ -29,6 +29,8 @@ const props = withDefaults(defineProps<{
   boundaryEl?: HTMLElement | null;
   /** 字体预览：为 true 时把菜单项与触发器的字体名用该字体本身渲染（字体选择器专用，value 须为 CSS font-family 串） */
   previewFont?: boolean;
+  /** 是否禁用（只读模式）：触发器不可点、菜单不可打开 */
+  disabled?: boolean;
 }>(), {
   width: 'auto',
   locale: 'zh-CN',
@@ -46,6 +48,7 @@ const props = withDefaults(defineProps<{
   triggerLabel: '',
   boundaryEl: null,
   previewFont: false,
+  disabled: false,
 });
 
 const emit = defineEmits<{
@@ -166,6 +169,7 @@ function close() {
 }
 
 function toggle() {
+  if (props.disabled) return;
   if (open.value) {
     close();
   } else {
@@ -276,7 +280,8 @@ onBeforeUnmount(() => {
       v-if="!hideTrigger"
       type="button"
       class="sp-dropdown__trigger"
-      :class="{ 'sp-dropdown__trigger--open': open }"
+      :class="{ 'sp-dropdown__trigger--open': open, 'sp-dropdown__trigger--disabled': disabled }"
+      :disabled="disabled"
       :title="title"
       @click="toggle"
     >
@@ -414,6 +419,8 @@ onBeforeUnmount(() => {
   background: var(--sp-toolbar-btn-hover-bg, #e6e6e6);
   border-color: var(--sp-toolbar-border, #d8d8d8);
 }
+.sp-dropdown__trigger--disabled { color: var(--sp-toolbar-btn-disabled-color, #bbb); cursor: default; }
+.sp-dropdown__trigger--disabled:hover { background: transparent; }
 .sp-dropdown__value {
   flex: 1;
   min-width: 0;

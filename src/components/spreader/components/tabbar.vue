@@ -18,6 +18,8 @@ const props = defineProps<{
   renTabVal: string;
   /** 边界基准元素（通常是表格容器 wrapper）：列表菜单不得越出其可视区，见 getFloatBounds */
   boundaryEl?: HTMLElement | null;
+  /** 是否可编辑；false = 只读模式，新增工作表按钮禁用 */
+  editable?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -312,6 +314,8 @@ onBeforeUnmount(() => {
     </div>
     <button
       class="tab-bar__add-btn"
+      :class="{ 'tab-bar__add-btn--disabled': props.editable === false }"
+      :disabled="props.editable === false"
       :title="t(locale, 'addSheet')"
       @click="emit('add-sheet')"
     >
@@ -359,7 +363,7 @@ onBeforeUnmount(() => {
                 type="button"
                 class="tab-list-menu__del"
                 :title="t(locale, 'delete')"
-                :disabled="!canDelete"
+                :disabled="!canDelete || props.editable === false"
                 @click.stop="onDeleteSheet(sheets.indexOf(s))"
               >
                 <svg
@@ -402,6 +406,8 @@ onBeforeUnmount(() => {
 .tab-bar__list-btn svg { width: 14px; height: 14px; }
 .tab-bar__add-btn { display: flex; align-items: center; justify-content: center; width: 24px; min-width: 24px; height: 24px; margin: 0 4px 3px 3px; border: none; background: transparent; color: var(--sp-tab-add-btn-color); font-size: 16px; line-height: 22px; text-align: center; cursor: pointer; padding: 0; align-self: flex-end; }
 .tab-bar__add-btn:hover { background: var(--sp-tab-add-btn-hover-bg); }
+.tab-bar__add-btn--disabled { color: var(--sp-toolbar-btn-disabled-color, #bbb); cursor: default; }
+.tab-bar__add-btn--disabled:hover { background: transparent; }
 </style>
 
 <style>

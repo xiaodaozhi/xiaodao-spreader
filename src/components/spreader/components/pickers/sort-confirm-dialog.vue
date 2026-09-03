@@ -11,9 +11,11 @@ const spTheme = inject('sp-theme', 'light') as string;
 const props = withDefaults(defineProps<{
   modelOpen?: boolean;
   locale?: string;
+  editable?: boolean;
 }>(), {
   modelOpen: false,
   locale: 'zh-CN',
+  editable: true,
 });
 
 const emit = defineEmits<{
@@ -121,6 +123,7 @@ function onCancel() {
             <button
               class="sort-confirm__btn sort-confirm__btn--primary"
               type="button"
+              :disabled="props.editable === false"
               @click="onConfirm"
             >
               {{ t(locale, 'sort') }}
@@ -214,6 +217,8 @@ function onCancel() {
   font-family: inherit;
 }
 .sort-confirm__btn:hover { background: var(--sp-toolbar-btn-hover-bg, #f0f0f0); }
+.sort-confirm__btn:disabled { color: var(--sp-toolbar-btn-disabled-color, #bbb); border-color: var(--sp-toolbar-border, #ddd); background: var(--sp-toolbar-bg, #fff); cursor: default; }
+.sort-confirm__btn:disabled:hover { background: var(--sp-toolbar-bg, #fff); }
 .sort-confirm__btn--primary { border-color: #0078d7; background: #0078d7; color: #fff; }
 .sort-confirm__btn--primary:hover { background: #0069c0; }
 .sort-confirm-enter-active, .sort-confirm-leave-active { transition: opacity 0.14s ease-out; }

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, computed, nextTick, provide, type Ref, type UnwrapRef } from 'vue';
+import { ref, reactive, computed, watch, nextTick, provide, type Ref, type UnwrapRef } from 'vue';
 import { SB_SIZE, DEFAULT_NOTE_AUTHOR, t } from '../core/constants';
 import Toolbar from './toolbar.vue';
 import Tabbar from './tabbar.vue';
@@ -43,12 +43,15 @@ const props = withDefaults(defineProps<{
   theme?: 'light' | 'dark';
   locale?: string;
   noteAuthor?: string;
+  /** 只读模式：false 时禁止所有数据/格式修改（编辑、粘贴、剪切、删除、填充、行列增删与调整、格式、排序、筛选、CF、DV、批注、分组结构、工作表增删等），但保留选中、滚动、冻结、复制、查看等能力。默认 true（可编辑）。 */
+  editable?: boolean;
 }>(), {
   rowCount: 200,
   colCount: 26,
   theme: 'light',
   locale: 'zh-CN',
   noteAuthor: DEFAULT_NOTE_AUTHOR,
+  editable: true,
 });
 
 // ============ v-model:data ============
@@ -149,6 +152,30 @@ findReplaceRaw.setupLifecycle();
 
 // ============ reactive 包装：模板自动解包 ref/computed ============
 const coreState = reactive(coreStateRaw) as unknown as UnwrapRef<CoreState>;
+// 只读模式：将 props.editable 同步进 coreState（所有模块闭包共享同一 editable ref，运行时切换立即可用）
+watch(
+  () => props.editable,
+  (v) => { coreStateRaw.editable.value = v ?? true; },
+  { immediate: true },
+);
+// 只读生效时关闭所有已打开的编辑浮层/对话框：仅禁打开入口不够，
+// 否则「浮层开着中途切只读」其确认/插入等按钮仍可点（底层 mutation 虽已拦截，但体验是点了没反应）。
+function closeEditOverlays() {
+  cfManagerOpen.value = false;
+  cfEditorOpen.value = false;
+  dvDialogOpen.value = false;
+  insertFuncOpen.value = false;
+  undoStylesRaw.nfDialogOpen.value = false;
+  sheetsOpsRaw.sortConfirmOpen.value = false;
+  if (interactionsRaw.noteUi.value?.mode === 'edit') interactionsRaw.closeNote();
+  interactionsRaw.ctxMenu.value = null;
+  interactionsRaw.closeFilterPopup();
+  interactionsRaw.closeValidationDropdown();
+}
+watch(
+  () => props.editable,
+  (v) => { if (v === false) closeEditOverlays(); },
+);
 const undoStyles = reactive(undoStylesRaw) as unknown as UnwrapRef<UndoStylesState>;
 const bordersMerge = reactive(bordersMergeRaw) as unknown as UnwrapRef<BordersMergeState>;
 const sheetsOps = reactive(sheetsOpsRaw) as unknown as UnwrapRef<SheetsOpsState>;
@@ -238,6 +265,7 @@ function onInsertFunction(text: string) {
 // 切换整个 Sheet 的 AutoFilter：未启用时自动检测筛选范围（选区优先 → active cell 当前区域）→ 创建；
 // 已启用时整体移除（恢复隐藏行、清除所有条件、移除表头箭头）。
 function onToggleFilter() {
+  if (coreStateRaw.editable.value === false) return;
   coreState.toggleAutoFilter();
   interactions.scheduleRender();
 }
@@ -259,6 +287,7 @@ const freezePanesDisabled = computed(() => {
 });
 
 function onFreezeChange(v: string) {
+  if (coreStateRaw.editable.value === false) return;
   const cur = coreState.freeze;
   if (v === 'panes') {
     // 以选区/活动单元格的左上角作为冻结点（0-based：D5 -> { rows: 4, cols: 3 }）
@@ -351,11 +380,13 @@ function onCfManage() {
 }
 
 function onCfClear(scope: 'selection' | 'sheet') {
+  if (coreStateRaw.editable.value === false) return;
   coreState.clearConditionalFormats(scope);
   interactions.scheduleRender();
 }
 
 function onCfSave(rule: ConditionalFormattingRule) {
+  if (coreStateRaw.editable.value === false) return;
   if (rule.id) {
     coreState.updateConditionalFormatRule(rule.id, rule);
   } else {
@@ -372,14 +403,17 @@ function onCfEdit(rule: ConditionalFormattingRule) {
 }
 
 function onCfDelete(id: string) {
+  if (coreStateRaw.editable.value === false) return;
   coreState.removeConditionalFormatRule(id);
 }
 
 function onCfMove(id: string, dir: 'up' | 'down') {
+  if (coreStateRaw.editable.value === false) return;
   coreState.moveConditionalFormatRule(id, dir);
 }
 
 function onCfToggle(id: string, enabled: boolean) {
+  if (coreStateRaw.editable.value === false) return;
   coreState.updateConditionalFormatRule(id, { enabled });
 }
 
@@ -458,6 +492,7 @@ function openDataValidationDialog() {
 }
 
 function onDvSave(rule: DataValidationRule) {
+  if (coreStateRaw.editable.value === false) return;
   // 「任何值」：按对话框中填写的范围清除数据验证（与 Excel 一致），不创建/更新规则
   if (rule.type === 'any') {
     rule.ranges.forEach((r) => coreStateRaw.clearDataValidation(r));
@@ -475,6 +510,7 @@ function onDvSave(rule: DataValidationRule) {
 }
 
 function onDvClear() {
+  if (coreStateRaw.editable.value === false) return;
   const sel = coreState.selection;
   if (sel) coreStateRaw.clearDataValidation(sel);
   dvDialogOpen.value = false;
@@ -620,6 +656,7 @@ const setDimInputRef = (el: unknown) => {
     <!-- 工具栏 -->
     <Toolbar
       ref="toolbarRef"
+      :editable="props.editable"
       :locale="coreState.locale"
       :can-undo="undoStyles.canUndo"
       :can-redo="undoStyles.canRedo"
@@ -738,6 +775,7 @@ const setDimInputRef = (el: unknown) => {
     <!-- 查找和替换栏 -->
     <FindReplaceBar
       :open="findReplace.open"
+      :editable="props.editable"
       :find-text="findReplace.findText"
       :replace-text="findReplace.replaceText"
       :scope="findReplace.scope"
@@ -763,6 +801,7 @@ const setDimInputRef = (el: unknown) => {
     <!-- 数字格式配置对话框 -->
     <NumberFormatDialog
       :model-open="undoStyles.nfDialogOpen"
+      :editable="props.editable"
       :locale="coreState.locale"
       :current-format="nfDialogCurrentFormat"
       :is-custom="undoStyles.selNumberFormat === NF_CUSTOM"
@@ -773,6 +812,7 @@ const setDimInputRef = (el: unknown) => {
     <!-- 排序提醒对话框 -->
     <SortConfirmDialog
       :model-open="sheetsOps.sortConfirmOpen"
+      :editable="props.editable"
       :locale="coreState.locale"
       @update:model-open="sheetsOps.sortConfirmOpen = $event"
       @confirm="sheetsOps.confirmSort($event)"
@@ -782,6 +822,7 @@ const setDimInputRef = (el: unknown) => {
     <!-- 插入函数对话框 -->
     <InsertFunctionDialog
       :model-open="insertFuncOpen"
+      :editable="props.editable"
       :locale="coreState.locale"
       @update:model-open="setInsertFuncOpen($event)"
       @insert="onInsertFunction($event)"
@@ -795,7 +836,10 @@ const setDimInputRef = (el: unknown) => {
       <div class="formula-bar__cell-label">
         {{ interactions.activeCellLabel }}
       </div>
-      <div class="formula-bar__buttons">
+      <div
+        v-if="props.editable"
+        class="formula-bar__buttons"
+      >
         <button
           type="button"
           class="formula-bar__btn formula-bar__btn--cancel"
@@ -873,6 +917,7 @@ const setDimInputRef = (el: unknown) => {
         :class="{ 'formula-bar__input--expanded': interactions.formulaBarExpanded }"
         :rows="interactions.formulaBarExpanded ? 3 : 1"
         :value="interactions.formulaBarDisplay"
+        :readonly="!props.editable"
         spellcheck="false"
         @focus="interactions.onFormulaBarFocus"
         @input="interactions.onFormulaBarInput"
@@ -1042,6 +1087,7 @@ const setDimInputRef = (el: unknown) => {
       :ren-tab="interactions.renTab"
       :ren-tab-val="interactions.renTabVal"
       :boundary-el="wrapperEl"
+      :editable="props.editable"
       @tab-click="interactions.onTabClick($event)"
       @tab-dblclick="interactions.onTabDblClick($event)"
       @tab-contextmenu="interactions.onTabCtxMenu($event.ev, $event.i)"
@@ -1141,6 +1187,7 @@ const setDimInputRef = (el: unknown) => {
       >
         <ConditionalFormatManager
           :locale="coreState.locale"
+          :editable="props.editable"
           :rules="coreState.conditionalFormats"
           @new="onCfNew"
           @edit="onCfEdit"
@@ -1162,6 +1209,7 @@ const setDimInputRef = (el: unknown) => {
       >
         <ConditionalFormatRuleEditor
           :locale="coreState.locale"
+          :editable="props.editable"
           :mode="cfEditorMode"
           :rule="cfEditorRule"
           :default-range-text="cfDefaultRangeText"
@@ -1208,6 +1256,7 @@ const setDimInputRef = (el: unknown) => {
       >
         <DataValidationDialog
           :locale="coreState.locale"
+          :editable="props.editable"
           :mode="dvDialogMode"
           :rule="dvDialogRule"
           :default-range-text="dvDefaultRangeText"
@@ -1317,7 +1366,7 @@ const setDimInputRef = (el: unknown) => {
 .formula-bar__btn { width: 22px; height: 28px; border: none; border-radius: 0; background: transparent; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; padding: 0; user-select: none; color: inherit; }
 .formula-bar__btn + .formula-bar__btn { border-left: 1px solid var(--sp-formula-bar-input-border); }
 .formula-bar__btn:hover { background: var(--sp-scroll-btn-hover-bg, #d0d0d0); }
-/* ✓ / × 按钮 hover：语义色半透明叠加，明暗主题均可见（弃用浅色专属的 #fdecea / #e8f5e9 淡底） */
+/* 确认/取消按钮 hover：语义色半透明叠加，明暗主题均可见（弃用浅色专属的 #fdecea / #e8f5e9 淡底） */
 .formula-bar__btn--cancel:hover { color: #e53935; background: rgba(229, 57, 53, 0.16); }
 .formula-bar__btn--accept:hover { color: #2e7d32; background: rgba(46, 125, 50, 0.16); }
 .formula-bar__fx-icon {

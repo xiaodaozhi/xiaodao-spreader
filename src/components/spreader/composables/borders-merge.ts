@@ -158,6 +158,7 @@ export function createBordersMerge(
    * 颜色选择器（onBorderColorChange）走另一条路径，只改色不动线型、且不创建新边框。
    */
   function onBorderChange(bt: BorderType) {
+    if (!s.editable.value) return;
     cachedBorder.value = bt;
     const sel = s.selection.value;
     if (!sel) return;
@@ -216,6 +217,7 @@ export function createBordersMerge(
    *  - width / style 原样保留，颜色与线型互不干扰。
    */
   function onBorderColorChange(color: string) {
+    if (!s.editable.value) return;
     cachedBorderColor.value = color;
     const sel = s.selection.value;
     if (!sel) return;
@@ -260,6 +262,7 @@ export function createBordersMerge(
    *      · width / color 原样保留，线型与颜色互不干扰。
    */
   function onBorderLineStyleChange(style: BorderLineStyle) {
+    if (!s.editable.value) return;
     cachedBorderLineStyle.value = style;
     const sel = s.selection.value;
     if (!sel) return;
@@ -323,6 +326,7 @@ export function createBordersMerge(
   });
 
   function applyCachedBorder() {
+    if (!s.editable.value) return;
     onBorderChange(cachedBorder.value);
   }
 
@@ -368,6 +372,7 @@ export function createBordersMerge(
   }
 
   function mergeAndCenter() {
+    if (!s.editable.value) return;
     const sel = s.selection.value;
     if (!sel || (sel.startCol === sel.endCol && sel.startRow === sel.endRow)) return;
     us.saveUndo();
@@ -391,6 +396,7 @@ export function createBordersMerge(
   }
 
   function mergeAcross() {
+    if (!s.editable.value) return;
     const sel = s.selection.value;
     if (!sel || sel.startCol === sel.endCol) return;
     us.saveUndo();
@@ -409,6 +415,7 @@ export function createBordersMerge(
   }
 
   function mergeCells() {
+    if (!s.editable.value) return;
     const sel = s.selection.value;
     if (!sel || (sel.startCol === sel.endCol && sel.startRow === sel.endRow)) return;
     us.saveUndo();
@@ -428,6 +435,7 @@ export function createBordersMerge(
   }
 
   function unmergeCells() {
+    if (!s.editable.value) return;
     const sel = s.selection.value;
     if (!sel) return;
     us.saveUndo();
@@ -561,6 +569,7 @@ export function createBordersMerge(
   }
 
   async function pasteFromClipboard() {
+    if (!s.editable.value) return;
     let txt: string;
     try {
       txt = await navigator.clipboard.readText();
@@ -636,6 +645,7 @@ export function createBordersMerge(
   }
 
   function cutSelected() {
+    if (!s.editable.value) return;
     us.saveUndo();
     copyToClipboard();
     if (s.selection.value) {
@@ -646,6 +656,7 @@ export function createBordersMerge(
   }
 
   function clearSelected() {
+    if (!s.editable.value) return;
     if (s.selection.value) {
       const sel = s.selection.value;
       s.clearCellsInRange(sel.startCol, sel.endCol, sel.startRow, sel.endRow);
@@ -655,6 +666,7 @@ export function createBordersMerge(
 
   // ============ 求和 ============
   function sumSelected() {
+    if (!s.editable.value) return;
     const sel = s.selection.value;
     if (!sel) return;
     us.saveUndo();
@@ -684,6 +696,7 @@ export function createBordersMerge(
 
   // ============ 平均值 ============
   function avgSelected() {
+    if (!s.editable.value) return;
     const sel = s.selection.value;
     if (!sel) return;
     us.saveUndo();
@@ -713,6 +726,7 @@ export function createBordersMerge(
 
   // ============ 计数 ============
   function countSelected() {
+    if (!s.editable.value) return;
     const sel = s.selection.value;
     if (!sel) return;
     us.saveUndo();

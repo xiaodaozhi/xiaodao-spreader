@@ -31,12 +31,14 @@ const props = withDefaults(defineProps<{
   isCustom?: boolean;
   /** 预览样例值（默认 1234.5） */
   sampleValue?: string;
+  editable?: boolean;
 }>(), {
   modelOpen: false,
   locale: 'zh-CN',
   currentFormat: '',
   isCustom: false,
   sampleValue: '1234.5',
+  editable: true,
 });
 
 const emit = defineEmits<{
@@ -474,6 +476,7 @@ const previewText = computed(() => {
               <button
                 class="nf-btn nf-btn--primary"
                 type="button"
+                :disabled="props.editable === false"
                 @click="onApply"
               >
                 {{ t(locale, 'ok') }}
@@ -621,6 +624,8 @@ const previewText = computed(() => {
 .nf-btn:hover { background: var(--sp-toolbar-btn-hover-bg, #f0f0f0); }
 .nf-btn--primary { border-color: #0078d7; background: #0078d7; color: #fff; }
 .nf-btn--primary:hover { background: #0069c0; }
+.nf-btn:disabled { color: var(--sp-toolbar-btn-disabled-color, #bbb); border-color: var(--sp-toolbar-border, #ddd); background: var(--sp-toolbar-bg, #fff); cursor: default; }
+.nf-btn:disabled:hover { background: var(--sp-toolbar-bg, #fff); }
 .nf-dialog-enter-active, .nf-dialog-leave-active { transition: opacity 0.14s ease-out; }
 .nf-dialog-enter-from, .nf-dialog-leave-to { opacity: 0; }
 .nf-dialog-enter-active .nf-dialog, .nf-dialog-leave-active .nf-dialog { transition: transform 0.14s ease-out; }

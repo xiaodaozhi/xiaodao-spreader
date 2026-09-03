@@ -1506,7 +1506,8 @@ export function createInteractions(
   /** 绘制填充柄：selection 右下角单元格的右下角小方块 */
   function drawFillHandle(ctx: CanvasRenderingContext2D, cs: ThemeColors) {
     const sel = s.selection.value;
-    if (!sel || s.editingCell.value) return;
+    // 只读模式不显示填充柄：拖拽填充是编辑操作，手柄没有存在意义
+    if (!sel || s.editingCell.value || !s.editable.value) return;
     const rect = s.cellToScreenRect(sel.endRow, sel.endCol);
     const hx = rect.x + rect.width - FILL_HANDLE_SIZE / 2;
     const hy = rect.y + rect.height - FILL_HANDLE_SIZE / 2;
@@ -1552,7 +1553,7 @@ export function createInteractions(
    * 公式栏暂存草稿：
    *  - 用户在公式栏 textarea 中输入时，实时写入本 ref
    *  - 不会写入 s.editValue 或 Cell.value（即不落盘、不影响 Undo）
-   *  - 只有用户触发「接受」（✔/Enter/blur/Alt+Enter 不算）时，才 copy draft → s.editValue → commitEdit → Cell.value
+   *  - 只有用户触发「接受」（点对勾按钮 / Enter / blur，Alt+Enter 不算）时，才 copy draft → s.editValue → commitEdit → Cell.value
    */
   const formulaBarDraft = ref('');
   /** 公式栏展开状态：false=1 行 / true=3 行。spreader.vue 通过 v-model-like 同步。 */
@@ -1635,6 +1636,7 @@ export function createInteractions(
    *  - 不依赖公式栏草稿流程，插入后单元格即为最终结果
    */
   function insertFunctionIntoCell(text: string) {
+    if (!s.editable.value) return;
     const ac = { ...s.activeCell.value };
     if (s.editingCell.value) {
       s.editValue.value = text;
@@ -1660,14 +1662,14 @@ export function createInteractions(
   let fbDirty = false;
 
   /**
-   * 接受编辑（✔/Enter/blur）：
+   * 接受编辑（点对勾按钮 / Enter / blur）：
    *  1. draft → s.editValue
    *  2. commitEdit → 写入 Cell.value（触发 Undo/Redo 栈）
    *  3. 按 Excel 风格：接受后 active 下移一行
    */
   /**
    * 接受公式栏草稿 → 写入 active/editing 单元格。唯一的落盘入口。
-   * 调用者：✔ 按钮 / Enter 键 / blur 失焦 / onMouseDown / onDblClick。
+   * 调用者：对勾按钮 / Enter 键 / blur 失焦 / onMouseDown / onDblClick。
    * 双重兜底：
    *   (a) 如果 editingCell 不为空 → draft → s.editValue → commitEdit → Cell.value；
    *   (b) 如果 editingCell 已空（比如 onMouseDown 之前已经被 s.commitEdit 清掉了），
@@ -1678,12 +1680,12 @@ export function createInteractions(
    * 接受编辑 → 写入数据模型。可能的编辑来源：
    *   1) 公式栏 textarea（实时写 formulaBarDraft.value）；
    *   2) 单元格双击进入的行内编辑器（实时写 s.editValue.value）。
-   * ⚠️ 数据源选择必须按"焦点 / 是否实际修改了草稿"来判断，绝对不能统一 draft → s.editValue 覆盖，
+   * 数据源选择必须按"焦点 / 是否实际修改了草稿"来判断，绝对不能统一 draft → s.editValue 覆盖，
    *    否则行内编辑器的输入会被初始值 draft 覆盖，导致"点其他单元格原编辑内容丢失 / 清空单元格"严重 BUG。
    */
   /**
    * 接受编辑 → 写入数据模型。
-   * ⚠️ 最关键的反误清空防护：
+   * 最关键的反误清空防护：
    *  1) 当 !editingCell.value 且 公式栏没 focus(focusOnFormulaBar=false) 且 用户也没改过公式栏(!fbDirty) → 纯选区切换，立即 return，绝不操作数据模型；
    *  2) 编辑态下 focusOnFormulaBar || fbDirty → 公式栏来源 → 用 draft.value 写；
    *     否则 → 行内编辑器来源 → 直接 s.commitEdit()，绝不覆盖 s.editValue。
@@ -1788,7 +1790,7 @@ export function createInteractions(
   }
 
   /**
-   * 取消公式栏编辑：丢弃草稿，回到进入编辑前的单元格值（✖ 按钮 / Esc 键）。
+   * 取消公式栏编辑：丢弃草稿，回到进入编辑前的单元格值（叉号按钮 / Esc 键）。
    */
   function cancelFormulaBarEdit() {
     if (fbGate_committing) return;
@@ -1855,20 +1857,20 @@ export function createInteractions(
       return;
     }
     if (e.key === 'Enter') {
-      // Enter = 接受编辑（✔）
+      // Enter = 接受编辑（等价点对勾按钮）
       e.preventDefault();
       acceptFormulaBarEdit();
     } else if (e.key === 'Escape') {
-      // Escape = 取消编辑（✖）
+      // Escape = 取消编辑（等价点叉号按钮）
       e.preventDefault();
       cancelFormulaBarEdit();
     }
   }
 
   /**
-   * 公式栏失焦 = 按用户要求等同于接受（✔）。
+   * 公式栏失焦 = 按用户要求等同于接受。
    * - 不检查 nextTick activeElement（存在很多浏览器/Vue 异步导致误判，会出现用户点了画布/按钮后本该接受却没接受）。
-   * - ✔/✖ 按钮本身在 spreader.vue 里已用 @mousedown.prevent 阻止 textarea 失焦，不会重复触发。
+   * - 对勾/叉号按钮本身在 spreader.vue 里已用 @mousedown.prevent 阻止 textarea 失焦，不会重复触发。
    * - 再叠加 acceptFormulaBarEdit 内部幂等锁 fbGate_committing 保证只提交一次。
    */
   function onFormulaBarBlur() {
@@ -1884,6 +1886,8 @@ export function createInteractions(
     scheduleRender();
   }
   function onTabDblClick(i: number) {
+    // 只读模式禁止重命名（切换工作表仍放行）
+    if (!s.editable.value && i === so.activeSheetIndex.value) return;
     if (i !== so.activeSheetIndex.value) {
       so.saveSheet();
       so.loadSheet(i);
@@ -1945,6 +1949,7 @@ export function createInteractions(
   /** 编辑态保存：空文本删除现存批注；非空按新建/更新走 setCellNote/updateCellNote。
    *  Undo/render/emit 均在 core-state 内部独立完成，此处只补 close + 末次 render 兜底。 */
   function saveNoteAt(row: number, col: number, text: string, author?: string) {
+    if (!s.editable.value) return;
     const existing = s.getNote(row, col);
     if (text) {
       if (existing) s.updateCellNote(existing.id, text);
@@ -1957,6 +1962,7 @@ export function createInteractions(
   }
   /** 右键：删除批注（deleteCellNote 内部独立 Undo + render + emit） */
   function removeNoteAt(row: number, col: number) {
+    if (!s.editable.value) return;
     s.deleteCellNote(row, col);
     closeNote();
     scheduleRender();
@@ -2095,6 +2101,8 @@ export function createInteractions(
 
   /** 打开某单元格的下拉列表；不存在可显示下拉的 list 规则时返回 false */
   function openValidationDropdown(col: number, row: number): boolean {
+    // 只读模式不弹数据验证下拉（选择即写入，点开却不可用会误导）
+    if (!s.editable.value) return false;
     const dd = s.getValidationDropdown(row, col);
     if (!dd) return false;
     const cvs = so.canvasRef.value;
@@ -2128,6 +2136,7 @@ export function createInteractions(
 
   /** 下拉选中一项：值来自规则候选，通常必然通过 list 规则；仍走一遍验证以兼容多规则叠加 */
   async function onValidationDropdownSelect(value: string): Promise<void> {
+    if (!s.editable.value) return;
     const dd = validationDropdown.value;
     if (!dd) return;
     const { col, row } = dd;
@@ -2189,6 +2198,8 @@ export function createInteractions(
 
   /** 打开某列的筛选弹窗（锚定到 Header 单元格右侧箭头，固定定位） */
   function openFilterPopup(col: number) {
+    // 只读模式不弹筛选浮层（筛选操作会改工作表状态，点开却不可用会误导）
+    if (!s.editable.value) return;
     const f = s.getFilter();
     if (!f) return;
     const cvs = so.canvasRef.value;
@@ -2453,40 +2464,43 @@ export function createInteractions(
   function onTabCtxMenu(e: MouseEvent, i: number) {
     e.preventDefault();
     e.stopPropagation();
+    const ro = !s.editable.value;
     showCtx(e.clientX, e.clientY, [
       { label: t(s.locale.value, 'insert'), action: () => {
         so.addSheet();
         scheduleRender();
-      } },
-      { label: t(s.locale.value, 'copy'), action: () => { so.dupSheet(i); } },
-      { label: t(s.locale.value, 'rename'), action: () => { onTabDblClick(i); } },
+      }, disabled: ro },
+      { label: t(s.locale.value, 'copy'), action: () => { so.dupSheet(i); }, disabled: ro },
+      { label: t(s.locale.value, 'rename'), action: () => { onTabDblClick(i); }, disabled: ro },
       { label: t(s.locale.value, 'delete'), action: () => {
         so.removeSheet(i);
         scheduleRender();
-      }, disabled: so.sheetCount.value <= 1 },
-      { label: t(s.locale.value, 'moveSheetLeft'), action: () => { so.moveSheet(i, -1); }, disabled: i === 0 },
-      { label: t(s.locale.value, 'moveSheetRight'), action: () => { so.moveSheet(i, 1); }, disabled: i === so.sheets.value.length - 1 },
+      }, disabled: ro || so.sheetCount.value <= 1 },
+      { label: t(s.locale.value, 'moveSheetLeft'), action: () => { so.moveSheet(i, -1); }, disabled: ro || i === 0 },
+      { label: t(s.locale.value, 'moveSheetRight'), action: () => { so.moveSheet(i, 1); }, disabled: ro || i === so.sheets.value.length - 1 },
     ]);
   }
   function onTabBarCtx(e: MouseEvent) {
     e.preventDefault();
     if ((e.target as HTMLElement).closest('.tab-item') || (e.target as HTMLElement).closest('.tab-bar__add-btn')) return;
+    const ro = !s.editable.value;
     showCtx(e.clientX, e.clientY, [
       { label: t(s.locale.value, 'insert'), action: () => {
         so.addSheet();
         scheduleRender();
-      } },
+      }, disabled: ro },
     ]);
   }
   function onCornerCtx(e: MouseEvent) {
     e.preventDefault();
     s.selectAll();
     scheduleRender();
+    const ro = !s.editable.value;
     showCtx(e.clientX, e.clientY, [
       { label: t(s.locale.value, 'cut'), action: () => {
         bm.cutSelected();
         so.emitModelData();
-      } },
+      }, disabled: ro },
       { label: t(s.locale.value, 'copy'), action: () => bm.copyToClipboard() },
       { label: t(s.locale.value, 'paste'), action: () => {
         us.saveUndo();
@@ -2494,7 +2508,7 @@ export function createInteractions(
           scheduleRender();
           nextTick(() => so.emitModelData());
         });
-      } },
+      }, disabled: ro },
       { label: t(s.locale.value, 'delete'), action: () => {
         us.saveUndo();
         bm.clearSelected();
@@ -2506,12 +2520,13 @@ export function createInteractions(
         }
         scheduleRender();
         so.emitModelData();
-      } },
+      }, disabled: ro },
     ]);
   }
   function onRowHdrCtx(e: MouseEvent, row: number) {
     e.preventDefault();
     const mx = e.clientX, my = e.clientY;
+    const ro = !s.editable.value;
     const sel = s.selection.value;
     if (!(sel && sel.startCol === 0 && sel.endCol === s.colCount - 1 && row >= sel.startRow && row <= sel.endRow)) {
       s.selectRange(0, row, s.colCount - 1, row, 'row');
@@ -2525,14 +2540,14 @@ export function createInteractions(
         s.selectRange(0, s2.startRow, s.colCount - 1, s2.startRow, 'row');
         scheduleRender();
         so.emitModelData();
-      } },
+      }, disabled: ro },
       { label: t(s.locale.value, 'cut'), action: () => {
         us.saveUndo();
         bm.copyRowCol();
         s.clearCellsInRange(0, s.colCount - 1, s2.startRow, s2.endRow);
         scheduleRender();
         so.emitModelData();
-      } },
+      }, disabled: ro },
       { label: t(s.locale.value, 'copy'), action: () => bm.copyRowCol() },
       { label: t(s.locale.value, 'paste'), action: () => {
         us.saveUndo();
@@ -2540,23 +2555,23 @@ export function createInteractions(
           scheduleRender();
           nextTick(() => so.emitModelData());
         });
-      } },
+      }, disabled: ro },
       { label: t(s.locale.value, 'delete'), action: () => {
         us.saveUndo();
         so.deleteRows(s2.startRow, s2.endRow);
         scheduleRender();
         so.emitModelData();
-      } },
-      { label: `${t(s.locale.value, 'rowHeight')}...`, action: () => openDimPanel('row', mx, my) },
-      { label: t(s.locale.value, 'autoRowHeight'), action: () => so.resetRowHeight() },
+      }, disabled: ro },
+      { label: `${t(s.locale.value, 'rowHeight')}...`, action: () => openDimPanel('row', mx, my), disabled: ro },
+      { label: t(s.locale.value, 'autoRowHeight'), action: () => so.resetRowHeight(), disabled: ro },
       { label: t(s.locale.value, 'freezeToRow'), action: () => {
         s.setFreeze(row + 1, s.freeze.cols);
         scheduleRender();
-      } },
+      }, disabled: ro },
       { label: t(s.locale.value, 'outlineGroup'), children: [
-        { label: t(s.locale.value, 'outlineAddRowGroup'), action: () => groupSelection('row') },
-        { label: t(s.locale.value, 'outlineUngroupRows'), action: () => ungroupSelection('row') },
-        { label: t(s.locale.value, 'outlineClear'), action: () => s.clearRowGroups() },
+        { label: t(s.locale.value, 'outlineAddRowGroup'), action: () => groupSelection('row'), disabled: ro },
+        { label: t(s.locale.value, 'outlineUngroupRows'), action: () => ungroupSelection('row'), disabled: ro },
+        { label: t(s.locale.value, 'outlineClear'), action: () => s.clearRowGroups(), disabled: ro },
         { label: t(s.locale.value, 'outlineExpandAll'), action: () => setAxisCollapsed('row', false) },
         { label: t(s.locale.value, 'outlineCollapseAll'), action: () => setAxisCollapsed('row', true) },
       ] },
@@ -2565,6 +2580,7 @@ export function createInteractions(
   function onColHdrCtx(e: MouseEvent, col: number) {
     e.preventDefault();
     const mx = e.clientX, my = e.clientY;
+    const ro = !s.editable.value;
     const sel = s.selection.value;
     if (!(sel && sel.startRow === 0 && sel.endRow === s.rowCount - 1 && col >= sel.startCol && col <= sel.endCol)) {
       s.selectRange(col, 0, col, s.rowCount - 1, 'col');
@@ -2579,14 +2595,14 @@ export function createInteractions(
         s.selectRange(s2.startCol, 0, s2.startCol, s.rowCount - 1, 'col');
         scheduleRender();
         so.emitModelData();
-      } },
+      }, disabled: ro },
       { label: t(s.locale.value, 'cut'), action: () => {
         us.saveUndo();
         bm.copyRowCol();
         s.clearCellsInRange(s2.startCol, s2.endCol, 0, s.rowCount - 1);
         scheduleRender();
         so.emitModelData();
-      } },
+      }, disabled: ro },
       { label: t(s.locale.value, 'copy'), action: () => bm.copyRowCol() },
       { label: t(s.locale.value, 'paste'), action: () => {
         us.saveUndo();
@@ -2594,33 +2610,33 @@ export function createInteractions(
           scheduleRender();
           nextTick(() => so.emitModelData());
         });
-      } },
+      }, disabled: ro },
       { label: t(s.locale.value, 'delete'), action: () => {
         us.saveUndo();
         so.deleteCols(s2.startCol, s2.endCol);
         scheduleRender();
         so.emitModelData();
-      } },
-      { label: t(s.locale.value, 'sort'), disabled: sortDisabled, children: [
+      }, disabled: ro },
+      { label: t(s.locale.value, 'sort'), disabled: ro || sortDisabled, children: [
         { label: t(s.locale.value, 'sortAsc'), action: () => {
           if (so.prepareSortConfirmation('asc')) return;
           so.sortSelectedColumns('asc');
-        }, disabled: sortDisabled },
+        }, disabled: ro || sortDisabled },
         { label: t(s.locale.value, 'sortDesc'), action: () => {
           if (so.prepareSortConfirmation('desc')) return;
           so.sortSelectedColumns('desc');
-        }, disabled: sortDisabled },
+        }, disabled: ro || sortDisabled },
       ] },
-      { label: `${t(s.locale.value, 'colWidth')}...`, action: () => openDimPanel('col', mx, my) },
-      { label: t(s.locale.value, 'defaultColWidth'), action: () => so.resetColWidth() },
+      { label: `${t(s.locale.value, 'colWidth')}...`, action: () => openDimPanel('col', mx, my), disabled: ro },
+      { label: t(s.locale.value, 'defaultColWidth'), action: () => so.resetColWidth(), disabled: ro },
       { label: t(s.locale.value, 'freezeToCol'), action: () => {
         s.setFreeze(s.freeze.rows, col + 1);
         scheduleRender();
-      } },
+      }, disabled: ro },
       { label: t(s.locale.value, 'outlineGroup'), children: [
-        { label: t(s.locale.value, 'outlineAddColumnGroup'), action: () => groupSelection('column') },
-        { label: t(s.locale.value, 'outlineUngroupColumns'), action: () => ungroupSelection('column') },
-        { label: t(s.locale.value, 'outlineClear'), action: () => s.clearColumnGroups() },
+        { label: t(s.locale.value, 'outlineAddColumnGroup'), action: () => groupSelection('column'), disabled: ro },
+        { label: t(s.locale.value, 'outlineUngroupColumns'), action: () => ungroupSelection('column'), disabled: ro },
+        { label: t(s.locale.value, 'outlineClear'), action: () => s.clearColumnGroups(), disabled: ro },
         { label: t(s.locale.value, 'outlineExpandAll'), action: () => setAxisCollapsed('column', false) },
         { label: t(s.locale.value, 'outlineCollapseAll'), action: () => setAxisCollapsed('column', true) },
       ] },
@@ -2634,11 +2650,12 @@ export function createInteractions(
     }
     const sel = s.selection.value;
     const isSingleCell = !!(sel && sel.startCol === sel.endCol && sel.startRow === sel.endRow);
+    const ro = !s.editable.value;
     showCtx(e.clientX, e.clientY, [
       { label: t(s.locale.value, 'cut'), action: () => {
         bm.cutSelected();
         so.emitModelData();
-      } },
+      }, disabled: ro },
       { label: t(s.locale.value, 'copy'), action: () => bm.copyToClipboard() },
       { label: t(s.locale.value, 'paste'), action: () => {
         us.saveUndo();
@@ -2646,30 +2663,30 @@ export function createInteractions(
           scheduleRender();
           nextTick(() => so.emitModelData());
         });
-      } },
+      }, disabled: ro },
       { label: t(s.locale.value, 'delete'), action: () => {
         us.saveUndo();
         bm.clearSelected();
         scheduleRender();
         so.emitModelData();
-      } },
-      { label: t(s.locale.value, 'calculate'), children: [
+      }, disabled: ro },
+      { label: t(s.locale.value, 'calculate'), disabled: ro, children: [
         { label: t(s.locale.value, 'sum'), action: bm.sumSelected, disabled: isSingleCell },
         { label: t(s.locale.value, 'avg'), action: bm.avgSelected, disabled: isSingleCell },
         { label: t(s.locale.value, 'count'), action: bm.countSelected, disabled: isSingleCell },
       ] },
-      { label: `${t(s.locale.value, 'dv')}...`, action: () => s.requestDataValidationDialog?.() },
+      { label: `${t(s.locale.value, 'dv')}...`, action: () => s.requestDataValidationDialog?.(), disabled: ro },
       { label: t(s.locale.value, 'dvClearValidation'), action: () => {
         us.saveUndo();
         s.clearDataValidation(s.selection.value);
         scheduleRender();
         so.emitModelData();
-      } },
+      }, disabled: ro },
       // ---- 单元格批注：仅单格选区显示「新建/编辑/删除批注」 ----
       ...(isSingleCell
         ? [
-            { label: s.hasNote(r, c) ? t(s.locale.value, 'editNote') : t(s.locale.value, 'newNote'), action: () => editNoteAt(r, c) },
-            ...(s.hasNote(r, c) ? [{ label: t(s.locale.value, 'deleteNote'), action: () => removeNoteAt(r, c) }] : []),
+            { label: s.hasNote(r, c) ? t(s.locale.value, 'editNote') : t(s.locale.value, 'newNote'), action: () => editNoteAt(r, c), disabled: ro },
+            ...(s.hasNote(r, c) ? [{ label: t(s.locale.value, 'deleteNote'), action: () => removeNoteAt(r, c), disabled: ro }] : []),
           ]
         : []),
     ]);
@@ -2764,7 +2781,7 @@ export function createInteractions(
   function applyDimPanel() {
     const p = dimPanel.value;
     const sel = s.selection.value;
-    if (!p || !sel) return;
+    if (!p || !sel || !s.editable.value) return;
     const raw = p.value.trim();
     const num = Number(raw);
     const isRow = p.type === 'row';
@@ -2980,6 +2997,8 @@ export function createInteractions(
 
   /** 填充柄命中测试：命中区域为填充柄视觉矩形 + FILL_HANDLE_HIT_PADDING */
   function isFillHandleHit(x: number, y: number): boolean {
+    // 只读模式无填充柄：命中测试直接返回 false，避免隐藏热区被误触
+    if (!s.editable.value) return false;
     const sel = s.selection.value;
     if (!sel || s.editingCell.value) return false;
     // Merge 部分相交时禁用填充柄
@@ -3124,6 +3143,7 @@ export function createInteractions(
       const c = screenXToCol(p.x);
       const cRight = c >= 0 ? (s.cellToScreenRect(0, c).x + s.colWidths.value[c]!) : -1;
       if (c >= 0 && Math.abs(p.x - cRight) <= 4) {
+        if (!s.editable.value) return;
         us.saveUndo();
         isResizingC = true;
         rszTC = c;
@@ -3138,6 +3158,7 @@ export function createInteractions(
       const r = screenYToRow(p.y);
       const rBottom = r >= 0 ? (s.cellToScreenRect(r, 0).y + s.getRowHeight(r)) : -1;
       if (r >= 0 && Math.abs(p.y - rBottom) <= 4) {
+        if (!s.editable.value) return;
         us.saveUndo();
         isResizingR = true;
         rszTR = r;
@@ -3473,6 +3494,7 @@ export function createInteractions(
         const cRight = s.cellToScreenRect(0, c).x + s.colWidths.value[c]!;
         if (Math.abs(x - cRight) <= 8) {
           e.preventDefault();
+          if (!s.editable.value) return;
           us.saveUndo();
           isResizingC = true;
           rszTC = c;
@@ -3491,6 +3513,7 @@ export function createInteractions(
         const rBottom = s.cellToScreenRect(r, 0).y + s.getRowHeight(r);
         if (Math.abs(y - rBottom) <= 8) {
           e.preventDefault();
+          if (!s.editable.value) return;
           us.saveUndo();
           isResizingR = true;
           rszTR = r;
@@ -3775,18 +3798,22 @@ export function createInteractions(
         return;
       case ctl && (e.key === 'x' || e.key === 'X'):
         e.preventDefault();
+        if (!s.editable.value) return;
         bm.cutSelected();
         return;
       case ctl && (e.key === 'z' || e.key === 'Z'):
         e.preventDefault();
+        if (!s.editable.value) return;
         us.undo();
         return;
       case ctl && (e.key === 'y' || e.key === 'Y'):
         e.preventDefault();
+        if (!s.editable.value) return;
         us.redo();
         return;
       case ctl && (e.key === 'v' || e.key === 'V'):
         e.preventDefault();
+        if (!s.editable.value) return;
         us.saveUndo();
         bm.pasteFromClipboard().then(() => {
           scheduleRender();
@@ -3802,6 +3829,7 @@ export function createInteractions(
         // Ctrl+Shift+L：切换整个 Sheet 的 AutoFilter（非对当前列筛选）。
         // 快捷键始终为纯移除/创建：已启用则整体移除，未启用则按选区创建。
         e.preventDefault();
+        if (!s.editable.value) return;
         s.toggleAutoFilter();
         scheduleRender();
         return;
@@ -3867,19 +3895,22 @@ export function createInteractions(
         return;
       case e.key === 'F2':
         e.preventDefault();
+        if (!s.editable.value) return;
         s.ensureVisible(s.activeCell.value.col, s.activeCell.value.row);
         s.startEdit();
         scheduleRender();
         so.focusEditInput();
         return;
       case sh && e.key === 'F2':
-        // Shift+F2：新建 / 编辑当前单元格批注
+        // Shift+F2：新建 / 编辑当前单元格批注（只读下禁止）
         e.preventDefault();
+        if (!s.editable.value) return;
         editNoteAt(s.activeCell.value.row, s.activeCell.value.col);
         return;
       case e.key === 'Delete':
       case e.key === 'Backspace':
         e.preventDefault();
+        if (!s.editable.value) return;
         us.saveUndo();
         bm.clearSelected();
         scheduleRender();
@@ -3891,6 +3922,7 @@ export function createInteractions(
         scheduleRender();
         return;
       case isPlainPrintableKey(e):
+        if (!s.editable.value) return;
         if (isImeKeydown(e)) {
           s.ensureVisible(s.activeCell.value.col, s.activeCell.value.row);
           s.startEdit('');
@@ -3927,7 +3959,7 @@ export function createInteractions(
       return;
     }
     s.editValue.value = val;
-    // ⚠️ 关键同步：行内编辑器的输入要即时更新到公式栏草稿 formulaBarDraft。
+    // 关键同步：行内编辑器的输入要即时更新到公式栏草稿 formulaBarDraft。
     //    否则 formulaBarDisplay（editingCell=true 时取 draft.value）仍停留在"进入编辑态时的初值"，
     //    当用户再点击公式栏 textarea，Vue 的 :value 绑定会用旧 draft 瞬间把 textarea 内容重置为初值/空，
     //    用户看到公式栏内容"突然变成空/旧值"后只要按任意键（方向键/退格/空格）就会触发 onFormulaBarInput

@@ -85,8 +85,12 @@ export interface CoreState {
     height?: number | string;
     theme?: 'light' | 'dark';
     locale?: string;
+    /** 只读模式：false 时禁止一切数据/格式修改，保留选中、滚动、复制、冻结等查看能力 */
+    editable?: boolean;
   };
   locale: ComputedRef<string>;
+  /** 只读模式标志：false 时所有数据/格式变异入口（setCellValue、样式、边框、合并、行列增删、排序、筛选、CF、DV、批注、编辑等）一律早退，不影响选中/滚动/复制/冻结等查看能力。 */
+  editable: Ref<boolean>;
   /** 当前工作表逻辑有效列数（0-based exclusive），响应式，可在运行期动态增长 */
   colCount: number;
   /** 当前工作表逻辑有效行数（0-based exclusive），响应式，可在运行期动态增长 */
@@ -388,6 +392,7 @@ export function createCoreState(
     height?: number | string;
     theme?: 'light' | 'dark';
     locale?: string;
+    editable?: boolean;
   },
   defaults: { rowCount: number; colCount: number; theme: 'light' | 'dark'; locale: string },
 ): CoreState {
@@ -402,7 +407,11 @@ export function createCoreState(
     height: rawProps.height,
     theme: rawProps.theme ?? defaults.theme,
     locale: rawProps.locale ?? defaults.locale,
+    editable: rawProps.editable ?? true,
   });
+
+  // 只读模式标志：false 时禁止一切数据/格式变异。由 spreader.vue 经 watch 同步 props.editable。
+  const editable = ref(rawProps.editable ?? true);
 
   // 同步外部 props 变化到内部 reactive props
   watchEffect(() => {
@@ -956,6 +965,7 @@ export function createCoreState(
   }
 
   function addRowGroup(start: number, end: number): OutlineValidationResult {
+    if (!editable.value) return { ok: false } as OutlineValidationResult;
     const v = validateGroup(rowOutlines.value, start, end);
     if (!v.ok || v.level === undefined) return v;
     state.saveUndo?.();
@@ -967,6 +977,7 @@ export function createCoreState(
   }
 
   function addColumnGroup(start: number, end: number): OutlineValidationResult {
+    if (!editable.value) return { ok: false } as OutlineValidationResult;
     const v = validateGroup(columnOutlines.value, start, end);
     if (!v.ok || v.level === undefined) return v;
     state.saveUndo?.();
@@ -978,6 +989,7 @@ export function createCoreState(
   }
 
   function removeOutline(id: string): boolean {
+    if (!editable.value) return false;
     const inRows = rowOutlines.value.some((o) => o.id === id);
     const inCols = !inRows && columnOutlines.value.some((o) => o.id === id);
     if (!inRows && !inCols) return false;
@@ -989,18 +1001,21 @@ export function createCoreState(
   }
 
   function clearRowGroups() {
+    if (!editable.value) return;
     if (!rowOutlines.value.length) return;
     state.saveUndo?.();
     rowOutlines.value = clearOutlines();
     afterOutlineChange();
   }
   function clearColumnGroups() {
+    if (!editable.value) return;
     if (!columnOutlines.value.length) return;
     state.saveUndo?.();
     columnOutlines.value = clearOutlines();
     afterOutlineChange();
   }
   function clearAllOutlines() {
+    if (!editable.value) return;
     if (!rowOutlines.value.length && !columnOutlines.value.length) return;
     state.saveUndo?.();
     rowOutlines.value = clearOutlines();
@@ -1056,6 +1071,7 @@ export function createCoreState(
   }
 
   function setFilter(f: SheetFilter | null, silent = false) {
+    if (!editable.value && !silent) return;
     filter.value = f;
     if (silent) return; // 加载/恢复场景：跳过滚动 clamp、重绘与 emit（避免触发 saveSheet 回写覆盖其它持久化状态）
     // 隐藏区域可能改变总高度，重新 clamp 滚动并重绘
@@ -1066,6 +1082,7 @@ export function createCoreState(
 
   /** 在选区/数据区域上启用筛选，自动确定筛选范围并确定表头行为首行 */
   function enableFilter(range: SelectionRange) {
+    if (!editable.value) return;
     const f: SheetFilter = {
       range: {
         startCol: Math.min(range.startCol, range.endCol),
@@ -1082,6 +1099,7 @@ export function createCoreState(
   }
 
   function clearFilter() {
+    if (!editable.value) return;
     if (!filter.value) return;
     filter.value = null;
     clampScrollFn(scrollX.value, scrollY.value);
@@ -1090,6 +1108,7 @@ export function createCoreState(
   }
 
   function clearFilterColumn(col: number) {
+    if (!editable.value) return;
     if (!filter.value) return;
     const { [col]: _removed, ...rest } = filter.value.columns;
     filter.value = { ...filter.value, columns: rest };
@@ -1098,6 +1117,7 @@ export function createCoreState(
   }
 
   function setFilterColumn(col: number, colFilter: FilterColumn | null) {
+    if (!editable.value) return;
     if (!filter.value) return;
     if (colFilter) {
       filter.value = { ...filter.value, columns: { ...filter.value.columns, [col]: colFilter } };
@@ -1214,6 +1234,7 @@ export function createCoreState(
    *  - 已启用 → 整体移除（恢复隐藏行、清除所有条件、移除表头箭头）；
    *  工具栏按钮与 Ctrl+Shift+L 均为纯切换：激活态点击即取消整个筛选态，不重新划定范围。 */
   function toggleAutoFilter() {
+    if (!editable.value) return;
     if (filter.value) {
       clearFilter();
       return;
@@ -1409,6 +1430,7 @@ export function createCoreState(
   }
 
   function setCellValue(c: number, r: number, v: string | null | undefined) {
+    if (!editable.value) return;
     // 按需扩展：允许写入超出当前逻辑范围的坐标，保证粘贴/拖拽/末尾输入等操作不被截断
     if (c >= 0 && r >= 0) ensureCapacity(c, r);
     const k = cellKey(c, r);
@@ -1470,6 +1492,7 @@ export function createCoreState(
   }
 
   function clearCellsInRange(cS: number, cE: number, rS: number, rE: number) {
+    if (!editable.value) return;
     for (let c = cS; c <= cE; c++) {
       for (let r = rS; r <= rE; r++) {
         const k = cellKey(c, r);
@@ -1504,6 +1527,7 @@ export function createCoreState(
 
   /** 新增规则（保存前快照到 Undo） */
   function addConditionalFormatRule(rule: ConditionalFormattingRule) {
+    if (!editable.value) return;
     state.saveUndo?.();
     const next: ConditionalFormattingRule = {
       id: rule.id || genRuleId(),
@@ -1522,6 +1546,7 @@ export function createCoreState(
 
   /** 更新既有规则（保存前快照到 Undo） */
   function updateConditionalFormatRule(id: string, patch: Partial<ConditionalFormattingRule>) {
+    if (!editable.value) return;
     state.saveUndo?.();
     const idx = conditionalFormats.findIndex((r) => r.id === id);
     if (idx < 0) return;
@@ -1533,6 +1558,7 @@ export function createCoreState(
 
   /** 删除规则（保存前快照到 Undo） */
   function removeConditionalFormatRule(id: string) {
+    if (!editable.value) return;
     state.saveUndo?.();
     const idx = conditionalFormats.findIndex((r) => r.id === id);
     if (idx < 0) return;
@@ -1544,6 +1570,7 @@ export function createCoreState(
 
   /** 调整优先级顺序：dir 'up' 表示提升（priority 减小），'down' 表示降低 */
   function moveConditionalFormatRule(id: string, dir: 'up' | 'down') {
+    if (!editable.value) return;
     state.saveUndo?.();
     const sorted = [...conditionalFormats].sort((a, b) => a.priority - b.priority);
     const idx = sorted.findIndex((r) => r.id === id);
@@ -1566,6 +1593,7 @@ export function createCoreState(
 
   /** 清除规则：scope 'selection' 仅移除命中当前选区的规则范围，'sheet' 清空当前工作表全部规则 */
   function clearConditionalFormats(scope: 'selection' | 'sheet') {
+    if (!editable.value) return;
     state.saveUndo?.();
     if (scope === 'sheet') {
       conditionalFormats.splice(0, conditionalFormats.length);
@@ -1696,6 +1724,7 @@ export function createCoreState(
     return _noteGet(row, col, cells, notes);
   }
   function setCellNoteFn(row: number, col: number, text: string, author?: string, opts?: { silent?: boolean }): CellNote {
+    if (!editable.value && !opts?.silent) return null as unknown as CellNote;
     if (!opts?.silent) state.saveUndo?.();
     const note = _noteSet(row, col, text, author, cells, notes);
     _noteGc(cells, notes);
@@ -1704,6 +1733,7 @@ export function createCoreState(
     return note;
   }
   function updateCellNoteFn(id: string, text: string): void {
+    if (!editable.value) return;
     if (!notes[id]) return;
     state.saveUndo?.();
     _noteUpdate(id, text, notes);
@@ -1711,6 +1741,7 @@ export function createCoreState(
     state.emitModelData?.();
   }
   function deleteCellNoteFn(row: number, col: number): void {
+    if (!editable.value) return;
     if (!_noteHasNote(row, col, cells)) return;
     state.saveUndo?.();
     _noteRemove(row, col, cells, notes);
@@ -1727,6 +1758,7 @@ export function createCoreState(
 
   /** 新建规则；silent=true 表示由调用方统一负责 Undo（如粘贴） */
   function createDataValidation(rule: DataValidationRule, opts?: { silent?: boolean }): DataValidationRule {
+    if (!editable.value && !opts?.silent) return { ...rule } as DataValidationRule;
     if (!opts?.silent) state.saveUndo?.();
     const next: DataValidationRule = {
       ...rule,
@@ -1748,6 +1780,7 @@ export function createCoreState(
     patch: Partial<DataValidationRule>,
     opts?: { silent?: boolean },
   ): void {
+    if (!editable.value && !opts?.silent) return;
     const idx = dataValidations.findIndex((r) => r.id === id);
     if (idx < 0) {
       // 按 id 找不到（例如规则已被清除）→ 退化为新建，保持调用方语义简单
@@ -1764,6 +1797,7 @@ export function createCoreState(
   }
 
   function removeDataValidation(id: string, opts?: { silent?: boolean }): void {
+    if (!editable.value && !opts?.silent) return;
     const idx = dataValidations.findIndex((r) => r.id === id);
     if (idx < 0) return;
     if (!opts?.silent) state.saveUndo?.();
@@ -1781,6 +1815,7 @@ export function createCoreState(
    *  - range 为 null 表示清除当前工作表全部规则。
    */
   function clearDataValidation(range: SelectionRange | null, opts?: { silent?: boolean }): void {
+    if (!editable.value && !opts?.silent) return;
     if (!range) {
       if (dataValidations.length === 0) return;
       if (!opts?.silent) state.saveUndo?.();
@@ -1837,6 +1872,7 @@ export function createCoreState(
     target: SelectionRange,
     opts?: { silent?: boolean },
   ): void {
+    if (!editable.value && !opts?.silent) return;
     if (!rules.length) return;
     if (!opts?.silent) state.saveUndo?.();
     // 1) 扣除目标区域（含未被覆盖的规则残余）
@@ -1903,6 +1939,7 @@ export function createCoreState(
   let saveUndoFn: () => void = () => {};
 
   function startEdit(initialValue?: string) {
+    if (!editable.value) return;
     if (!editingCell.value) {
       editingCell.value = { ...activeCell.value };
       if (initialValue !== undefined) {
@@ -1921,6 +1958,7 @@ export function createCoreState(
    * @returns 是否已写入单元格
    */
   async function commitEdit(): Promise<boolean> {
+    if (!editable.value) return false;
     const cur = editingCell.value;
     if (!cur) return false;
     const col = cur.col;
@@ -2010,6 +2048,7 @@ export function createCoreState(
 
   // ============ 冻结窗格 ============
   function setFreeze(rows: number, cols: number) {
+    if (!editable.value) return;
     const clampedRows = Math.max(0, Math.min(Math.floor(rows), dims.rowCount));
     const clampedCols = Math.max(0, Math.min(Math.floor(cols), dims.colCount));
     freeze.rows = clampedRows;
@@ -2019,6 +2058,7 @@ export function createCoreState(
   }
 
   function clearFreeze() {
+    if (!editable.value) return;
     freeze.rows = 0;
     freeze.cols = 0;
     state.scheduleRender?.();
@@ -2173,6 +2213,7 @@ export function createCoreState(
     targetRange: SelectionRange,
     direction: 'up' | 'down' | 'left' | 'right',
   ) {
+    if (!editable.value) return;
     // Merge 兼容性校验（双保险）
     const mergeRes = validateMergeCompatibility(sourceRange, targetRange, merges);
     if (!mergeRes.ok) {
@@ -2311,6 +2352,7 @@ export function createCoreState(
   const state: CoreState = {
     props,
     locale,
+    editable,
     get colCount() { return dims.colCount; },
     get rowCount() { return dims.rowCount; },
     ensureCapacity,
