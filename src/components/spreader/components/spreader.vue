@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, computed, nextTick, watch, onBeforeUnmount, type Ref, type UnwrapRef } from 'vue';
+import { ref, reactive, computed, nextTick, provide, type Ref, type UnwrapRef } from 'vue';
 import { SB_SIZE, DEFAULT_NOTE_AUTHOR, t } from '../core/constants';
 import Toolbar from './toolbar.vue';
 import Tabbar from './tabbar.vue';
@@ -122,22 +122,10 @@ sheetsCtx.saveSheet = sheetsOpsRaw.saveSheet;
 sheetsCtx.loadSheet = sheetsOpsRaw.loadSheet;
 sheetsCtx.mkSheet = sheetsOpsRaw.mkSheet;
 
-// 主题变量挂到 documentElement，使 Teleport 到 body 的下拉 / 右键菜单也能继承
-// （否则它们脱离 wrapper，永远走 CSS 变量兜底浅色，不随 dark 模式切换）
-function applyGlobalThemeVars() {
-  const el = document.documentElement;
-  const vars = sheetsOpsRaw.toolbarThemeVars.value;
-  for (const [k, v] of Object.entries(vars)) {
-    el.style.setProperty(k, v);
-  }
-}
-watch(() => sheetsOpsRaw.toolbarThemeVars.value, applyGlobalThemeVars, { immediate: true, deep: true });
-onBeforeUnmount(() => {
-  const el = document.documentElement;
-  for (const k of Object.keys(sheetsOpsRaw.toolbarThemeVars.value)) {
-    el.style.removeProperty(k);
-  }
-});
+// 主题作用域：将当前主题通过 provide 下发给所有 Teleport 浮层，使 dark 状态仅作用于
+// 本组件子树，而不在 <html> 上挂全局 .dark 类，避免污染父级项目的主题。
+const spTheme = computed(() => props.theme);
+provide('sp-theme', spTheme);
 
 const interactionsRaw = createInteractions(
   coreStateRaw,
@@ -626,6 +614,7 @@ const setDimInputRef = (el: unknown) => {
 <template>
   <div
     class="spreadsheet-outer"
+    :class="{ dark: spTheme === 'dark' }"
     :style="sheetsOps.outerStyle"
   >
     <!-- 工具栏 -->
@@ -684,7 +673,6 @@ const setDimInputRef = (el: unknown) => {
       :can-increase-decimals="undoStyles.canIncreaseDecimals"
       :can-decrease-decimals="undoStyles.canDecreaseDecimals"
       :boundary-el="wrapperEl"
-      :theme-vars="sheetsOps.toolbarThemeVars"
       @undo="undoStyles.undo()"
       @redo="undoStyles.redo()"
       @paint-format="undoStyles.onPaintFormat"
@@ -760,7 +748,6 @@ const setDimInputRef = (el: unknown) => {
       :message="findReplace.message"
       :focus-token="findReplace.focusToken"
       :locale="coreState.locale"
-      :theme-vars="sheetsOps.toolbarThemeVars"
       @update:find-text="findReplaceRaw.findText.value = $event"
       @update:replace-text="findReplaceRaw.replaceText.value = $event"
       @update:scope="findReplaceRaw.scope.value = $event"
@@ -1077,7 +1064,8 @@ const setDimInputRef = (el: unknown) => {
       <Transition name="menu-pop">
         <div
           v-if="interactions.ctxMenu"
-          class="context-menu"
+          class="context-menu sp-spreader-overlay"
+          :class="{ dark: spTheme === 'dark' }"
           :style="{ left: interactions.ctxMenu.x + 'px', top: interactions.ctxMenu.y + 'px' }"
           @click.stop
         >
@@ -1147,13 +1135,13 @@ const setDimInputRef = (el: unknown) => {
     <Teleport to="body">
       <div
         v-if="cfManagerOpen"
-        class="cf-modal-mask"
+        class="cf-modal-mask sp-spreader-overlay"
+        :class="{ dark: spTheme === 'dark' }"
         @click.self="cfManagerOpen = false"
       >
         <ConditionalFormatManager
           :locale="coreState.locale"
           :rules="coreState.conditionalFormats"
-          :theme-vars="sheetsOps.toolbarThemeVars"
           @new="onCfNew"
           @edit="onCfEdit"
           @delete="onCfDelete"
@@ -1168,7 +1156,8 @@ const setDimInputRef = (el: unknown) => {
     <Teleport to="body">
       <div
         v-if="cfEditorOpen"
-        class="cf-modal-mask"
+        class="cf-modal-mask sp-spreader-overlay"
+        :class="{ dark: spTheme === 'dark' }"
         @click.self="cfEditorOpen = false"
       >
         <ConditionalFormatRuleEditor
@@ -1176,7 +1165,6 @@ const setDimInputRef = (el: unknown) => {
           :mode="cfEditorMode"
           :rule="cfEditorRule"
           :default-range-text="cfDefaultRangeText"
-          :theme-vars="sheetsOps.toolbarThemeVars"
           @save="onCfSave"
           @cancel="cfEditorOpen = false"
         />
@@ -1214,7 +1202,8 @@ const setDimInputRef = (el: unknown) => {
     <Teleport to="body">
       <div
         v-if="dvDialogOpen"
-        class="cf-modal-mask"
+        class="cf-modal-mask sp-spreader-overlay"
+        :class="{ dark: spTheme === 'dark' }"
         @click.self="dvDialogOpen = false"
       >
         <DataValidationDialog
@@ -1222,7 +1211,6 @@ const setDimInputRef = (el: unknown) => {
           :mode="dvDialogMode"
           :rule="dvDialogRule"
           :default-range-text="dvDefaultRangeText"
-          :theme-vars="sheetsOps.toolbarThemeVars"
           @save="onDvSave"
           @clear="onDvClear"
           @cancel="dvDialogOpen = false"
@@ -1234,14 +1222,14 @@ const setDimInputRef = (el: unknown) => {
     <Teleport to="body">
       <div
         v-if="dvAlert"
-        class="cf-modal-mask"
+        class="cf-modal-mask sp-spreader-overlay"
+        :class="{ dark: spTheme === 'dark' }"
       >
         <DataValidationAlert
           :locale="coreState.locale"
           :severity="dvAlert.severity"
           :title="dvAlert.title"
           :message="dvAlert.message"
-          :theme-vars="sheetsOps.toolbarThemeVars"
           @resolve="onDvAlertResolve"
         />
       </div>
@@ -1251,14 +1239,14 @@ const setDimInputRef = (el: unknown) => {
     <Teleport to="body">
       <div
         v-if="outlineAlert"
-        class="cf-modal-mask"
+        class="cf-modal-mask sp-spreader-overlay"
+        :class="{ dark: spTheme === 'dark' }"
       >
         <DataValidationAlert
           :locale="coreState.locale"
           severity="information"
           :title="t(coreState.locale, 'outlineAlertTitle')"
           :message="outlineAlert"
-          :theme-vars="sheetsOps.toolbarThemeVars"
           @resolve="onOutlineAlertResolve"
         />
       </div>
@@ -1269,7 +1257,8 @@ const setDimInputRef = (el: unknown) => {
       <Transition name="menu-pop">
         <div
           v-if="interactions.dimPanel"
-          class="dim-panel"
+          class="dim-panel sp-spreader-overlay"
+          :class="{ dark: spTheme === 'dark' }"
           :style="{ left: interactions.dimPanel.x + 'px', top: interactions.dimPanel.y + 'px' }"
           @mousedown.stop
           @touchstart.stop

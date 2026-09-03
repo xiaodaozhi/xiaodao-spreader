@@ -4,7 +4,7 @@
       v-model:data="myData"
       :row-count="200"
       :col-count="26"
-      theme="dark"
+      :theme="theme"
       locale="zh-CN"
     />
   </div>
@@ -13,6 +13,23 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onBeforeUnmount } from 'vue';
 import Spreadsheet from './components/spreader';
+
+// 主题作为响应式变量下发给表格组件（而非字面量字符串），便于运行时切换。
+// body 背景随主题同步：组件作用域外的页面底色需由消费方（demo）自行控制，
+// 这里不依赖组件内的 --sp-* 变量（body 是组件根的祖先，CSS 变量不向上冒泡）。
+const theme = ref<'light' | 'dark'>('dark');
+
+const THEME_BODY_BG: Record<'light' | 'dark', string> = {
+  light: '#e8e8e8',
+  dark: '#1e1e1e',
+};
+watch(
+  theme,
+  (t) => {
+    document.body.style.backgroundColor = THEME_BODY_BG[t];
+  },
+  { immediate: true },
+);
 
 // ===== 禁止移动端网页缩放（严谨方案）=====
 // 1) viewport meta 已设置 user-scalable=no / max-min-scale=1
@@ -60,6 +77,7 @@ onBeforeUnmount(() => {
   document.removeEventListener('gestureend', blockedGesture);
   document.removeEventListener('keydown', blockedKeyZoom);
   document.removeEventListener('wheel', blockedWheelZoom);
+  document.body.style.backgroundColor = '';
 });
 
 // ---- 表格范围常量 ----

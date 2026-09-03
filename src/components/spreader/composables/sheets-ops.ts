@@ -253,7 +253,6 @@ export interface SheetsOpsState {
   // 主题 & CSS
   themeColors: ComputedRef<ThemeColors>;
   outerStyle: ComputedRef<Record<string, string>>;
-  toolbarThemeVars: ComputedRef<Record<string, string>>;
 
   // 模板 refs & 滚动控制
   wrapperRef: Ref<HTMLDivElement | null>;
@@ -1295,14 +1294,7 @@ export function createSheetsOps(
 
   // ============ 主题 & CSS ============
   const themeColors = computed(() => (s.props.theme === 'dark' ? darkTheme : lightTheme));
-  const outerStyle = computed(() => buildOuterStyle(themeColors.value, s.props.width, s.props.height, resolveSize));
-  const toolbarThemeVars = computed(() => {
-    const vars: Record<string, string> = {};
-    for (const [k, v] of Object.entries(outerStyle.value)) {
-      if (k.startsWith('--')) vars[k] = v;
-    }
-    return vars;
-  });
+  const outerStyle = computed(() => buildOuterStyle(s.props.width, s.props.height, resolveSize));
 
   // ============ 模板 refs & 滚动控制 ============
   const wrapperRef = ref<HTMLDivElement | null>(null);
@@ -1438,7 +1430,6 @@ export function createSheetsOps(
 
     themeColors,
     outerStyle,
-    toolbarThemeVars,
 
     wrapperRef,
     canvasRef,

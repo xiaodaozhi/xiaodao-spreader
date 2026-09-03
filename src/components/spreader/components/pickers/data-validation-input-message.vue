@@ -1,9 +1,17 @@
 <script setup lang="ts">
+import { inject } from 'vue';
+
 /**
  * 数据验证输入信息（Input Message）：选中单元格时显示的轻量提示气泡。
  * 默认 showInputMessage = false，避免每次点击单元格都弹出干扰。
  * 位置由调用方通过 cellToScreenRect 计算后传入（兼容冻结窗格与合并单元格）。
  */
+
+// 主题作用域：浮层经 Teleport 脱离组件 DOM 树，无法继承组件根上的 --sp-* 变量，
+// 故在此 inject spreader 下发的主题，并在浮层根挂载作用域类，使 dark 变量仅本组件内生效，
+// 而不依赖 <html> 全局类（以免污染调用方项目的主题）。
+const spTheme = inject('sp-theme', 'light') as string;
+
 withDefaults(defineProps<{
   title?: string;
   message?: string;
@@ -23,7 +31,8 @@ withDefaults(defineProps<{
 
 <template>
   <div
-    class="dvim"
+    class="dvim sp-spreader-overlay"
+    :class="{ dark: spTheme === 'dark' }"
     :style="{ left: x + 'px', top: (y + height + 4) + 'px', minWidth: Math.min(220, Math.max(width, 140)) + 'px' }"
   >
     <div

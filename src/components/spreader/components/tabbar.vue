@@ -1,8 +1,14 @@
 <script setup lang="ts">
-import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue';
+import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount, inject } from 'vue';
 import { t } from '../core/constants';
+
+// 主题作用域：浮层经 Teleport 脱离组件 DOM 树，无法继承组件根上的 --sp-* 变量，
+// 故在此 inject spreader 下发的主题，并在浮层根挂载作用域类，使 dark 变量仅本组件内生效，
+// 而不依赖 <html> 全局类（以免污染调用方项目的主题）。
 import type { SheetState } from '../core/types';
 import { getFloatBounds } from '../core/utils';
+
+const spTheme = inject('sp-theme', 'light') as string;
 
 const props = defineProps<{
   locale: string;
@@ -315,8 +321,9 @@ onBeforeUnmount(() => {
       <Transition name="menu-pop">
         <div
           v-if="listMenuOpen"
-          class="tab-list-menu"
+          class="tab-list-menu sp-spreader-overlay"
           :style="{ left: listMenuPos.left + 'px', bottom: listMenuPos.bottom + 'px' }"
+          :class="{ dark: spTheme === 'dark' }"
           @mousedown.prevent
         >
           <button

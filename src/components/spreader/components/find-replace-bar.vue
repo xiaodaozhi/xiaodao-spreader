@@ -1,9 +1,15 @@
 <script setup lang="ts">
-import { ref, computed, watch, nextTick, onBeforeUnmount } from 'vue';
+import { ref, computed, watch, nextTick, onBeforeUnmount, inject } from 'vue';
+
+// 主题作用域：浮层经 Teleport 脱离组件 DOM 树，无法继承组件根上的 --sp-* 变量，
+// 故在此 inject spreader 下发的主题，并在浮层根挂载作用域类，使 dark 变量仅本组件内生效，
+// 而不依赖 <html> 全局类（以免污染调用方项目的主题）。
 import { t } from '../core/constants';
 import type { FindScope } from '../core/types';
 import type { FontOption } from '../core/constants';
 import SpDropdown from './dropdown.vue';
+
+const spTheme = inject('sp-theme', 'light') as string;
 
 const props = defineProps<{
   open: boolean;
@@ -193,8 +199,9 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocPointerdo
     <Transition name="find-pop">
       <div
         v-if="settingsOpen"
-        class="find-bar__settings-panel"
+        class="find-bar__settings-panel sp-spreader-overlay"
         :style="{ top: settingsPos.top + 'px', left: settingsPos.left + 'px' }"
+        :class="{ dark: spTheme === 'dark' }"
         @click.stop
         @mousedown.prevent
       >

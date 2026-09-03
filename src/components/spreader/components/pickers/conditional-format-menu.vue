@@ -1,8 +1,13 @@
 <script setup lang="ts">
-import { ref, watch, nextTick, onMounted, onBeforeUnmount } from 'vue';
+import { ref, watch, nextTick, onMounted, onBeforeUnmount, inject } from 'vue';
 import { t } from '../../core/constants';
 import { getFloatBounds, cssRightFromX } from '../../core/utils';
 import { useFloatMenuPosition } from '../../composables/float-menu-position';
+
+// 主题作用域：浮层经 Teleport 脱离组件 DOM 树，无法继承组件根上的 --sp-* 变量，
+// 故在此 inject spreader 下发的主题，并在浮层根挂载作用域类，使 dark 变量仅本组件内生效，
+// 而不依赖 <html> 全局类（以免污染调用方项目的主题）。
+const spTheme = inject('sp-theme', 'light') as string;
 
 const props = withDefaults(defineProps<{
   locale: string;
@@ -279,7 +284,8 @@ onBeforeUnmount(() => {
       <Transition name="cf-pop">
         <div
           v-if="open"
-          class="cf-menu"
+          class="cf-menu sp-spreader-overlay"
+          :class="{ dark: spTheme === 'dark' }"
           :style="{ ...themeVars, right: pos.right + 'px', top: pos.top + 'px' }"
           @click.stop
           @mousedown.prevent
@@ -407,8 +413,8 @@ onBeforeUnmount(() => {
       <Transition name="cf-sub-pop">
         <div
           v-if="open && submenu === 'highlight'"
-          class="cf-submenu-wrap"
-          :class="{ 'cf-submenu-wrap--left': highlightDir === 'left', 'cf-submenu-wrap--up': highlightUp }"
+          class="cf-submenu-wrap sp-spreader-overlay"
+          :class="{ 'cf-submenu-wrap--left': highlightDir === 'left', 'cf-submenu-wrap--up': highlightUp, 'dark': spTheme === 'dark' }"
           :style="{
             ...themeVars,
             left: highlightSubPos.left !== undefined ? highlightSubPos.left + 'px' : undefined,
@@ -471,8 +477,8 @@ onBeforeUnmount(() => {
       <Transition name="cf-sub-pop">
         <div
           v-if="open && submenu === 'clear'"
-          class="cf-submenu-wrap"
-          :class="{ 'cf-submenu-wrap--left': clearDir === 'left', 'cf-submenu-wrap--up': clearUp }"
+          class="cf-submenu-wrap sp-spreader-overlay"
+          :class="{ 'cf-submenu-wrap--left': clearDir === 'left', 'cf-submenu-wrap--up': clearUp, 'dark': spTheme === 'dark' }"
           :style="{
             ...themeVars,
             left: clearSubPos.left !== undefined ? clearSubPos.left + 'px' : undefined,

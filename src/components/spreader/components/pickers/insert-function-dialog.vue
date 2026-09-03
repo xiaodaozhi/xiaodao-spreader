@@ -1,11 +1,18 @@
 <script setup lang="ts">
-import { ref, watch, nextTick, computed } from 'vue';
+import { ref, watch, nextTick, computed, inject } from 'vue';
 import { t } from '../../core/constants';
+
 import { FORMULA_PRESETS, checkFormulaStructure } from '../../core/formula';
 import SpDropdown from '../dropdown.vue';
 import type { FontOption } from '../../core/constants';
 
 // 插入函数对话框：下拉选择公式 → 在 textarea 中插入函数骨架（可继续编辑）→ 插入到目标单元格
+
+// 主题作用域：浮层经 Teleport 脱离组件 DOM 树，无法继承组件根上的 --sp-* 变量，
+// 故在此 inject spreader 下发的主题，并在浮层根挂载作用域类，使 dark 变量仅本组件内生效，
+// 而不依赖 <html> 全局类（以免污染调用方项目的主题）。
+const spTheme = inject('sp-theme', 'light') as string;
+
 const props = withDefaults(defineProps<{
   modelOpen?: boolean;
   locale?: string;
@@ -154,7 +161,8 @@ function onKeydown(e: KeyboardEvent) {
     <Transition name="ifn-dialog">
       <div
         v-if="open"
-        class="ifn-dialog__mask"
+        class="ifn-dialog__mask sp-spreader-overlay"
+        :class="{ dark: spTheme === 'dark' }"
         @mousedown.self="onCancel"
         @keydown="onKeydown"
       >

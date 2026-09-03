@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount, nextTick, inject } from 'vue';
+
 import { t } from '../core/constants';
 import type { FontOption, MergeType } from '../core/constants';
 import { getFloatBounds, cssRightFromX } from '../core/utils';
@@ -24,6 +25,11 @@ import {
   CORNER_DOT_CY,
 } from '../core/border-icon';
 import { SORT_BARS, SORT_ARROW_PATHS } from '../core/sort-icon';
+
+// 主题作用域：溢出菜单经 Teleport 脱离组件 DOM 树，无法继承组件根上的 --sp-* 变量，
+// 故在此 inject spreader 下发的主题，并在菜单根挂载作用域类，使 dark 变量仅本组件内生效，
+// 而不依赖 <html> 全局类（以免污染调用方项目的主题）。
+const spTheme = inject('sp-theme', 'light') as string;
 
 // 冻结窗格图标：田字格 + 左上角实心，表示冻结的 corner 区域
 // 外框 + 横/竖分界线（描边）+ 左上角实心块（fill）
@@ -437,7 +443,8 @@ const freezeOptions = computed<FontOption[]>(() => {
       :to="overflowMenuTarget"
     >
       <div
-        class="tb-item"
+        class="tb-item sp-spreader-overlay"
+        :class="{ dark: spTheme === 'dark' }"
         data-key="undo"
       >
         <button
@@ -464,7 +471,8 @@ const freezeOptions = computed<FontOption[]>(() => {
       :to="overflowMenuTarget"
     >
       <div
-        class="tb-item"
+        class="tb-item sp-spreader-overlay"
+        :class="{ dark: spTheme === 'dark' }"
         data-key="redo"
       >
         <button
@@ -494,7 +502,8 @@ const freezeOptions = computed<FontOption[]>(() => {
       :to="overflowMenuTarget"
     >
       <div
-        class="tb-item"
+        class="tb-item sp-spreader-overlay"
+        :class="{ dark: spTheme === 'dark' }"
         data-key="paint"
       >
         <button
@@ -521,7 +530,8 @@ const freezeOptions = computed<FontOption[]>(() => {
       :to="overflowMenuTarget"
     >
       <div
-        class="tb-item"
+        class="tb-item sp-spreader-overlay"
+        :class="{ dark: spTheme === 'dark' }"
         data-key="clear"
       >
         <button
@@ -548,7 +558,8 @@ const freezeOptions = computed<FontOption[]>(() => {
       :to="overflowMenuTarget"
     >
       <div
-        class="tb-item"
+        class="tb-item sp-spreader-overlay"
+        :class="{ dark: spTheme === 'dark' }"
         data-key="sep1"
       >
         <div class="toolbar-sep" />
@@ -560,7 +571,8 @@ const freezeOptions = computed<FontOption[]>(() => {
       :to="overflowMenuTarget"
     >
       <div
-        class="tb-item"
+        class="tb-item sp-spreader-overlay"
+        :class="{ dark: spTheme === 'dark' }"
         data-key="font"
       >
         <SpDropdown
@@ -586,7 +598,8 @@ const freezeOptions = computed<FontOption[]>(() => {
       :to="overflowMenuTarget"
     >
       <div
-        class="tb-item"
+        class="tb-item sp-spreader-overlay"
+        :class="{ dark: spTheme === 'dark' }"
         data-key="fontSize"
       >
         <div class="toolbar-font-size">
@@ -667,7 +680,8 @@ const freezeOptions = computed<FontOption[]>(() => {
       :to="overflowMenuTarget"
     >
       <div
-        class="tb-item"
+        class="tb-item sp-spreader-overlay"
+        :class="{ dark: spTheme === 'dark' }"
         data-key="sep2"
       >
         <div class="toolbar-sep" />
@@ -679,7 +693,8 @@ const freezeOptions = computed<FontOption[]>(() => {
       :to="overflowMenuTarget"
     >
       <div
-        class="tb-item"
+        class="tb-item sp-spreader-overlay"
+        :class="{ dark: spTheme === 'dark' }"
         data-key="bold"
       >
         <button
@@ -703,7 +718,8 @@ const freezeOptions = computed<FontOption[]>(() => {
       :to="overflowMenuTarget"
     >
       <div
-        class="tb-item"
+        class="tb-item sp-spreader-overlay"
+        :class="{ dark: spTheme === 'dark' }"
         data-key="italic"
       >
         <button
@@ -727,7 +743,8 @@ const freezeOptions = computed<FontOption[]>(() => {
       :to="overflowMenuTarget"
     >
       <div
-        class="tb-item"
+        class="tb-item sp-spreader-overlay"
+        :class="{ dark: spTheme === 'dark' }"
         data-key="underline"
       >
         <button
@@ -751,7 +768,8 @@ const freezeOptions = computed<FontOption[]>(() => {
       :to="overflowMenuTarget"
     >
       <div
-        class="tb-item"
+        class="tb-item sp-spreader-overlay"
+        :class="{ dark: spTheme === 'dark' }"
         data-key="strike"
       >
         <button
@@ -775,7 +793,8 @@ const freezeOptions = computed<FontOption[]>(() => {
       :to="overflowMenuTarget"
     >
       <div
-        class="tb-item"
+        class="tb-item sp-spreader-overlay"
+        :class="{ dark: spTheme === 'dark' }"
         data-key="sep3"
       >
         <div class="toolbar-sep" />
@@ -788,7 +807,8 @@ const freezeOptions = computed<FontOption[]>(() => {
       :to="overflowMenuTarget"
     >
       <div
-        class="tb-item"
+        class="tb-item sp-spreader-overlay"
+        :class="{ dark: spTheme === 'dark' }"
         data-key="textColor"
       >
         <div class="toolbar-split">
@@ -844,7 +864,8 @@ const freezeOptions = computed<FontOption[]>(() => {
       :to="overflowMenuTarget"
     >
       <div
-        class="tb-item"
+        class="tb-item sp-spreader-overlay"
+        :class="{ dark: spTheme === 'dark' }"
         data-key="fillColor"
       >
         <div class="toolbar-split">
@@ -898,7 +919,8 @@ const freezeOptions = computed<FontOption[]>(() => {
       :to="overflowMenuTarget"
     >
       <div
-        class="tb-item"
+        class="tb-item sp-spreader-overlay"
+        :class="{ dark: spTheme === 'dark' }"
         data-key="border"
       >
         <div class="toolbar-split">
@@ -969,7 +991,8 @@ const freezeOptions = computed<FontOption[]>(() => {
       :to="overflowMenuTarget"
     >
       <div
-        class="tb-item"
+        class="tb-item sp-spreader-overlay"
+        :class="{ dark: spTheme === 'dark' }"
         data-key="sep4"
       >
         <div class="toolbar-sep" />
@@ -982,7 +1005,8 @@ const freezeOptions = computed<FontOption[]>(() => {
       :to="overflowMenuTarget"
     >
       <div
-        class="tb-item"
+        class="tb-item sp-spreader-overlay"
+        :class="{ dark: spTheme === 'dark' }"
         data-key="hAlign"
       >
         <SpDropdown
@@ -1008,7 +1032,8 @@ const freezeOptions = computed<FontOption[]>(() => {
       :to="overflowMenuTarget"
     >
       <div
-        class="tb-item"
+        class="tb-item sp-spreader-overlay"
+        :class="{ dark: spTheme === 'dark' }"
         data-key="vAlign"
       >
         <SpDropdown
@@ -1034,7 +1059,8 @@ const freezeOptions = computed<FontOption[]>(() => {
       :to="overflowMenuTarget"
     >
       <div
-        class="tb-item"
+        class="tb-item sp-spreader-overlay"
+        :class="{ dark: spTheme === 'dark' }"
         data-key="wrap"
       >
         <button
@@ -1059,7 +1085,8 @@ const freezeOptions = computed<FontOption[]>(() => {
       :to="overflowMenuTarget"
     >
       <div
-        class="tb-item"
+        class="tb-item sp-spreader-overlay"
+        :class="{ dark: spTheme === 'dark' }"
         data-key="merge"
       >
         <div class="toolbar-split">
@@ -1105,7 +1132,8 @@ const freezeOptions = computed<FontOption[]>(() => {
       :to="overflowMenuTarget"
     >
       <div
-        class="tb-item"
+        class="tb-item sp-spreader-overlay"
+        :class="{ dark: spTheme === 'dark' }"
         data-key="sep6"
       >
         <div class="toolbar-sep" />
@@ -1118,7 +1146,8 @@ const freezeOptions = computed<FontOption[]>(() => {
       :to="overflowMenuTarget"
     >
       <div
-        class="tb-item"
+        class="tb-item sp-spreader-overlay"
+        :class="{ dark: spTheme === 'dark' }"
         data-key="numFmt"
       >
         <div class="toolbar-number-format-group">
@@ -1191,7 +1220,8 @@ const freezeOptions = computed<FontOption[]>(() => {
       :to="overflowMenuTarget"
     >
       <div
-        class="tb-item"
+        class="tb-item sp-spreader-overlay"
+        :class="{ dark: spTheme === 'dark' }"
         data-key="sep7"
       >
         <div class="toolbar-sep" />
@@ -1204,7 +1234,8 @@ const freezeOptions = computed<FontOption[]>(() => {
       :to="overflowMenuTarget"
     >
       <div
-        class="tb-item"
+        class="tb-item sp-spreader-overlay"
+        :class="{ dark: spTheme === 'dark' }"
         data-key="calc"
       >
         <div class="toolbar-split">
@@ -1251,7 +1282,8 @@ const freezeOptions = computed<FontOption[]>(() => {
       :to="overflowMenuTarget"
     >
       <div
-        class="tb-item"
+        class="tb-item sp-spreader-overlay"
+        :class="{ dark: spTheme === 'dark' }"
         data-key="sort"
       >
         <div class="toolbar-split">
@@ -1312,7 +1344,8 @@ const freezeOptions = computed<FontOption[]>(() => {
       :to="overflowMenuTarget"
     >
       <div
-        class="tb-item"
+        class="tb-item sp-spreader-overlay"
+        :class="{ dark: spTheme === 'dark' }"
         data-key="outline"
       >
         <button
@@ -1360,7 +1393,8 @@ const freezeOptions = computed<FontOption[]>(() => {
       :to="overflowMenuTarget"
     >
       <div
-        class="tb-item"
+        class="tb-item sp-spreader-overlay"
+        :class="{ dark: spTheme === 'dark' }"
         data-key="filter"
       >
         <button
@@ -1385,7 +1419,8 @@ const freezeOptions = computed<FontOption[]>(() => {
       :to="overflowMenuTarget"
     >
       <div
-        class="tb-item"
+        class="tb-item sp-spreader-overlay"
+        :class="{ dark: spTheme === 'dark' }"
         data-key="freeze"
       >
         <SpDropdown
@@ -1413,7 +1448,8 @@ const freezeOptions = computed<FontOption[]>(() => {
       :to="overflowMenuTarget"
     >
       <div
-        class="tb-item"
+        class="tb-item sp-spreader-overlay"
+        :class="{ dark: spTheme === 'dark' }"
         data-key="cf"
       >
         <ConditionalFormatMenu
@@ -1437,7 +1473,8 @@ const freezeOptions = computed<FontOption[]>(() => {
       :to="overflowMenuTarget"
     >
       <div
-        class="tb-item"
+        class="tb-item sp-spreader-overlay"
+        :class="{ dark: spTheme === 'dark' }"
         data-key="dv"
       >
         <button
@@ -1462,7 +1499,8 @@ const freezeOptions = computed<FontOption[]>(() => {
       :to="overflowMenuTarget"
     >
       <div
-        class="tb-item"
+        class="tb-item sp-spreader-overlay"
+        :class="{ dark: spTheme === 'dark' }"
         data-key="find"
       >
         <button
@@ -1519,8 +1557,8 @@ const freezeOptions = computed<FontOption[]>(() => {
     <Transition name="menu-pop">
       <div
         v-show="overflowOpen"
-        class="overflow-menu-wrap"
-        :class="{ 'no-anim': skipCloseAnim }"
+        class="overflow-menu-wrap sp-spreader-overlay"
+        :class="{ 'no-anim': skipCloseAnim, 'dark': spTheme === 'dark' }"
         :style="menuStyle"
         @pointerdown.stop.prevent
       >

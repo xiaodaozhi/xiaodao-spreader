@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue';
+import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount, inject } from 'vue';
 import { t, type FontOption } from '../core/constants';
 import { getFloatBounds, cssRightFromX } from '../core/utils';
 
@@ -52,6 +52,11 @@ const emit = defineEmits<{
   (e: 'update:modelValue' | 'change', v: string | number): void;
   (e: 'update:modelOpen', v: boolean): void;
 }>();
+
+// 主题作用域：浮层经 Teleport 脱离组件 DOM 树，无法继承组件根上的 --sp-* 变量，
+// 故在此 inject spreader 下发的主题，并在浮层根挂载作用域类，使 dark 变量仅本组件内生效，
+// 而不依赖 <html> 全局类（以免污染调用方项目的主题）。
+const spTheme = inject('sp-theme', 'light') as string;
 
 const open = ref(false);
 const viewStart = ref(0);
@@ -299,8 +304,8 @@ onBeforeUnmount(() => {
         <div
           v-if="open"
           ref="menuRef"
-          class="sp-dropdown__menu"
-          :class="{ 'sp-dropdown__menu--up': pos.up }"
+          class="sp-dropdown__menu sp-spreader-overlay"
+          :class="{ 'sp-dropdown__menu--up': pos.up, 'dark': spTheme === 'dark' }"
           :style="{ left: pos.left !== undefined ? pos.left + 'px' : undefined, right: pos.right !== undefined ? pos.right + 'px' : undefined, top: pos.top + 'px', minWidth: effMenuWidth !== undefined ? (typeof effMenuWidth === 'number' ? effMenuWidth + 'px' : effMenuWidth) : undefined }"
           @keydown="onKeydown"
           @mousedown.prevent

@@ -1,0 +1,111 @@
+/*
+ * 主题 CSS 变量：light 写在组件根作用域，dark 写在同作用域的 .dark 下。
+ * 变量只挂在组件自身根 (.spreadsheet-outer) 与各 Teleport 浮层根 (.sp-spreader-overlay)，
+ * 绝不挂在 <html> 或父级项目的任何全局祖先上，避免污染 npm 包调用方。
+ * dark 状态下仅在对应根加 .dark 类，浮层通过 provide('sp-theme') 拿到主题后自加该类。
+ *
+ * 注意：canvas 绘制用的颜色仍在 JS（theme.ts 的 themeColors）中按主题计算，
+ * 本文件只服务 CSS 层（组件 / 浮层样式）。
+ */
+
+.spreadsheet-outer,
+.sp-spreader-overlay {
+  --sp-formula-bar-bg: #f0f0f0;
+  --sp-formula-bar-border: #c8c8c8;
+  --sp-formula-bar-label-color: #333;
+  --sp-formula-bar-label-bg: #fff;
+  --sp-formula-bar-label-border: #c0c0c0;
+  --sp-formula-bar-input-bg: #fff;
+  --sp-formula-bar-input-border: #c0c0c0;
+  --sp-formula-bar-input-color: #1a1a1a;
+  --sp-formula-bar-input-focus-border: #0078d7;
+  --sp-formula-bar-input-focus-shadow: rgba(0, 120, 215, 0.3);
+  --sp-wrapper-bg: #e8e8e8;
+  --sp-cell-editor-border: #0078d7;
+  --sp-cell-editor-color: #1a1a1a;
+  --sp-cell-editor-bg: #fff;
+  --sp-cell-editor-shadow: #0078d7;
+  --sp-tab-bar-bg: #e8e8e8;
+  --sp-tab-bar-border: #c0c0c0;
+  --sp-tab-active-bg: #ffffff;
+  --sp-tab-active-color: #1a1a1a;
+  --sp-tab-active-border: #0078d7;
+  --sp-tab-inactive-bg: #dfdfdf;
+  --sp-tab-inactive-color: #666;
+  --sp-tab-inactive-border: transparent;
+  --sp-tab-hover-bg: #e0e0e0;
+  --sp-tab-add-btn-color: #555;
+  --sp-tab-add-btn-hover-bg: #d0d0d0;
+  --sp-tab-scroll-btn-color: #888;
+  --sp-tab-scroll-btn-hover-bg: #d0d0d0;
+  --sp-scroll-thumb: rgba(0, 0, 0, 0.25);
+  --sp-scroll-thumb-hover: rgba(0, 0, 0, 0.4);
+  --sp-scroll-btn-bg: #e8e8e8;
+  --sp-scroll-btn-color: #666;
+  --sp-scroll-btn-hover-bg: #d0d0d0;
+  --sp-scroll-btn-active-bg: #c0c0c0;
+  --sp-scroll-track-bg: rgba(0, 0, 0, 0.06);
+  --sp-toolbar-bg: #f7f7f7;
+  --sp-toolbar-border: #d8d8d8;
+  --sp-toolbar-btn-color: #444;
+  --sp-toolbar-btn-hover-bg: #e6e6e6;
+  --sp-toolbar-btn-disabled-color: #b0b0b0;
+  --sp-toolbar-btn-active-color: #0078d7;
+  --sp-toolbar-text-secondary: #666;
+  --sp-toolbar-text-muted: #999;
+  --sp-toolbar-item-active-bg: #e5f1fb;
+  --sp-danger-hover-bg: #fce8e6;
+  --sp-find-hint-color: #888;
+  --sp-border-default: #444;
+}
+
+.spreadsheet-outer.dark,
+.sp-spreader-overlay.dark {
+  --sp-formula-bar-bg: #2d2d2d;
+  --sp-formula-bar-border: #3e3e3e;
+  --sp-formula-bar-label-color: #ccc;
+  --sp-formula-bar-label-bg: #3c3c3c;
+  --sp-formula-bar-label-border: #555;
+  --sp-formula-bar-input-bg: #3c3c3c;
+  --sp-formula-bar-input-border: #555;
+  --sp-formula-bar-input-color: #d4d4d4;
+  --sp-formula-bar-input-focus-border: #0078d7;
+  --sp-formula-bar-input-focus-shadow: rgba(0, 120, 215, 0.4);
+  --sp-wrapper-bg: #1e1e1e;
+  --sp-cell-editor-border: #0078d7;
+  --sp-cell-editor-color: #d4d4d4;
+  --sp-cell-editor-bg: #3c3c3c;
+  --sp-cell-editor-shadow: #0078d7;
+  --sp-tab-bar-bg: #2a2a2a;
+  --sp-tab-bar-border: #3e3e3e;
+  --sp-tab-active-bg: #1e1e1e;
+  --sp-tab-active-color: #e0e0e0;
+  --sp-tab-active-border: #0078d7;
+  --sp-tab-inactive-bg: #333333;
+  --sp-tab-inactive-color: #888;
+  --sp-tab-inactive-border: transparent;
+  --sp-tab-hover-bg: #3a3a3a;
+  --sp-tab-add-btn-color: #999;
+  --sp-tab-add-btn-hover-bg: #3a3a3a;
+  --sp-tab-scroll-btn-color: #777;
+  --sp-tab-scroll-btn-hover-bg: #3a3a3a;
+  --sp-scroll-thumb: rgba(255, 255, 255, 0.2);
+  --sp-scroll-thumb-hover: rgba(255, 255, 255, 0.35);
+  --sp-scroll-btn-bg: #2d2d2d;
+  --sp-scroll-btn-color: #999;
+  --sp-scroll-btn-hover-bg: #3d3d3d;
+  --sp-scroll-btn-active-bg: #4d4d4d;
+  --sp-scroll-track-bg: rgba(0, 0, 0, 0.25);
+  --sp-toolbar-bg: #2a2a2a;
+  --sp-toolbar-border: #3e3e3e;
+  --sp-toolbar-btn-color: #ccc;
+  --sp-toolbar-btn-hover-bg: #3a3a3a;
+  --sp-toolbar-btn-disabled-color: #666;
+  --sp-toolbar-btn-active-color: #4ea1ff;
+  --sp-toolbar-text-secondary: #aaa;
+  --sp-toolbar-text-muted: #888;
+  --sp-toolbar-item-active-bg: rgba(78, 161, 255, 0.16);
+  --sp-danger-hover-bg: rgba(197, 34, 31, 0.18);
+  --sp-find-hint-color: #aaa;
+  --sp-border-default: #aaaaaa;
+}

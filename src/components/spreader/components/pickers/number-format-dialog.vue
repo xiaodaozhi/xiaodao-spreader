@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref, computed, watch, nextTick } from 'vue';
+import { ref, computed, watch, nextTick, inject } from 'vue';
 import { t } from '../../core/constants';
+
 import {
   formatNumber,
   buildNumberFormatCode,
@@ -15,6 +16,11 @@ import type { FontOption } from '../../core/constants';
 
 // 数字格式配置对话框（参考 Excel「设置单元格格式 / 数字」）
 // 说明：本对话框仅产生 style.numberFormat 格式代码，绝不修改 Cell.value。
+
+// 主题作用域：浮层经 Teleport 脱离组件 DOM 树，无法继承组件根上的 --sp-* 变量，
+// 故在此 inject spreader 下发的主题，并在浮层根挂载作用域类，使 dark 变量仅本组件内生效，
+// 而不依赖 <html> 全局类（以免污染调用方项目的主题）。
+const spTheme = inject('sp-theme', 'light') as string;
 
 const props = withDefaults(defineProps<{
   modelOpen?: boolean;
@@ -311,7 +317,8 @@ const previewText = computed(() => {
     <Transition name="nf-dialog">
       <div
         v-if="open"
-        class="nf-dialog__mask"
+        class="nf-dialog__mask sp-spreader-overlay"
+        :class="{ dark: spTheme === 'dark' }"
         @mousedown="onMaskClick"
         @keydown="onKeydown"
       >

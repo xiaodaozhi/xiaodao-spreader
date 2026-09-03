@@ -1,7 +1,13 @@
 <script setup lang="ts">
-import { ref, watch, nextTick, onBeforeUnmount } from 'vue';
+import { ref, watch, nextTick, onBeforeUnmount, inject } from 'vue';
+
 import { useFloatMenuPosition } from '../../composables/float-menu-position';
 import ColorPalette from './color-palette.vue';
+
+// 主题作用域：浮层经 Teleport 脱离组件 DOM 树，无法继承组件根上的 --sp-* 变量，
+// 故在此 inject spreader 下发的主题，并在浮层根挂载作用域类，使 dark 变量仅本组件内生效，
+// 而不依赖 <html> 全局类（以免污染调用方项目的主题）。
+const spTheme = inject('sp-theme', 'light') as string;
 
 const props = withDefaults(defineProps<{
   modelOpen?: boolean;
@@ -96,7 +102,8 @@ defineExpose({ open, openMenu, close });
         <div
           v-if="open"
           ref="menuRef"
-          class="color-picker__menu"
+          class="color-picker__menu sp-spreader-overlay"
+          :class="{ dark: spTheme === 'dark' }"
           :style="{
             left: pos.left !== undefined ? pos.left + 'px' : undefined,
             right: pos.right !== undefined ? pos.right + 'px' : undefined,
