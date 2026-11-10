@@ -25,6 +25,7 @@ export default defineConfig(({ mode }) => {
         entry: fileURLToPath(new URL('./src/index.ts', import.meta.url)),
         name: 'XiaoDaoSpreader',
         formats: ['es', 'umd'],
+        cssFileName: 'style',
         fileName: (format) =>
           format === 'es'
             ? 'xiaodao-spreader.es.js'
